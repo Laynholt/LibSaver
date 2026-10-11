@@ -579,6 +579,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     'customTocFormat',
     'hideChapterName',
     'hideVolumeNumber',
+    'enablePagination',
+    'initialChapters',
+    'loadMoreChapters',
     'txtImageMarker',
     'pdfFont',
     'pdfFontSize',
@@ -863,7 +866,10 @@ const DEFAULT_SETTINGS_BY_GROUP = {
   general: {
     'enable-site-menu': true,
     'debug-logging': false,
-    'update-notifications': true
+    'update-notifications': true,
+    'enable-pagination': false,
+    'initial-chapters': 500,
+    'load-more-chapters': 500
   },
   images: {
     'cover-quality': 'ORIGINAL',
@@ -879,11 +885,6 @@ const DEFAULT_SETTINGS_BY_GROUP = {
     'custom-toc-format': '~ [Том {vol}] ~ [Глава {num}] ~ [{name}] ~',
     'hide-chapter-name': false,
     'hide-volume-number': false
-  },
-  chapters: {
-    'enable-pagination': false,
-    'initial-chapters': 500,
-    'load-more-chapters': 500
   },
   cbz: {
     'generate-comicinfo': true
@@ -958,37 +959,6 @@ function resetGroupSettings(group) {
 
     // Обновляем видимость полей после сброса
     updateJpegQualityFieldVisibility();
-  } else if (group === 'chapters') {
-    // Сброс настроек редактора оглавления
-    for (const [key, value] of Object.entries(defaults)) {
-      const element = document.getElementById(key);
-      if (!element) continue;
-
-      if (element.type === 'checkbox') {
-        element.checked = value;
-        // Убираем inline стили, чтобы CSS работал корректно
-        const indicator = element.parentElement.querySelector('.control__indicator');
-        if (indicator) {
-          const checkedIcon = indicator.querySelector('svg[data-state="checked"]');
-          const defaultIcon = indicator.querySelector('svg[data-state="default"]');
-          if (checkedIcon) checkedIcon.style.display = '';
-          if (defaultIcon) defaultIcon.style.display = '';
-          if (checkedIcon) checkedIcon.style.color = '';
-        }
-      } else if (element.tagName === 'SELECT' || element.tagName === 'INPUT') {
-        element.value = value;
-        // Обновляем отображаемое значение для ползунков
-        if (element.type === 'range') {
-          const valueElement = document.getElementById(key + '-value');
-          if (valueElement) {
-            valueElement.textContent = value;
-          }
-        }
-      }
-    }
-
-    // Обновляем видимость полей после сброса
-    updatePaginationSettingsVisibility();
   } else if (group === 'pdf') {
     // Сброс настроек PDF
     for (const [key, value] of Object.entries(defaults)) {
@@ -1003,8 +973,64 @@ function resetGroupSettings(group) {
 
     // Обновляем видимость полей после сброса
     updatePdfJpegQualityFieldVisibility();
+  } else if (group === 'general') {
+    // Сброс настроек "Общие"
+    for (const [key, value] of Object.entries(defaults)) {
+      const element = document.getElementById(key);
+      if (!element) continue;
+
+      if (element.type === 'checkbox') {
+        element.checked = value;
+        // Убираем inline стили, чтобы CSS работал корректно
+        const indicator = element.parentElement.querySelector('.control__indicator');
+        if (indicator) {
+          const checkedIcon = indicator.querySelector('i[data-state="checked"]');
+          const defaultIcon = indicator.querySelector('i[data-state="default"]');
+          if (checkedIcon) checkedIcon.style.display = '';
+          if (defaultIcon) defaultIcon.style.display = '';
+          if (checkedIcon) checkedIcon.style.color = '';
+        }
+      } else if (element.type === 'range' || element.tagName === 'SELECT') {
+        element.value = value;
+        // Обновляем отображение значений для range
+        if (key === 'initial-chapters') {
+          document.getElementById('initial-chapters-value').textContent = value;
+        }
+        if (key === 'load-more-chapters') {
+          document.getElementById('load-more-chapters-value').textContent = value;
+        }
+      }
+    }
+
+    // Обновляем видимость полей пагинации после сброса
+    updatePaginationSettingsVisibility();
+
+    // Сбрасываем кастомные ссылки сайтов (заполняем дефолтными значениями)
+    document.getElementById('site-mangalib').value = defaultSiteLinks.mangalib;
+    document.getElementById('site-hentailib').value = defaultSiteLinks.hentailib;
+    document.getElementById('site-shlib').value = defaultSiteLinks.shlib;
+    document.getElementById('site-ranobelib').value = defaultSiteLinks.ranobelib;
+    document.getElementById('site-animelib').value = defaultSiteLinks.animelib;
+
+    // Сбрасываем порядок сайтов и включаем все сайты
+    chrome.storage.local.remove('siteMenuOrder');
+    chrome.storage.local.remove('disabledSites');
+    resetSiteMenuOrder();
+
+    // Сбрасываем состояние кнопок
+    document.querySelectorAll('.site-menu-field').forEach(field => {
+      field.classList.remove('disabled');
+      const icon = field.querySelector('.site-menu-toggle i');
+      const input = field.querySelector('input');
+      if (icon) {
+        icon.className = 'fa-solid fa-power-off';
+      }
+      if (input) {
+        input.disabled = false;
+      }
+    });
   } else {
-    // Сброс обычных настроек
+    // Сброс обычных настроек (images, cbz)
     for (const [key, value] of Object.entries(defaults)) {
       const element = document.getElementById(key);
       if (!element) continue;
@@ -1034,45 +1060,12 @@ function resetGroupSettings(group) {
         }
       }
     }
-
-    // Сбрасываем кастомные ссылки сайтов (заполняем дефолтными значениями)
-    document.getElementById('site-mangalib').value = defaultSiteLinks.mangalib;
-    document.getElementById('site-hentailib').value = defaultSiteLinks.hentailib;
-    document.getElementById('site-shlib').value = defaultSiteLinks.shlib;
-    document.getElementById('site-ranobelib').value = defaultSiteLinks.ranobelib;
-    document.getElementById('site-animelib').value = defaultSiteLinks.animelib;
-
-    // Сбрасываем порядок сайтов и включаем все сайты
-    chrome.storage.local.remove('siteMenuOrder');
-    chrome.storage.local.remove('disabledSites');
-    resetSiteMenuOrder();
-
-    // Сбрасываем состояние кнопок
-    document.querySelectorAll('.site-menu-field').forEach(field => {
-      field.classList.remove('disabled');
-      const icon = field.querySelector('.site-menu-toggle i');
-      const input = field.querySelector('input');
-      if (icon) {
-        icon.className = 'fa-solid fa-power-off';
-      }
-      if (input) {
-        input.disabled = false;
-      }
-    });
   }
 
   // Обновляем видимость полей после сброса (для групп без специальной обработки)
-  if (group === 'general' || group === 'images') {
+  if (group === 'images') {
     updateResizeMethodVisibility();
     updateJpegQualityFieldVisibility();
-    updateSiteMenuLinksVisibility();
-  }
-
-  // Обновляем видимость полей после сброса (для групп без специальной обработки)
-  if (group === 'general' || group === 'images') {
-    updateResizeMethodVisibility();
-    updateJpegQualityFieldVisibility();
-    updateSiteMenuLinksVisibility();
   }
 
   // Применяем шрифт к select после сброса PDF группы
