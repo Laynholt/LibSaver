@@ -2,7 +2,6 @@ let userCovers = [];
 let currentSlug = null;
 let originalCovers = [];
 let wasSaved = false;
-let coverQuality = 'ORIGINAL';
 let tippyInstances = [];
 let tooltipContents = [];
 
@@ -170,25 +169,6 @@ function setupTippyPreview(preview, imageUrl) {
 // Загрузка данных при открытии
 let disableDragAnimations = false;
 
-// Функция для отключения редактора при режиме "Без обложек"
-function disableEditor() {
-  const toolbar = document.querySelector('.toolbar');
-  const coversList = document.getElementById('covers-list');
-  const disabledMessage = document.getElementById('editor-disabled-message');
-  
-  if (toolbar) {
-    toolbar.style.display = 'none';
-  }
-  
-  if (coversList) {
-    coversList.style.display = 'none';
-  }
-  
-  if (disabledMessage) {
-    disabledMessage.style.display = 'block';
-  }
-}
-
 document.addEventListener('DOMContentLoaded', async () => {
   // Регистрируем окно редактора обложек
   await chrome.storage.local.set({ currentOpenWindow: 'covers' });
@@ -208,17 +188,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     window.applySiteAccent(sourceUrl);
   }
   
-  const dataResult = await chrome.storage.local.get(['currentSlug', 'titleData', 'originalTitleData', 'disableDragAnimations', 'coverQuality']);
+  const dataResult = await chrome.storage.local.get(['currentSlug', 'titleData', 'originalTitleData', 'disableDragAnimations']);
   currentSlug = dataResult.currentSlug;
   disableDragAnimations = dataResult.disableDragAnimations || false;
-  coverQuality = dataResult.coverQuality || 'ORIGINAL';
-
-  // Проверяем, отключен ли редактор обложек
-  if (coverQuality === 'NONE') {
-    disableEditor();
-    return;
-  }
-
 
   if (currentSlug) {
     // Сначала проверяем пользовательские обложки (если они есть, даже если пустые)
@@ -820,37 +792,6 @@ document.getElementById('btn-delete-all').addEventListener('click', () => {
 window.addEventListener('beforeunload', () => {
   if (!wasSaved) {
     chrome.runtime.sendMessage({ action: 'showToast', message: 'Отменено!', type: 'cancel' });
-  }
-});
-
-// Слушаем изменения качества обложек в реальном времени
-chrome.storage.onChanged.addListener((changes, areaName) => {
-  if (areaName === 'local' && changes.coverQuality) {
-    coverQuality = changes.coverQuality.newValue;
-    
-    if (coverQuality === 'NONE') {
-      disableEditor();
-    } else {
-      // Включаем редактор обратно
-      const toolbar = document.querySelector('.toolbar');
-      const coversList = document.getElementById('covers-list');
-      const disabledMessage = document.getElementById('editor-disabled-message');
-      
-      if (toolbar) {
-        toolbar.style.display = 'flex';
-      }
-      
-      if (coversList) {
-        coversList.style.display = 'block';
-      }
-      
-      if (disabledMessage) {
-        disabledMessage.style.display = 'none';
-      }
-      
-      // Перерисовываем обложки
-      renderCovers();
-    }
   }
 });
 

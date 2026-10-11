@@ -274,26 +274,6 @@
       color: var(--text-primary);
       font-weight: 600;
     }
-    .editor-disabled-message {
-      position: fixed;
-      top: 50%;
-      left: 50%;
-      transform: translate(-50%, -50%);
-      text-align: center;
-      color: var(--text-secondary);
-      z-index: 1000;
-    }
-    .disabled-gif {
-      display: block;
-      margin: 0 auto 16px auto;
-      max-width: 200px;
-      max-height: 200px;
-    }
-    .editor-disabled-message p {
-      font-size: 14px;
-      margin: 0;
-      line-height: 1.5;
-    }
   </style>
 </head>
 <body>
@@ -322,11 +302,6 @@
   </div>
   
   <div class="container">
-    <div id="editor-disabled-message" class="editor-disabled-message" style="display: none;">
-      <img src="../assets/gif/disable.gif" alt="Editor disabled" class="disabled-gif">
-      <p>Данный редактор утратил свою силу...</p>
-      <p style="font-size: 12px;">"Без обложек" выбрано в настройках...</p>
-    </div>
     <div class="covers-list" id="covers-list">
       <div class="empty-state">Нет обложек</div>
     </div>
