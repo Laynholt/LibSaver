@@ -1213,7 +1213,7 @@ async function checkForUpdates() {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 30000);
 
-    const response = await fetch('https://api.github.com/repos/dfy-dpg/LibSaver/tags', {
+    const response = await fetch('https://cdn.jsdelivr.net/gh/dfy-dpg/LibSaver@latest/src/manifest.json', {
       signal: controller.signal
     });
     clearTimeout(timeoutId);
@@ -1222,13 +1222,12 @@ async function checkForUpdates() {
       throw new Error(`HTTP ${response.status}`);
     }
 
-    const tags = await response.json();
-    if (!tags || tags.length === 0) {
-      throw new Error('Нет тегов');
+    const manifest = await response.json();
+    if (!manifest || !manifest.version) {
+      throw new Error('Нет версии в manifest');
     }
 
-    const latestTag = tags[0].name;
-    const latestVersion = latestTag.replace('v', '');
+    const latestVersion = manifest.version;
 
     console.log('Версия на GitHub:', latestVersion);
 
@@ -1267,8 +1266,8 @@ async function checkForUpdates() {
       errorMessage = 'Таймаут';
     } else if (error.message.includes('Failed to fetch') || error.message.includes('NetworkError')) {
       errorMessage = 'Нет соединения';
-    } else if (error.message.includes('HTTP 4')) {
-      errorMessage = 'GitHub недоступен';
+    } else if (error.message.includes('HTTP 4') || error.message.includes('HTTP 5')) {
+      errorMessage = 'CDN недоступен';
     }
 
     // Ошибка - показываем 4 секунды, не кликабельно (без задержки)

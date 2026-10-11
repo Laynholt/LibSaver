@@ -67,18 +67,17 @@ async function checkForUpdatesPopup() {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 30000);
 
-    const response = await fetch('https://api.github.com/repos/dfy-dpg/LibSaver/tags', {
+    const response = await fetch('https://cdn.jsdelivr.net/gh/dfy-dpg/LibSaver@latest/src/manifest.json', {
       signal: controller.signal
     });
     clearTimeout(timeoutId);
 
     if (!response.ok) return;
 
-    const tags = await response.json();
-    if (!tags || tags.length === 0) return;
+    const manifestJson = await response.json();
+    if (!manifestJson || !manifestJson.version) return;
 
-    const latestTag = tags[0].name;
-    const latestVersion = latestTag.replace('v', '');
+    const latestVersion = manifestJson.version;
 
     // Семантическое сравнение версий
     if (compareVersions(latestVersion, currentVersion) > 0) {
