@@ -589,10 +589,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     'pdfLineSpacing',
     'pdfParagraphSpacing',
     'pdfImageFormat',
-    'pdfJpegQuality',
-    'enablePagination',
-    'initialChapters',
-    'loadMoreChapters'
+    'pdfJpegQuality'
   ]);
   
   // Применяем сохраненные настройки
