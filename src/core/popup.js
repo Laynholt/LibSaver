@@ -500,6 +500,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Загружаем SVG логотипы как inline
   await loadInlineSvg();
 
+  // Удаляем старый downloadData при открытии popup (предотвращаем накопление мусора)
+  chrome.storage.local.remove('downloadData');
+
   // Проверка обновлений при открытии popup (с задержкой 2 секунды)
   setTimeout(checkForUpdatesPopup, 2000);
 

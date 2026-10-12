@@ -181,6 +181,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Очищаем регистрацию при закрытии
   window.addEventListener('beforeunload', async () => {
     await chrome.storage.local.remove('currentOpenWindow');
+    // Удаляем downloadData при закрытии окна (предотвращаем накопление мусора)
+    chrome.storage.local.remove('downloadData');
   });
 
   // Применяем акцентный цвет по сайту (используем функцию из theme.js)
@@ -212,6 +214,7 @@ async function loadDownloadData() {
   const result = await chrome.storage.local.get(['downloadData', 'metadataFields', 'coverQuality']);
   if (!result.downloadData) {
     console.error('Download data not found');
+    chrome.storage.local.remove('downloadData');
     window.close();
     return;
   }
