@@ -542,15 +542,88 @@ document.addEventListener('DOMContentLoaded', async () => {
       enableButton('btn-settings', true);
       return;
     }
-    
+
     if (!isBookPage) {
       showMessage('Перейдите на главную страницу нужного тайтла.', false, 'no_title');
-      enableButton('btn-go-to-site', true);
       enableButton('btn-settings', true);
       return;
     }
 
-        // Загружаем данные о ранобэ
+    // Извлекаем slug из URL для кэширования (используем тот же паттерн что и в API)
+    let urlSlug = null;
+    if (url.includes('ranobelib.me') || url.includes('novelslib.me')) {
+      const slugMatch = url.match(/\/ru\/book\/([^-]+)(--[^?]+)?/);
+      urlSlug = slugMatch ? slugMatch[1] + (slugMatch[2] || '') : null;
+    } else if (url.includes('mangalib.me') || url.includes('mangalib.org')) {
+      const slugMatch = url.match(/\/ru\/manga\/([^-]+)(--[^?]+)?/);
+      urlSlug = slugMatch ? slugMatch[1] + (slugMatch[2] || '') : null;
+    } else if (url.includes('hentailib.me') || url.includes('hentailib.org')) {
+      const slugMatch = url.match(/\/ru\/manga\/([^-]+)(--[^?]+)?/);
+      urlSlug = slugMatch ? slugMatch[1] + (slugMatch[2] || '') : null;
+    } else if (url.includes('v2.shlib.life') || url.includes('shlib.life')) {
+      const slugMatch = url.match(/\/ru\/manga\/([^-]+)(--[^?]+)?/);
+      urlSlug = slugMatch ? slugMatch[1] + (slugMatch[2] || '') : null;
+    } else if (url.includes('animelib.org') || url.includes('anilib.me')) {
+      const slugMatch = url.match(/\/ru\/anime\/([^-]+)(--[^?]+)?/);
+      urlSlug = slugMatch ? slugMatch[1] + (slugMatch[2] || '') : null;
+    }
+
+    // Проверяем кэш - есть ли полные данные для этого тайтла
+    const cachedData = urlSlug ? await chrome.storage.local.get(['titleData', 'originalTitleData', 'currentSlug']) : { titleData: {}, originalTitleData: {}, currentSlug: null };
+    const titleData = cachedData.titleData || {};
+    const originalTitleData = cachedData.originalTitleData || {};
+    const hasChapters = urlSlug && titleData[urlSlug] && titleData[urlSlug].chapters && titleData[urlSlug].chapters.length > 0;
+    const hasMetadata = urlSlug && titleData[urlSlug] && titleData[urlSlug].metadata && Object.keys(titleData[urlSlug].metadata).length > 0;
+    const hasCovers = urlSlug && titleData[urlSlug] && (titleData[urlSlug].covers || titleData[urlSlug].metadata?.cover);
+    const hasOriginalMetadata = urlSlug && originalTitleData[urlSlug] && originalTitleData[urlSlug].metadata && Object.keys(originalTitleData[urlSlug].metadata).length > 0;
+
+    // Проверяем timestamp кэша (устаревает через 10 минут = 600000 мс)
+    const cacheTimestamp = urlSlug && titleData[urlSlug] ? titleData[urlSlug].cacheTimestamp : 0;
+    const cacheAge = Date.now() - cacheTimestamp;
+    const CACHE_MAX_AGE = 10 * 60 * 1000; // 10 минут
+    const isCacheFresh = cacheAge < CACHE_MAX_AGE;
+
+    // Используем кэш если есть полные данные, они свежие и включены originalTitleData
+    if (hasChapters && hasMetadata && hasCovers && hasOriginalMetadata && isCacheFresh) {
+      console.log('Используем кэшированные данные для:', urlSlug);
+      await chrome.storage.local.set({ currentSlug: urlSlug });
+      currentSlug = urlSlug;
+
+      // Восстанавливаем данные из кэша
+      allChapters = titleData[urlSlug].chapters;
+      originalCover = titleData[urlSlug].metadata.cover || '';
+      allCovers = titleData[urlSlug].covers || (titleData[urlSlug].metadata?.cover ? [titleData[urlSlug].metadata.cover] : []);
+
+      // Восстанавливаем приоритет переводчиков
+      translatorPriority = titleData[urlSlug].translatorPriority || [];
+      chapterBranchOverrides = titleData[urlSlug].chapterBranchOverrides || {};
+
+      // Обновляем UI
+      processChapters(allChapters);
+      applyTranslatorPriority();
+      populateChapters();
+
+      const displayTitle = titleData[urlSlug].metadata.titleRu || titleData[urlSlug].metadata.titleEn || titleData[urlSlug].metadata.titleOriginal || 'Без названия';
+      document.getElementById('book-title').textContent = displayTitle;
+
+      // Готово (400мс - визуальный маркер)
+      updateLoader('Готово!', 100);
+      await readyProgress(100);
+      await new Promise(resolve => setTimeout(resolve, 400));
+
+      // Показываем UI
+      document.getElementById('loader').classList.add('hidden');
+      document.getElementById('main-view').classList.remove('hidden');
+      document.querySelector('.btn-group').classList.remove('hidden');
+      enableButton('btn-download', true);
+      enableButton('btn-metadata', true);
+      enableButton('btn-covers', true);
+      enableButton('btn-edit-chapters', true);
+      enableButton('btn-settings', true);
+      return;
+    }
+
+    // Загружаем данные о ранобэ
     globalStartProgress = 0;
     
     // Загрузка данных через API
@@ -617,6 +690,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         titleData[slug] = { chapters: null, metadata: {} };
       }
       titleData[slug].itemsCount = metadata.totalChapters;
+      titleData[slug].cacheTimestamp = Date.now();
       await chrome.storage.local.set({ titleData });
       
       // Сохраняем метаданные в storage
@@ -635,13 +709,16 @@ document.addEventListener('DOMContentLoaded', async () => {
         
         // Сохраняем оригинальные данные из API (всегда обновляем)
         originalTitleData[slug].metadata = { ...metadata };
-        
+
         // Сохраняем пользовательские данные только если их нет (не перезаписываем правки)
         // Проверяем по наличию хотя бы одного ключа в metadata
         const userMetadataKeys = Object.keys(titleData[slug].metadata);
         if (userMetadataKeys.length === 0) {
           titleData[slug].metadata = { ...metadata };
         }
+
+        // Сохраняем timestamp кэша (для устаревания через 10 минут)
+        titleData[slug].cacheTimestamp = Date.now();
 
         chrome.storage.local.set({ titleData, originalTitleData });
       });
@@ -675,6 +752,9 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (!titleData[currentSlug].covers) {
           titleData[currentSlug].covers = allCovers.map(url => ({ url, type: 'url' }));
         }
+
+        // Обновляем timestamp кэша (чтобы устаревал через 10 минут)
+        titleData[currentSlug].cacheTimestamp = Date.now();
 
         chrome.storage.local.set({ titleData, originalTitleData });
       });

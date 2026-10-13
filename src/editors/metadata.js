@@ -308,11 +308,14 @@ document.getElementById('btn-save').addEventListener('click', () => {
     // Сохраняем существующие covers, чтобы не потерять обложки
     const existingData = titleData[currentSlug] || {};
     metadata.covers = existingData.covers || [];
-    
+
     titleData[currentSlug].metadata = metadata;
-    
+
+    // Обновляем timestamp кэша (продлеваем срок действия на 10 минут)
+    titleData[currentSlug].cacheTimestamp = Date.now();
+
     // Сохраняем временные изменения названий полей в storage
-    chrome.storage.local.set({ 
+    chrome.storage.local.set({
       titleData,
       fieldLabels: tempFieldLabels
     }, () => {

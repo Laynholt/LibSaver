@@ -734,7 +734,10 @@ document.getElementById('btn-save').addEventListener('click', async () => {
     titleData[currentSlug].metadata = {};
   }
   titleData[currentSlug].metadata.cover = userCovers.length > 0 ? (userCovers[0].url || userCovers[0].dataUrl) : '';
-  
+
+  // Обновляем timestamp кэша (продлеваем срок действия на 10 минут)
+  titleData[currentSlug].cacheTimestamp = Date.now();
+
   await chrome.storage.local.set({ titleData });
   
   // Отправляем toast уведомление в popup

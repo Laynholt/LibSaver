@@ -723,7 +723,10 @@ document.getElementById('btn-save').addEventListener('click', () => {
     // НЕ перезаписываем filteredChapters - он должен создаваться только в popup по диапазону
     titleData[currentSlug].chapterBranchOverrides = chapterBranchOverrides;
     titleData[currentSlug].translatorPriority = translatorPriority;
-    
+
+    // Обновляем timestamp кэша (продлеваем срок действия на 10 минут)
+    titleData[currentSlug].cacheTimestamp = Date.now();
+
     chrome.storage.local.set({ titleData }, () => {
       wasSaved = true;
       chrome.runtime.sendMessage({ action: 'showToast', message: 'Сохранено!', type: 'success' });
