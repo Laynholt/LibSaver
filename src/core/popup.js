@@ -365,7 +365,7 @@ async function slowSmoothProgress(targetProgress) {
     // Очень мелкие шаги по 0.5% для максимальной плавности
     const stepCount = Math.ceil(diff / 0.5);
     const stepSize = diff / stepCount;
-    const durationPerStep = 800 / stepCount; // 800ms всего
+    const durationPerStep = 1200 / stepCount; // 1200ms всего
     
     let progress = currentProgress;
     for (let i = 0; i < stepCount; i++) {
