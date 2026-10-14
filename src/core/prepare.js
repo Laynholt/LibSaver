@@ -1316,14 +1316,15 @@ function populateFormatSelector(siteType) {
       { value: 'epub', label: 'EPUB' },
       { value: 'fb2', label: 'FB2' },
       { value: 'pdf', label: 'PDF' },
-      { value: 'html', label: 'HTML' },
-      { value: 'txt', label: 'TXT' }
+      { value: 'txt', label: 'TXT' },
+      { value: 'html', label: 'HTML' }
     ],
     'manga': [
       { value: 'cbz', label: 'CBZ' },
       { value: 'zip', label: 'ZIP' },
       { value: 'pdf', label: 'PDF' },
-      { value: 'epub', label: 'EPUB' }
+      { value: 'epub', label: 'EPUB' },
+      { value: 'html', label: 'HTML' }
     ],
     'anime': [
       { value: 'mkv', label: 'MKV' }
