@@ -14,7 +14,8 @@
     "declarativeNetRequest",
     "declarativeNetRequestWithHostAccess",
     "downloads",
-    "system.display"
+    "system.display",
+    "unlimitedStorage"
   ],
 
   "declarative_net_request": {
