@@ -56,7 +56,6 @@ async function checkForUpdatesPopup() {
     // Проверяем настройку уведомлений
     const result = await chrome.storage.local.get(['updateNotifications']);
     if (result.updateNotifications === false) {
-      console.log('Уведомления об обновлениях отключены');
       return;
     }
 
@@ -87,7 +86,7 @@ async function checkForUpdatesPopup() {
       });
     }
   } catch (error) {
-    console.error('Ошибка проверки обновлений в popup:', error);
+    console.error('Ошибка проверки обновлений:', error);
   }
 }
 
@@ -243,7 +242,6 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
     }
     // Обновление формата оглавления
     if (changes.tocFormat || changes.customTocFormat || changes.hideChapterName || changes.hideVolumeNumber) {
-      console.log('Settings changed:', changes);
       if (changes.tocFormat) {
         tocFormat = changes.tocFormat.newValue;
       }
@@ -256,15 +254,12 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
       if (changes.hideVolumeNumber) {
         hideVolumeNumber = changes.hideVolumeNumber.newValue;
       }
-      console.log('Updated settings:', { tocFormat, customTocFormat, hideChapterName, hideVolumeNumber });
 
       // Пересоздаём displayTitle для всех глав
       if (allChapters.length > 0) {
-        console.log('Reformatting chapters, count:', allChapters.length);
         allChapters.forEach(ch => {
           ch.displayTitle = formatChapterTitle(ch.volume, ch.number, ch.name, tocFormat, customTocFormat, hideChapterName, hideVolumeNumber);
         });
-        console.log('Sample formatted title:', allChapters[0]?.displayTitle);
         populateChapters();
       }
     }
@@ -274,7 +269,6 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
 // Слушаем сообщения для переформатирования глав
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.action === 'reformatChapters') {
-    console.log('Received reformatChapters message');
     // Перезагружаем настройки формата
     chrome.storage.local.get(['tocFormat', 'customTocFormat', 'hideChapterName', 'hideVolumeNumber'], (result) => {
       if (result.tocFormat) tocFormat = result.tocFormat;
@@ -319,7 +313,6 @@ async function getRandomCoverInspectionText() {
     const randomIndex = Math.floor(Math.random() * lines.length);
     return lines[randomIndex].trim();
   } catch (e) {
-    console.error('Ошибка при чтении файла local_data:', e);
     return 'Рассматриваем обложку...'; // Fallback при ошибке
   }
 }
@@ -485,7 +478,7 @@ async function loadInlineSvg() {
       const svgText = await response.text();
       container.innerHTML = svgText;
     } catch (error) {
-      console.error('Failed to load SVG:', svgPath, error);
+      // SVG не загрузился - просто не отображаем логотип
     }
   }
 }
@@ -677,7 +670,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         applyTranslatorPriority();
         populateChapters();
       } else {
-        console.error('chaptersResult.chapters is undefined:', chaptersResult);
+        console.error('Главы не получены из API:', chaptersResult);
         showMessage('Не удалось получить данные из API.', true, 'chapters_error');
         return;
       }
@@ -1151,7 +1144,7 @@ function processChapters(chaptersList) {
   allChapters = [];
 
   if (!chaptersList || !Array.isArray(chaptersList)) {
-    console.error('Invalid chaptersList:', chaptersList);
+    console.error('Некорректный список глав:', chaptersList);
     return;
   }
 
