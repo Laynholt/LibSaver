@@ -25,6 +25,11 @@ body {
   word-wrap: break-word;
   overflow-wrap: break-word;
   text-wrap: balance;
+  display: -webkit-box;
+  -webkit-line-clamp: 6;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .range-container {
