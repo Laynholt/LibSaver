@@ -1247,7 +1247,6 @@ async function checkForUpdates() {
       // Актуальная версия - показываем 4 секунды, не кликабельно
       versionElement.textContent = 'Актуальная версия';
       versionElement.style.color = '#4CAF50';
-      console.log('Расширение обновлено до последней версии');
 
       setTimeout(() => {
         versionElement.textContent = originalText;

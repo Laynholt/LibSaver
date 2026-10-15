@@ -1127,10 +1127,8 @@ document.getElementById('btn-settings').addEventListener('click', () => {
     chrome.storage.session.get(['isLoggingEnabled'], (result) => {
       if (result.isLoggingEnabled) {
         chrome.runtime.sendMessage({ action: 'disableStorageLogging' });
-        console.log('[LibSaver] Storage logging DISABLED by secret click sequence');
       } else {
         chrome.runtime.sendMessage({ action: 'enableStorageLogging' });
-        console.log('[LibSaver] Storage logging ENABLED by secret click sequence');
       }
     });
     settingsClicks = []; // Сбрасываем

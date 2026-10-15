@@ -328,7 +328,6 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
 // Слушаем сообщения для переформатирования глав
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.action === 'reformatChapters') {
-    console.log('Received reformatChapters message in chapters editor');
     // Перезагружаем настройки формата
     chrome.storage.local.get(['tocFormat', 'customTocFormat', 'hideChapterName', 'hideVolumeNumber'], (result) => {
       if (result.tocFormat) tocFormat = result.tocFormat;
@@ -1097,7 +1096,6 @@ function initTranslatorPriorityPopup() {
         }
       }
     });
-    console.log('Tippy instance created successfully');
   } catch (error) {
     console.error('Error creating tippy instance:', error);
   }

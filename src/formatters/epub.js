@@ -1252,7 +1252,5 @@ ${manifestItems}
     if (chapterFiles.length === 0) {
       throw new Error('EPUB не содержит ни одной главы');
     }
-
-    console.log(`Валидация EPUB пройдена успешно. Глав: ${chapterFiles.length}`);
   }
 }
