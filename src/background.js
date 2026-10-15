@@ -15,6 +15,70 @@ function cleanupExpiredTokens() {
 // Периодическая очистка токенов (каждые 30 минут)
 setInterval(cleanupExpiredTokens, 1800000);
 
+// Флаг для включения логирования (хранится в chrome.storage.session - переживает засыпание service worker)
+let loggingInterval = null;
+
+// Автоматическое восстановление логирования при пробуждении Service Worker
+async function restoreLoggingIfNeeded() {
+  const result = await chrome.storage.session.get(['isLoggingEnabled']);
+  if (result.isLoggingEnabled && !loggingInterval) {
+    console.log('[LibSaver] Storage logging restored after Service Worker wakeup');
+    logStorageSize(); // Лог сразу
+    loggingInterval = setInterval(logStorageSize, 10000);
+  }
+}
+
+// Проверяем при запуске
+restoreLoggingIfNeeded();
+
+// Логирование размера storage каждые 10 секунд
+function logStorageSize() {
+  chrome.storage.local.get(['currentOpenWindow'], (result) => {
+    if (!result.currentOpenWindow) {
+      // Если нет открытых окон - выключаем логирование
+      disableLogging();
+      return;
+    }
+    chrome.storage.local.getBytesInUse(null, (bytes) => {
+      const mb = (bytes / (1024 * 1024)).toFixed(2);
+      console.log(`[LibSaver] Storage size: ${mb} MB (${bytes} bytes)`);
+    });
+  });
+}
+
+// Включение логирования
+async function enableLogging() {
+  const result = await chrome.storage.session.get(['isLoggingEnabled']);
+  if (!result.isLoggingEnabled) {
+    await chrome.storage.session.set({ isLoggingEnabled: true });
+    console.log('[LibSaver] Storage logging ENABLED');
+    logStorageSize(); // Лог сразу
+    loggingInterval = setInterval(logStorageSize, 10000);
+  }
+}
+
+// Выключение логирования
+async function disableLogging() {
+  const result = await chrome.storage.session.get(['isLoggingEnabled']);
+  if (result.isLoggingEnabled) {
+    await chrome.storage.session.set({ isLoggingEnabled: false });
+    console.log('[LibSaver] Storage logging DISABLED');
+    if (loggingInterval) {
+      clearInterval(loggingInterval);
+      loggingInterval = null;
+    }
+  }
+}
+
+// Слушатель сообщений для управления логированием
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message.action === 'enableStorageLogging') {
+    enableLogging();
+  } else if (message.action === 'disableStorageLogging') {
+    disableLogging();
+  }
+});
+
 // Общая функция для fetch с заголовками
 async function fetchWithHeaders(url, headers) {
   const response = await fetch(url, { headers });

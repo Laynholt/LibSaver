@@ -1117,8 +1117,32 @@ document.getElementById('btn-animelib').addEventListener('click', async () => {
   await chrome.tabs.create({ url: 'https://animelib.org' });
 });
 
-// Кнопка настроек
+// Кнопка настроек (с секретным переключением логирования storage)
+let settingsClicks = [];
+const SETTINGS_CLICK_THRESHOLD = 10;
+const SETTINGS_CLICK_WINDOW = 8000; // 8 секунд
+
 document.getElementById('btn-settings').addEventListener('click', () => {
+  const now = Date.now();
+  
+  // Удаляем клики старше 8 секунд
+  settingsClicks = settingsClicks.filter(click => now - click < SETTINGS_CLICK_WINDOW);
+  settingsClicks.push(now);
+  
+  // Если 10 кликов за 8 секунд - переключаем логирование
+  if (settingsClicks.length >= SETTINGS_CLICK_THRESHOLD) {
+    chrome.storage.session.get(['isLoggingEnabled'], (result) => {
+      if (result.isLoggingEnabled) {
+        chrome.runtime.sendMessage({ action: 'disableStorageLogging' });
+        console.log('[LibSaver] Storage logging DISABLED by secret click sequence');
+      } else {
+        chrome.runtime.sendMessage({ action: 'enableStorageLogging' });
+        console.log('[LibSaver] Storage logging ENABLED by secret click sequence');
+      }
+    });
+    settingsClicks = []; // Сбрасываем
+  }
+  
   openPopupWindow('html/settings.html');
 });
 
