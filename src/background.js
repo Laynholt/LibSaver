@@ -33,12 +33,29 @@ restoreLoggingIfNeeded();
 
 // Логирование размера storage каждые 10 секунд
 function logStorageSize() {
-  chrome.storage.local.get(['currentOpenWindow'], (result) => {
+  chrome.storage.local.get(['currentOpenWindow'], async (result) => {
     if (!result.currentOpenWindow) {
-      // Если нет открытых окон - выключаем логирование
-      disableLogging();
+      // Если нет открытых окон - проверяем время закрытия
+      const sessionResult = await chrome.storage.session.get(['lastWindowCloseTime']);
+      if (!sessionResult.lastWindowCloseTime) {
+        // Первое закрытие окна - записываем время
+        await chrome.storage.session.set({ lastWindowCloseTime: Date.now() });
+        return;
+      }
+
+      // Проверяем прошло ли 2 минуты (120000 мс)
+      const timeSinceClose = Date.now() - sessionResult.lastWindowCloseTime;
+      if (timeSinceClose > 120000) {
+        // Прошло больше 2 минут - выключаем логирование
+        disableLogging();
+        await chrome.storage.session.remove(['lastWindowCloseTime']);
+      }
       return;
     }
+
+    // Если есть открытое окно - сбрасываем таймер закрытия
+    await chrome.storage.session.remove(['lastWindowCloseTime']);
+
     chrome.storage.local.getBytesInUse(null, (bytes) => {
       const mb = (bytes / (1024 * 1024)).toFixed(2);
       console.log(`[LibSaver] Storage size: ${mb} MB (${bytes} bytes)`);
@@ -51,6 +68,7 @@ async function enableLogging() {
   const result = await chrome.storage.session.get(['isLoggingEnabled']);
   if (!result.isLoggingEnabled) {
     await chrome.storage.session.set({ isLoggingEnabled: true });
+    await chrome.storage.session.remove(['lastWindowCloseTime']); // Сбрасываем таймер закрытия
     console.log('[LibSaver] Storage logging ENABLED');
     logStorageSize(); // Лог сразу
     loggingInterval = setInterval(logStorageSize, 10000);
