@@ -192,8 +192,6 @@ chrome.storage.local.get(['imageQuality', 'coverQuality', 'resizeMethod', 'adapt
   if (result.hideVolumeNumber !== undefined) {
     hideVolumeNumber = result.hideVolumeNumber;
   }
-
-  console.log('Settings loaded:', { tocFormat, customTocFormat, hideChapterName, hideVolumeNumber });
 });
 
 // Слушаем изменения в storage для обновления списков глав и метаданных
@@ -604,7 +602,6 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // Используем кэш если есть полные данные, они свежие и включены originalTitleData
     if (hasChapters && hasMetadata && hasCovers && hasOriginalMetadata && isCacheFresh) {
-      console.log('Используем кэшированные данные для:', urlSlug);
       await chrome.storage.local.set({ currentSlug: urlSlug });
       currentSlug = urlSlug;
 
@@ -750,6 +747,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (coversResult && coversResult.success) {
       allCovers = coversResult.covers;
       
+      // Если covers API вернул пустой массив, fallback на metadata.cover
+      if (allCovers.length === 0 && originalCover) {
+        allCovers = [originalCover];
+      }
+      
       // Обновляем данные с обложками
       chrome.storage.local.get(['titleData', 'originalTitleData'], (result) => {
         const titleData = result.titleData || {};
@@ -791,8 +793,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     const coverInspectionText = await getRandomCoverInspectionText();
     updateLoader(coverInspectionText, globalStartProgress + 25);
     await slowSmoothProgress(globalStartProgress + 50);
-    
-    console.log('Все этапы загрузки завершены, начинаем финальные этапы');
     
     // Готово (400мс - визуальный маркер)
     updateLoader('Готово!', globalStartProgress + 50);
