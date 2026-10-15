@@ -503,6 +503,25 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Удаляем старый downloadData при открытии popup (предотвращаем накопление мусора)
   chrome.storage.local.remove('downloadData');
 
+  // Очищаем старые titleData (старше 7 дней) для предотвращения мусора
+  const result = await chrome.storage.local.get(['titleData']);
+  if (result.titleData) {
+    const titleData = result.titleData;
+    const sevenDaysAgo = Date.now() - (7 * 24 * 60 * 60 * 1000);
+    let modified = false;
+    
+    for (const slug in titleData) {
+      if (titleData[slug].cacheTimestamp && titleData[slug].cacheTimestamp < sevenDaysAgo) {
+        delete titleData[slug];
+        modified = true;
+      }
+    }
+    
+    if (modified) {
+      await chrome.storage.local.set({ titleData });
+    }
+  }
+
   // Проверка обновлений при открытии popup (с задержкой 2 секунды)
   setTimeout(checkForUpdatesPopup, 2000);
 
