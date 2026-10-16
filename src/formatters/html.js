@@ -1322,6 +1322,12 @@ class HtmlFormatter extends BaseFormatter {
         border-radius: 4px;
         opacity: 0;
         transition: opacity 1.2s ease-in-out;
+        min-height: 200px;
+        background-color: #f0f0f0;
+        aspect-ratio: auto; /* Будет переопределено из JS */
+      }
+      body.dark-theme img {
+        background-color: #2a2a2a;
       }
       img.loaded {
         opacity: 1;
@@ -1347,6 +1353,7 @@ class HtmlFormatter extends BaseFormatter {
         let zip = null;
         const imageUrls = new Map(); // Храним URL для очистки
         const unloadTimers = new Map(); // Таймеры для отложенной выгрузки
+        const imageAspectRatios = new Map(); // Храним aspect ratio для placeholder
 
         // Загрузка images.zip из Base64
         async function loadImagesZip() {
@@ -1366,6 +1373,7 @@ class HtmlFormatter extends BaseFormatter {
         // Lazy Loading картинок из ZIP с очисткой памяти
         function loadImagesFromZip() {
           const images = document.querySelectorAll('img[data-zip-path]');
+
           const observer = new IntersectionObserver(function(entries) {
             entries.forEach(function(entry) {
               const img = entry.target;
@@ -1380,7 +1388,7 @@ class HtmlFormatter extends BaseFormatter {
                 }
                 loadSingleImage(img, zipPath);
               } else {
-                // Картинка вышла из viewport - отложенная очистка памяти (3 секунды)
+                // Картинка вышла из viewport - отложенная очистка памяти
                 if (unloadTimers.has(zipPath)) {
                   clearTimeout(unloadTimers.get(zipPath));
                 }
@@ -1388,15 +1396,15 @@ class HtmlFormatter extends BaseFormatter {
                   if (img.src && imageUrls.has(zipPath)) {
                     URL.revokeObjectURL(imageUrls.get(zipPath));
                     imageUrls.delete(zipPath);
-                    img.src = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
+                    img.src = ''; // Очищаем src но оставляем элемент с aspect-ratio
                     img.classList.remove('loaded'); // Убираем класс для повторной анимации
                   }
                   unloadTimers.delete(zipPath);
-                }, 3000);
+                }, 5000); // 5 секунд
                 unloadTimers.set(zipPath, timer);
               }
             });
-          }, { rootMargin: '200px' });
+          }, { rootMargin: '3000px' }); // Фиксированный большой запас для всех режимов
 
           images.forEach(function(img) {
             observer.observe(img);
@@ -1407,17 +1415,29 @@ class HtmlFormatter extends BaseFormatter {
         async function loadSingleImage(img, zipPath) {
           try {
             if (!zip) return;
-            // Если уже загружена - пропускаем
-            if (imageUrls.has(zipPath)) return;
+
+            // Устанавливаем запомненный aspect ratio если есть
+            if (imageAspectRatios.has(zipPath)) {
+              img.style.aspectRatio = imageAspectRatios.get(zipPath);
+            }
+
+            // Если уже загружена - освобождаем старый URL перед загрузкой нового
+            if (imageUrls.has(zipPath)) {
+              URL.revokeObjectURL(imageUrls.get(zipPath));
+            }
 
             const file = await zip.file(zipPath).async('blob');
             const url = URL.createObjectURL(file);
             imageUrls.set(zipPath, url);
             img.src = url;
 
-            // Добавляем анимацию появления
+            // Добавляем анимацию появления и запоминаем aspect ratio
             img.onload = function() {
               img.classList.add('loaded');
+              // Запоминаем aspect ratio для placeholder
+              const aspectRatio = img.naturalWidth / img.naturalHeight;
+              imageAspectRatios.set(zipPath, aspectRatio);
+              img.style.aspectRatio = aspectRatio;
             };
           } catch (error) {
             console.error('Ошибка загрузки картинки ' + zipPath + ':', error);
@@ -1519,12 +1539,19 @@ class HtmlFormatter extends BaseFormatter {
             localStorage.setItem('html-last-chapter', index);
             window.scrollTo(0, 0);
 
-            // Загружаем картинки для активной главы сразу (без lazy loading)
-            const activeChapter = chapters[index];
-            const images = activeChapter.querySelectorAll('img[data-zip-path]');
-            images.forEach(function(img) {
-              const zipPath = img.getAttribute('data-zip-path');
-              loadSingleImage(img, zipPath);
+            // Preload: загружаем текущую + предыдущую + следующую главу
+            const chaptersToLoad = [];
+            chaptersToLoad.push(index); // Текущая
+            if (index > 0) chaptersToLoad.push(index - 1); // Предыдущая
+            if (index < totalChapters - 1) chaptersToLoad.push(index + 1); // Следующая
+
+            chaptersToLoad.forEach(function(chapterIndex) {
+              const chapter = chapters[chapterIndex];
+              const images = chapter.querySelectorAll('img[data-zip-path]');
+              images.forEach(function(img) {
+                const zipPath = img.getAttribute('data-zip-path');
+                loadSingleImage(img, zipPath);
+              });
             });
           }
         }
