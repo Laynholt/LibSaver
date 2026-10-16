@@ -1454,6 +1454,7 @@ class HtmlFormatter extends BaseFormatter {
 
         // Применение настроек
         function applySettings() {
+          const oldReadingMode = readingMode;
           const fontFamily = document.getElementById('font-family').value;
           const fontSize = document.getElementById('font-size').value;
           const containerWidth = document.getElementById('container-width').value;
@@ -1475,10 +1476,18 @@ class HtmlFormatter extends BaseFormatter {
             document.querySelector('.content-wrapper').classList.add('page-mode');
             document.getElementById('bottom-nav').style.display = 'flex';
             document.getElementById('nav-buttons-top').style.display = 'flex';
+            // Переключение на листание - показываем текущую главу
+            if (oldReadingMode !== 'page') {
+              showChapter(currentChapterIndex);
+            }
           } else {
             document.querySelector('.content-wrapper').classList.remove('page-mode');
             document.getElementById('bottom-nav').style.display = 'none';
             document.getElementById('nav-buttons-top').style.display = 'flex';
+            // Переключение на скроллинг - скроллим к текущей главе
+            if (oldReadingMode === 'page') {
+              scrollToChapter(currentChapterIndex);
+            }
           }
 
           // Сохранение в localStorage
@@ -1509,6 +1518,14 @@ class HtmlFormatter extends BaseFormatter {
             updateProgress();
             localStorage.setItem('html-last-chapter', index);
             window.scrollTo(0, 0);
+
+            // Загружаем картинки для активной главы сразу (без lazy loading)
+            const activeChapter = chapters[index];
+            const images = activeChapter.querySelectorAll('img[data-zip-path]');
+            images.forEach(function(img) {
+              const zipPath = img.getAttribute('data-zip-path');
+              loadSingleImage(img, zipPath);
+            });
           }
         }
 
