@@ -863,15 +863,19 @@ class HtmlFormatter extends BaseFormatter {
     let content = '<div class="book-container">';
 
     // Плавающая панель управления в левом верхнем углу
-    content += '<div class="floating-controls" id="floating-controls">';
+    content += '<div class="floating-controls" id="floating-controls" data-position="top-left">';
+    content += '<div class="panel-group info-group">';
     content += '<button class="btn-float" id="btn-settings" title="Настройки"><i class="fas fa-cog"></i></button>';
     content += '<button class="btn-float" id="btn-toc" title="Оглавление"><i class="fas fa-bars"></i></button>';
     content += '<button class="btn-float" id="btn-covers" title="Галерея обложек"><i class="fas fa-images"></i></button>';
     content += '<button class="btn-float" id="btn-info" title="Информация о произведении"><i class="fas fa-info-circle"></i></button>';
+    content += '</div>';
     content += '<div class="divider"></div>';
+    content += '<div class="panel-group nav-group">';
     content += '<button class="btn-float" id="btn-prev" title="Предыдущая глава"><i class="fas fa-chevron-left"></i></button>';
     content += '<span class="chapter-progress" id="chapter-progress">1/' + chapters.length + '</span>';
     content += '<button class="btn-float" id="btn-next" title="Следующая глава"><i class="fas fa-chevron-right"></i></button>';
+    content += '</div>';
     content += '</div>';
 
     // Модальное окно оглавления
@@ -895,6 +899,12 @@ class HtmlFormatter extends BaseFormatter {
     content += '<div class="setting-group"><label>Режим чтения:</label><select id="reading-mode">';
     content += '<option value="scroll">Скроллинг</option>';
     content += '<option value="page">Листание</option>';
+    content += '</select></div>';
+    content += '<div class="setting-group"><label>Положение панели:</label><select id="panel-position">';
+    content += '<option value="top-left">Верхний левый угол</option>';
+    content += '<option value="top-right">Верхний правый угол</option>';
+    content += '<option value="bottom-left">Нижний левый угол</option>';
+    content += '<option value="bottom-right">Нижний правый угол</option>';
     content += '</select></div>';
     content += '<div class="setting-group"><label>Выравнивание текста:</label><select id="text-align">';
     content += '<option value="justify">По ширине</option>';
@@ -1134,6 +1144,63 @@ class HtmlFormatter extends BaseFormatter {
         padding: var(--spacing-sm);
         z-index: 1000;
         box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+        opacity: 1;
+        transition: opacity 0.3s ease-in-out;
+      }
+
+      .floating-controls.inactive {
+        opacity: 0.1;
+      }
+
+      .panel-group {
+        display: flex;
+        align-items: center;
+        gap: var(--spacing-sm);
+      }
+
+      /* Позиции панели */
+      .floating-controls[data-position="top-left"] {
+        top: 20px;
+        left: 20px;
+        flex-direction: row;
+      }
+
+      .floating-controls[data-position="top-right"] {
+        top: 20px;
+        right: 20px;
+        left: auto;
+        flex-direction: row-reverse;
+      }
+
+      .floating-controls[data-position="top-right"] .nav-group {
+        flex-direction: row;
+      }
+
+      .floating-controls[data-position="top-right"] .info-group {
+        flex-direction: row-reverse;
+      }
+
+      .floating-controls[data-position="bottom-left"] {
+        bottom: 20px;
+        left: 20px;
+        top: auto;
+        flex-direction: row;
+      }
+
+      .floating-controls[data-position="bottom-right"] {
+        bottom: 20px;
+        right: 20px;
+        top: auto;
+        left: auto;
+        flex-direction: row-reverse;
+      }
+
+      .floating-controls[data-position="bottom-right"] .nav-group {
+        flex-direction: row;
+      }
+
+      .floating-controls[data-position="bottom-right"] .info-group {
+        flex-direction: row-reverse;
       }
 
       .btn-float {
@@ -1470,6 +1537,7 @@ class HtmlFormatter extends BaseFormatter {
         const imageUrls = new Map();
         const unloadTimers = new Map();
         const imageAspectRatios = new Map();
+        let panelInactivityTimer = null; // Таймер для прозрачности панели
 
         // Инициализация siteType
         const siteType = '${siteTypeSafe}';
@@ -1567,6 +1635,7 @@ class HtmlFormatter extends BaseFormatter {
           const lastChapter = localStorage.getItem('html-last-chapter') || '0';
           readingMode = localStorage.getItem('html-reading-mode') || 'scroll';
           const textAlign = localStorage.getItem('html-text-align') || 'justify';
+          const panelPosition = localStorage.getItem('html-panel-position') || 'top-left';
 
           document.getElementById('font-family').value = fontFamily;
           document.getElementById('font-size').value = fontSize;
@@ -1576,6 +1645,7 @@ class HtmlFormatter extends BaseFormatter {
           document.getElementById('theme').value = theme;
           document.getElementById('reading-mode').value = readingMode;
           document.getElementById('text-align').value = textAlign;
+          document.getElementById('panel-position').value = panelPosition;
 
           applySettings();
           currentChapterIndex = parseInt(lastChapter);
@@ -1596,10 +1666,12 @@ class HtmlFormatter extends BaseFormatter {
           const theme = document.getElementById('theme').value;
           readingMode = document.getElementById('reading-mode').value;
           const textAlign = document.getElementById('text-align').value;
+          const panelPosition = document.getElementById('panel-position').value;
 
           // Применяем шрифт только к контенту и заголовку
           const contentWrapper = document.querySelector('.content-wrapper');
           const bookHeader = document.querySelector('.book-header');
+          const floatingControls = document.getElementById('floating-controls');
           contentWrapper.style.fontFamily = fontFamily;
           contentWrapper.style.fontSize = fontSize + 'px';
           contentWrapper.style.textAlign = textAlign;
@@ -1608,6 +1680,11 @@ class HtmlFormatter extends BaseFormatter {
             bookHeader.style.fontSize = fontSize + 'px';
           }
           contentWrapper.style.maxWidth = containerWidth + '%';
+
+          // Применяем положение панели
+          if (floatingControls) {
+            floatingControls.setAttribute('data-position', panelPosition);
+          }
 
           // Моментальная смена темы без анимации
           if (theme === 'dark') {
@@ -1634,6 +1711,7 @@ class HtmlFormatter extends BaseFormatter {
           localStorage.setItem('html-theme', theme);
           localStorage.setItem('html-reading-mode', readingMode);
           localStorage.setItem('html-text-align', textAlign);
+          localStorage.setItem('html-panel-position', panelPosition);
         }
 
         // Скролл к главе
@@ -1843,10 +1921,30 @@ class HtmlFormatter extends BaseFormatter {
         });
         document.getElementById('theme').addEventListener('change', applySettings);
         document.getElementById('reading-mode').addEventListener('change', applySettings);
+        document.getElementById('panel-position').addEventListener('change', applySettings);
         document.getElementById('text-align').addEventListener('change', applySettings);
 
         // Скролл
         window.addEventListener('scroll', handleScroll);
+
+        // Логика прозрачности панели
+        function resetPanelInactivity() {
+          const panel = document.getElementById('floating-controls');
+          if (panel) {
+            panel.classList.remove('inactive');
+            if (panelInactivityTimer) {
+              clearTimeout(panelInactivityTimer);
+            }
+            panelInactivityTimer = setTimeout(function() {
+              panel.classList.add('inactive');
+            }, 10000); // 10 секунд неактивности
+          }
+        }
+
+        // Инициализация отслеживания активности панели
+        document.getElementById('floating-controls').addEventListener('mouseenter', resetPanelInactivity);
+        document.getElementById('floating-controls').addEventListener('mouseleave', resetPanelInactivity);
+        resetPanelInactivity();
 
         // Инициализация
         loadImagesZip();
