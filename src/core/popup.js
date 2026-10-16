@@ -98,19 +98,19 @@ async function syncOpenWindows() {
   for (const win of windows) {
     for (const tab of win.tabs) {
       if (tab.url) {
-        if (tab.url.includes('settings.html')) {
+        if (tab.url === chrome.runtime.getURL('html/settings.html')) {
           foundWindow = 'settings';
           break;
-        } else if (tab.url.includes('prepare.html')) {
+        } else if (tab.url === chrome.runtime.getURL('html/prepare.html')) {
           foundWindow = 'prepare';
           break;
-        } else if (tab.url.includes('chapters.html')) {
+        } else if (tab.url === chrome.runtime.getURL('html/chapters.html')) {
           foundWindow = 'chapters';
           break;
-        } else if (tab.url.includes('metadata.html')) {
+        } else if (tab.url === chrome.runtime.getURL('html/metadata.html')) {
           foundWindow = 'metadata';
           break;
-        } else if (tab.url.includes('covers.html')) {
+        } else if (tab.url === chrome.runtime.getURL('html/covers.html')) {
           foundWindow = 'covers';
           break;
         }
@@ -494,24 +494,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Удаляем старый downloadData при открытии popup (предотвращаем накопление мусора)
   chrome.storage.local.remove('downloadData');
 
-  // Очищаем старые titleData (старше 7 дней) для предотвращения мусора
-  const result = await chrome.storage.local.get(['titleData']);
-  if (result.titleData) {
-    const titleData = result.titleData;
-    const sevenDaysAgo = Date.now() - (7 * 24 * 60 * 60 * 1000);
-    let modified = false;
-    
-    for (const slug in titleData) {
-      if (titleData[slug].cacheTimestamp && titleData[slug].cacheTimestamp < sevenDaysAgo) {
-        delete titleData[slug];
-        modified = true;
-      }
-    }
-    
-    if (modified) {
-      await chrome.storage.local.set({ titleData });
-    }
-  }
+  // titleData содержит пользовательские правки: срок кэша не должен удалять их.
 
   // Проверка обновлений при открытии popup (с задержкой 2 секунды)
   setTimeout(checkForUpdatesPopup, 2000);
@@ -643,17 +626,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (chaptersResult && chaptersResult.success) {
       const newSlug = chaptersResult.slug;
 
-      // Проверяем, изменился ли тайтл
       const result = await chrome.storage.local.get(['currentSlug', 'titleData', 'originalTitleData']);
-      const oldSlug = result.currentSlug;
-      if (oldSlug !== newSlug) {
-        // Очищаем данные для старой книги
-        const titleData = result.titleData || {};
-        const originalTitleData = result.originalTitleData || {};
-        delete titleData[oldSlug];
-        delete originalTitleData[oldSlug];
-        await chrome.storage.local.set({ titleData, originalTitleData });
-      }
       await chrome.storage.local.set({ currentSlug: newSlug });
       currentSlug = newSlug;
 

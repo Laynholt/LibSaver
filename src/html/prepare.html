@@ -47,7 +47,7 @@
       <!-- Прогресс-бар и кнопки управления (появляются при загрузке) -->
       <div class="download-toolbar" id="download-toolbar" style="display: none;">
         <div class="progress-bar-wrapper">
-          <div class="progress-counter" id="progress-text">0 / 0 глав</div>
+          <div class="progress-counter" id="progress-text" role="status" aria-live="polite">0 / 0 глав</div>
           <div class="progress-bar-container">
             <div class="progress-bar" id="progress-bar"></div>
           </div>
@@ -67,18 +67,13 @@
       </div>
       
       <div class="format-selector">
-        <div class="format-select" id="format-select">EPUB</div>
-        <div class="format-dropdown" id="format-dropdown" style="display: none;">
-          <!-- Options will be populated dynamically by prepare.js -->
-        </div>
+        <select class="format-select" id="format-select" aria-label="Формат файла"></select>
       </div>
       <div class="image-server-selector" id="image-server-selector" style="display: none;">
-        <div class="server-select" id="server-select">Сжатия</div>
-        <div class="server-dropdown" id="server-dropdown" style="display: none;">
-          <div class="server-option" data-value="normal">Первый</div>
-          <div class="server-option" data-value="normal">Второй</div>
-          <div class="server-option selected" data-value="compressed">Сжатия</div>
-        </div>
+        <select class="server-select" id="server-select" aria-label="Сервер изображений">
+          <option value="normal">Оригинальный</option>
+          <option value="compressed" selected>Сжатия</option>
+        </select>
       </div>
       <div class="text-only-toggle" id="text-only-toggle" style="display: none;">
         <label class="checkbox-group">

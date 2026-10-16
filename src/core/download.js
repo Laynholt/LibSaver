@@ -452,7 +452,7 @@ async function fetchWithRetry(url, options = {}, maxRetries = 5) {
         handleRateLimitError();
 
         if (attempt < maxRetries) {
-          const delay = delays[attempt];
+          const delay = delays[Math.min(attempt, delays.length - 1)];
           addLog(`Rate limited (429), waiting ${delay/1000}s before retry ${attempt + 1}/${maxRetries + 1}`);
           await new Promise(resolve => setTimeout(resolve, delay));
           continue;
@@ -464,17 +464,21 @@ async function fetchWithRetry(url, options = {}, maxRetries = 5) {
       if (response.status >= 500) {
         handleRateLimitError();
         addLog(`Server error (${response.status}), adaptive speed reduced`, true);
+      } else if (response.status !== 408) {
+        // 404/403 и прочие 4xx повтор не исправит — не ждём зря
+        throw Object.assign(new Error(`HTTP ${response.status}: ${response.statusText}`), { noRetry: true });
       }
 
       if (attempt < maxRetries) {
-        const delay = delays[attempt];
+        const delay = delays[Math.min(attempt, delays.length - 1)];
         addLog(`Request failed (${response.status}), retrying in ${delay/1000}s (attempt ${attempt + 1}/${maxRetries + 1})`);
         await new Promise(resolve => setTimeout(resolve, delay));
       }
     } catch (error) {
+      if (error.noRetry) throw error;
       lastError = error;
       if (attempt < maxRetries) {
-        const delay = delays[attempt];
+        const delay = delays[Math.min(attempt, delays.length - 1)];
         addLog(`Network error (${error.message}), retrying in ${delay/1000}s (attempt ${attempt + 1}/${maxRetries + 1})`);
         await new Promise(resolve => setTimeout(resolve, delay));
       }
@@ -503,6 +507,15 @@ function resetDownloadState() {
     nextPauseAfterChapters = 0;
     imagesSinceLastPause = 0;
     
+    currentErrorChapter = null;
+    currentErrorImage = null;
+    currentError = null;
+    isWaitingForUser = false;
+    shouldRetryChapter = false;
+    shouldRetryImage = false;
+    skippedChapters = [];
+    userDecisionResolve = null;
+
     // Очищаем сохраненный blob
     savedBlob = null;
     
@@ -516,6 +529,11 @@ function resetDownloadState() {
     if (progressBar) progressBar.style.width = '0%';
     if (progressText) progressText.textContent = '0 / 0 глав';
     if (btnDownloadFile) btnDownloadFile.style.display = 'none';
+    if (btnPauseElement) {
+        btnPauseElement.style.display = '';
+        btnPauseElement.innerHTML = '<i class="fa-solid fa-pause"></i>';
+        btnPauseElement.title = 'Пауза';
+    }
 
     // Очищаем лог
     if (logContainer) logContainer.innerHTML = '';
@@ -523,10 +541,9 @@ function resetDownloadState() {
 
 // Функция для запуска загрузки (вызывается из prepare.js)
 async function startDownload() {
-    // Очистка состояния перед новой загрузкой
-    resetDownloadState();
-
-    chrome.storage.local.get(['downloadData', 'rateLimit', 'metadataFieldOrder', 'fieldLabels', 'debugLogging', 'disableToc', 'titleData', 'currentSlug', 'speedMode', 'txtImageMarker', 'pdfFont', 'pdfFontSize', 'pdfPageSize', 'pdfLineSpacing', 'pdfParagraphSpacing', 'tocFormat', 'customTocFormat', 'hideChapterName', 'hideVolumeNumber', 'generateComicInfo'], async (result) => {
+    try {
+        resetDownloadState();
+        const result = await chrome.storage.local.get(['downloadData', 'rateLimit', 'metadataFieldOrder', 'fieldLabels', 'debugLogging', 'disableToc', 'titleData', 'currentSlug', 'speedMode', 'txtImageMarker', 'pdfFont', 'pdfFontSize', 'pdfPageSize', 'pdfLineSpacing', 'pdfParagraphSpacing', 'tocFormat', 'customTocFormat', 'hideChapterName', 'hideVolumeNumber', 'generateComicInfo']);
         // Устанавливаем режим детального логирования из настроек
         debugMode = result.debugLogging || false;
 
@@ -544,8 +561,7 @@ async function startDownload() {
         }
         
         if (!result.downloadData) {
-            addLog('Ошибка: данные для загрузки не найдены', true);
-            return;
+            throw new Error('Данные для загрузки не найдены');
         }
         options = result.downloadData;
         chaptersToDownload = options.chapters;
@@ -562,7 +578,7 @@ async function startDownload() {
         options.metadataFieldOrder = result.metadataFieldOrder || null;
         
         // Добавляем настройки выбора перевода из titleData
-        const currentSlug = result.currentSlug;
+        const currentSlug = options.slug;
         if (result.titleData && result.titleData[currentSlug]) {
             options.chapterBranchOverrides = result.titleData[currentSlug].chapterBranchOverrides || {};
             options.translatorPriority = result.titleData[currentSlug].translatorPriority || [];
@@ -623,6 +639,7 @@ async function startDownload() {
         }
         
         // Помечаем все отфильтрованные главы как выбранные для форматтеров
+        if (chaptersToDownload.length === 0) throw new Error('Выберите хотя бы одну главу');
         chaptersToDownload.forEach(ch => ch.selected = true);
 
         // Переформатируем заголовки глав согласно настройкам перед скачиванием
@@ -638,124 +655,127 @@ async function startDownload() {
         // Обновляем progressText с правильным количеством глав
         if (progressText) progressText.textContent = `0 / ${chaptersToDownload.length} глав`;
 
-        try {
-            // Используем фабрику форматтеров для генерации файла
-            const formatterOptions = {
-                ...options,
-                format: options.selectedFormat,
-                // Передаем функции для RateLimiter и статистики
-                trackRequest: trackRequest,
-                addLog: addLog,
-                updateProgress: updateProgress,
-                incrementErrorCount: window.incrementErrorCount,
-                incrementSkippedImagesCount: window.incrementSkippedImagesCount,
-                addFileSize: window.addFileSize,
-                updateChapterIndex: window.updateChapterIndex,
-                recordChapterTime: window.recordChapterTime,
-                debug: debugMode, // Передаем флаг debug
-                totalChapters: chaptersToDownload.length,
-                speedMode: window.getSpeedMode ? window.getSpeedMode() : false, // Передаем флаг режима ускорения
-                // Передаем настройки сжатия изображений
-                resizeMethod: options.resizeMethod || 'MIN_SIDE',
-                adaptiveRatio: options.adaptiveRatio || 3,
-                jpegQuality: options.jpegQuality || 1.0,
-                imageFormat: options.imageFormat || 'original',
-                pdfImageFormat: options.pdfImageFormat || 'original-png',
-                pdfJpegQuality: options.pdfJpegQuality || 1.0,
-                // Передаем настройки TXT
-                txtImageMarker: options.settings.txtImageMarker || 'numbered',
-                // Передаем настройки заголовков
-                tocFormat: options.settings.tocFormat || 'default',
-                customTocFormat: options.settings.customTocFormat || '',
-                hideChapterName: options.settings.hideChapterName || false,
-                hideVolumeNumber: options.settings.hideVolumeNumber || false,
-                // Передаем настройку генерации ComicInfo.xml
-                generateComicInfo: result.generateComicInfo !== false,
-                // Передаем siteType для определения типа контента
-                siteType: options.siteType,
-                // Передаем параметры для manga
-                tabId: options.tabId,
-                slug: options.slug,
-                imageServer: options.imageServer || 'normal',
-                loadChapterPages: options.loadChapterPages,
-                siteType: options.siteType,
-                // Передаем обработчик ошибок глав
-                onChapterError: handleChapterError,
-                // Передаем обработчик ошибок картинок (для манги)
-                onImageError: handleImageError,
-                // Передаем функцию для регистрации глав старого формата
-                addOldFormatChapter: window.addOldFormatChapter,
-                // Передаем оригинальные метаданные из API для fallback в названиях файлов
-                originalMetadata: options.originalMetadata,
-                // Передаем режим отладки для детальной статистики
-                debug: debugMode,
-                // Передаем callback для логирования переводчиков
-                onTranslatorSelected: onTranslatorSelected
-            };
-            
-            const formatter = getFormatter(selectedFormat, formatterOptions);
-            const { blob, filename } = await formatter.format(chaptersToDownload, options.metadata);
+        // Используем фабрику форматтеров для генерации файла
+        const formatterOptions = {
+            ...options,
+            format: options.selectedFormat,
+            // Передаем функции для RateLimiter и статистики
+            trackRequest: trackRequest,
+            addLog: addLog,
+            updateProgress: updateProgress,
+            incrementErrorCount: window.incrementErrorCount,
+            incrementSkippedImagesCount: window.incrementSkippedImagesCount,
+            addFileSize: window.addFileSize,
+            updateChapterIndex: window.updateChapterIndex,
+            recordChapterTime: window.recordChapterTime,
+            debug: debugMode, // Передаем флаг debug
+            totalChapters: chaptersToDownload.length,
+            speedMode: window.getSpeedMode ? window.getSpeedMode() : false, // Передаем флаг режима ускорения
+            // Передаем настройки сжатия изображений
+            resizeMethod: options.resizeMethod || 'MIN_SIDE',
+            adaptiveRatio: options.adaptiveRatio || 3,
+            jpegQuality: options.jpegQuality || 1.0,
+            imageFormat: options.imageFormat || 'original',
+            pdfImageFormat: options.pdfImageFormat || 'original-png',
+            pdfJpegQuality: options.pdfJpegQuality || 1.0,
+            // Передаем настройки TXT
+            txtImageMarker: options.settings.txtImageMarker || 'numbered',
+            // Передаем настройки заголовков
+            tocFormat: options.settings.tocFormat || 'default',
+            customTocFormat: options.settings.customTocFormat || '',
+            hideChapterName: options.settings.hideChapterName || false,
+            hideVolumeNumber: options.settings.hideVolumeNumber || false,
+            // Передаем настройку генерации ComicInfo.xml
+            generateComicInfo: result.generateComicInfo !== false,
+            // Передаем siteType для определения типа контента
+            siteType: options.siteType,
+            // Передаем параметры для manga
+            tabId: options.tabId,
+            slug: options.slug,
+            imageServer: options.imageServer || 'normal',
+            loadChapterPages: options.loadChapterPages,
+            siteType: options.siteType,
+            // Передаем обработчик ошибок глав
+            onChapterError: handleChapterError,
+            // Передаем обработчик ошибок картинок (для манги)
+            onImageError: handleImageError,
+            // Передаем функцию для регистрации глав старого формата
+            addOldFormatChapter: window.addOldFormatChapter,
+            // Передаем оригинальные метаданные из API для fallback в названиях файлов
+            originalMetadata: options.originalMetadata,
+            // Передаем режим отладки для детальной статистики
+            debug: debugMode,
+            // Передаем callback для логирования переводчиков
+            onTranslatorSelected: onTranslatorSelected
+        };
+        
+        const formatter = getFormatter(selectedFormat, formatterOptions);
+        const { blob, filename } = await formatter.format(chaptersToDownload, options.metadata);
 
-            // Устанавливаем точный размер файла после финализации
-            setExactFileSize(blob.size);
-            updateStatisticsDisplay();
-            
-            // Сохраняем blob для повторной загрузки
-            savedBlob = { content: blob, fileName: filename };
-            
-            saveAs(blob, filename);
+        // Устанавливаем точный размер файла после финализации
+        setExactFileSize(blob.size);
+        updateStatisticsDisplay();
+        
+        // Сохраняем blob для повторной загрузки
+        savedBlob = { content: blob, fileName: filename };
+        
+        saveAs(blob, filename);
 
-            // Устанавливаем 100% после завершения
-            progressBar.style.width = '100%';
-            progressText.textContent = "Загрузка завершена!";
+        // Устанавливаем 100% после завершения
+        progressBar.style.width = '100%';
+        const skippedImages = window.getStatisticsValue?.('skippedImagesCount') || 0;
+        const skippedCount = Math.max(skippedChapters.length, window.getStatisticsValue?.('skippedChaptersCount') || 0);
+        const downloadedCount = chaptersToDownload.length - skippedCount;
+        progressText.textContent = skippedCount || skippedImages
+            ? `Готово с пропусками: ${downloadedCount} / ${chaptersToDownload.length} глав; пропущено картинок: ${skippedImages}`
+            : `Загрузка завершена: ${downloadedCount} / ${chaptersToDownload.length} глав`;
+        addLog(progressText.textContent);
 
-            // Логируем завершение загрузки
-            addLog("Загрузка завершена!");
 
-            // Логируем переводчики по главам если включен debugMode
-            if (debugMode && chapterTranslators.length > 0) {
-                addLog(`=== ИСПОЛЬЗОВАННЫЕ ПЕРЕВОДЧИКИ ===`);
-                for (const item of chapterTranslators) {
-                    const selectedBranchStr = item.selectedBranchId !== null ? ` (branch_id: ${item.selectedBranchId})` : ' (branch_id: null)';
-                    const downloadedBranchStr = item.downloadedBranchId !== null ? ` (branch_id: ${item.downloadedBranchId})` : ' (branch_id: null)';
-                    addLog(`Выбрано: Том ${item.volume}. Глава ${item.number}. - ${item.selectedTranslator}${selectedBranchStr}`);
-                    addLog(`Скачано: Том ${item.volume}. Глава ${item.number}. - ${item.downloadedTranslator}${downloadedBranchStr}`);
-                }
-                addLog('====================================');
+        // Логируем переводчики по главам если включен debugMode
+        if (debugMode && chapterTranslators.length > 0) {
+            addLog(`=== ИСПОЛЬЗОВАННЫЕ ПЕРЕВОДЧИКИ ===`);
+            for (const item of chapterTranslators) {
+                const selectedBranchStr = item.selectedBranchId !== null ? ` (branch_id: ${item.selectedBranchId})` : ' (branch_id: null)';
+                const downloadedBranchStr = item.downloadedBranchId !== null ? ` (branch_id: ${item.downloadedBranchId})` : ' (branch_id: null)';
+                addLog(`Выбрано: Том ${item.volume}. Глава ${item.number}. - ${item.selectedTranslator}${selectedBranchStr}`);
+                addLog(`Скачано: Том ${item.volume}. Глава ${item.number}. - ${item.downloadedTranslator}${downloadedBranchStr}`);
             }
-
-            // Логируем пропущенные главы
-            if (skippedChapters.length > 0) {
-                addLog("Пропущенные главы:");
-                for (const chapter of skippedChapters) {
-                    if (!chapter) continue;
-                    const volume = chapter.volume || '1';
-                    const number = chapter.number || '?';
-                    const title = chapter.displayTitle || chapter.title || '';
-                    addLog(`Том ${volume}. Глава ${number}. ${title}`);
-                }
-            }
-            
-            // Показываем кнопку Скачать файл
-            if (btnDownloadFile) {
-              btnDownloadFile.style.display = 'flex';
-            }
-
-            // Останавливаем интервал обновления статистики
-            if (statsUpdateInterval) {
-                clearInterval(statsUpdateInterval);
-                statsUpdateInterval = null;
-            }
-
-            // Останавливаем обновление статистики в prepare.js
-            if (window.stopStatisticsUpdate) {
-                window.stopStatisticsUpdate();
-            }
-        } catch (err) {
-            addLog(`Критическая ошибка: ${err.message}`, true);
-            console.error(err);
+            addLog('====================================');
         }
-    });
+
+        // Логируем пропущенные главы
+        if (skippedChapters.length > 0) {
+            addLog("Пропущенные главы:");
+            for (const chapter of skippedChapters) {
+                if (!chapter) continue;
+                const volume = chapter.volume || '1';
+                const number = chapter.number || '?';
+                const title = chapter.displayTitle || chapter.title || '';
+                addLog(`Том ${volume}. Глава ${number}. ${title}`);
+            }
+        }
+        
+        // Показываем кнопку Скачать файл
+        if (btnDownloadFile) {
+          btnDownloadFile.style.display = 'flex';
+        }
+
+    } catch (err) {
+        addLog(`Критическая ошибка: ${err.message}`, true);
+        console.error(err);
+        if (progressText) progressText.textContent = `Ошибка: ${err.message}`;
+        window.restoreDownloadControls?.();
+    } finally {
+        if (statsUpdateInterval) {
+            clearInterval(statsUpdateInterval);
+            statsUpdateInterval = null;
+        }
+        window.stopStatisticsUpdate?.();
+        for (const button of [btnPauseElement, btnRetryElement, btnSkipElement]) {
+            if (button) button.style.display = 'none';
+        }
+    }
 }
 
 // Обработчик кнопки Пауза/Возобновить
@@ -1003,6 +1023,7 @@ function calculateEstimatedTime() {
 
 // Обработчик ошибок глав
 async function handleChapterError(chapter, error, chapterIndex) {
+    currentErrorImage = null;
     currentErrorChapter = chapter;
     currentError = error;
     isWaitingForUser = true;
@@ -1042,6 +1063,8 @@ async function handleChapterError(chapter, error, chapterIndex) {
 
     isWaitingForUser = false;
 
+    currentErrorChapter = null;
+    currentError = null;
     return {
         shouldRetry: shouldRetryChapter,
         shouldSkip: !shouldRetryChapter
@@ -1053,6 +1076,8 @@ let currentErrorImage = null;
 let shouldRetryImage = false;
 
 async function handleImageError(chapter, error, chapterIndex, imageUrl) {
+    currentErrorChapter = null;
+    currentError = null;
     currentErrorImage = { chapter, error, imageUrl };
     isWaitingForUser = true;
     shouldRetryImage = false;
@@ -1092,6 +1117,7 @@ async function handleImageError(chapter, error, chapterIndex, imageUrl) {
 
     isWaitingForUser = false;
 
+    currentErrorImage = null;
     return {
         shouldRetry: shouldRetryImage,
         shouldSkip: !shouldRetryImage

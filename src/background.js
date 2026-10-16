@@ -137,7 +137,7 @@ async function directFetch(request, sendResponse) {
       // Обработка 429 - Too Many Requests
       if (response.status === 429) {
         if (attempt < maxRetries) {
-          const delay = delays[attempt];
+          const delay = delays[Math.min(attempt, delays.length - 1)];
           console.log(`Rate limited (429) for image, waiting ${delay/1000}s before retry ${attempt + 1}/${maxRetries + 1}`);
           await new Promise(resolve => setTimeout(resolve, delay));
           continue;
@@ -149,26 +149,27 @@ async function directFetch(request, sendResponse) {
       // Другие ошибки сервера
       if (response.status >= 500) {
         if (attempt < maxRetries) {
-          const delay = delays[attempt];
+          const delay = delays[Math.min(attempt, delays.length - 1)];
           console.log(`Server error (${response.status}) for image, retrying in ${delay/1000}s (attempt ${attempt + 1}/${maxRetries + 1})`);
           await new Promise(resolve => setTimeout(resolve, delay));
           continue;
         }
       }
 
-      // Другие ошибки клиента
-      if (attempt < maxRetries) {
-        const delay = delays[attempt];
+      // 404/403 и прочие 4xx повтор не исправит — не ждём зря (кроме 408 Request Timeout)
+      if (response.status === 408 && attempt < maxRetries) {
+        const delay = delays[Math.min(attempt, delays.length - 1)];
         console.log(`Request failed (${response.status}) for image, retrying in ${delay/1000}s (attempt ${attempt + 1}/${maxRetries + 1})`);
         await new Promise(resolve => setTimeout(resolve, delay));
         continue;
       }
 
-      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      throw Object.assign(new Error(`HTTP ${response.status}: ${response.statusText}`), { noRetry: true });
     } catch (error) {
       lastError = error;
+      if (error.noRetry) break;
       if (attempt < maxRetries) {
-        const delay = delays[attempt];
+        const delay = delays[Math.min(attempt, delays.length - 1)];
         console.log(`Network error (${error.message}) for image, retrying in ${delay/1000}s (attempt ${attempt + 1}/${maxRetries + 1})`);
         await new Promise(resolve => setTimeout(resolve, delay));
       }

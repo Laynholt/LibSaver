@@ -459,6 +459,11 @@ button:disabled {
   height: 0;
 }
 
+.checkbox-group input:focus-visible ~ .control__indicator {
+  outline: 2px solid var(--text-primary);
+  outline-offset: 3px;
+}
+
 .control__indicator {
   display: inline-flex;
   align-items: center;
