@@ -30,7 +30,6 @@ class HtmlFormatter extends BaseFormatter {
     // Генерируем ZIP с картинками
     const imagesZipBlob = await this.zip.generateAsync({ type: 'blob' });
     const imagesZipBase64 = await this.blobToBase64Pure(imagesZipBlob);
-    console.log('Images ZIP blob сгенерирован, размер:', imagesZipBlob.size);
 
     // Генерируем HTML с images.zip как Base64 внутри
     const htmlContent = await this.generateHTML(filteredChapters, metadata, coversStats, imagesZipBase64);
@@ -1321,6 +1320,11 @@ class HtmlFormatter extends BaseFormatter {
         display: block;
         margin: 1em auto;
         border-radius: 4px;
+        opacity: 0;
+        transition: opacity 1.2s ease-in-out;
+      }
+      img.loaded {
+        opacity: 1;
       }
       .image-placeholder {
         color: #666;
@@ -1341,6 +1345,8 @@ class HtmlFormatter extends BaseFormatter {
         let readingMode = 'scroll';
         let lastScrollY = 0;
         let zip = null;
+        const imageUrls = new Map(); // Храним URL для очистки
+        const unloadTimers = new Map(); // Таймеры для отложенной выгрузки
 
         // Загрузка images.zip из Base64
         async function loadImagesZip() {
@@ -1357,19 +1363,40 @@ class HtmlFormatter extends BaseFormatter {
           }
         }
 
-        // Lazy Loading картинок из ZIP
+        // Lazy Loading картинок из ZIP с очисткой памяти
         function loadImagesFromZip() {
           const images = document.querySelectorAll('img[data-zip-path]');
           const observer = new IntersectionObserver(function(entries) {
             entries.forEach(function(entry) {
+              const img = entry.target;
+              const zipPath = img.getAttribute('data-zip-path');
+
               if (entry.isIntersecting) {
-                const img = entry.target;
-                const zipPath = img.getAttribute('data-zip-path');
+                // Картинка вошла в viewport - загружаем
+                // Отменяем отложенную выгрузку если есть
+                if (unloadTimers.has(zipPath)) {
+                  clearTimeout(unloadTimers.get(zipPath));
+                  unloadTimers.delete(zipPath);
+                }
                 loadSingleImage(img, zipPath);
-                observer.unobserve(img);
+              } else {
+                // Картинка вышла из viewport - отложенная очистка памяти (3 секунды)
+                if (unloadTimers.has(zipPath)) {
+                  clearTimeout(unloadTimers.get(zipPath));
+                }
+                const timer = setTimeout(function() {
+                  if (img.src && imageUrls.has(zipPath)) {
+                    URL.revokeObjectURL(imageUrls.get(zipPath));
+                    imageUrls.delete(zipPath);
+                    img.src = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
+                    img.classList.remove('loaded'); // Убираем класс для повторной анимации
+                  }
+                  unloadTimers.delete(zipPath);
+                }, 3000);
+                unloadTimers.set(zipPath, timer);
               }
             });
-          }, { rootMargin: '100px' });
+          }, { rootMargin: '200px' });
 
           images.forEach(function(img) {
             observer.observe(img);
@@ -1380,9 +1407,18 @@ class HtmlFormatter extends BaseFormatter {
         async function loadSingleImage(img, zipPath) {
           try {
             if (!zip) return;
+            // Если уже загружена - пропускаем
+            if (imageUrls.has(zipPath)) return;
+
             const file = await zip.file(zipPath).async('blob');
             const url = URL.createObjectURL(file);
+            imageUrls.set(zipPath, url);
             img.src = url;
+
+            // Добавляем анимацию появления
+            img.onload = function() {
+              img.classList.add('loaded');
+            };
           } catch (error) {
             console.error('Ошибка загрузки картинки ' + zipPath + ':', error);
             img.outerHTML = '<span class="image-placeholder">[Не удалось загрузить картинку]</span>';
