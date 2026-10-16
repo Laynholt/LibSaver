@@ -1287,10 +1287,11 @@ class BaseFormatter {
 
   // HTML главы пишут пользователи сайта: в итоговый файл не пускаем скрипты, обработчики и javascript:-ссылки
   sanitizeChapterDom(root) {
-    root.querySelectorAll('script,style,iframe,frame,frameset,object,embed,applet,form,link,meta,base,template,noscript').forEach(el => el.remove());
+    root.querySelectorAll('script,style,iframe,frame,frameset,object,embed,applet,form,link,meta,base,template,noscript,animate,set').forEach(el => el.remove());
     for (const el of root.querySelectorAll('*')) {
       for (const { name, value } of Array.from(el.attributes)) {
-        if (/^on/i.test(name) || (/^(href|src|xlink:href|action|formaction|srcdoc)$/i.test(name) && /^\s*(javascript|vbscript|data:text)/i.test(value))) {
+        // Браузер игнорирует пробелы и управляющие символы в схеме URL (java\tscript:), поэтому убираем их перед проверкой
+        if (/^on/i.test(name) || (/^(href|src|xlink:href|action|formaction|srcdoc)$/i.test(name) && /^(javascript|vbscript|data:text)/i.test(value.replace(/[\u0000- ]/g, '')))) {
           el.removeAttribute(name);
         }
       }

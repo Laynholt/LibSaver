@@ -334,13 +334,17 @@ test('chapter sanitizer drops scripts, event handlers and javascript: links but 
   const img = fakeElement('IMG', { src: 'https://img.example/1.jpg', alt: 'x', onerror: 'alert(1)' });
   const inline = fakeElement('IMG', { src: 'data:image/png;base64,AAAA' });
   const link = fakeElement('A', { href: 'javascript:alert(1)', title: 't' });
-  const dom = fakeChapterDom({ scripts: [script, frame], elements: [img, inline, link] });
+  const tabbed = fakeElement('A', { href: ' java\tscr\nipt:alert(1)' });
+  const animate = fakeElement('ANIMATE', { attributeName: 'href', to: 'javascript:alert(1)' });
+  const dom = fakeChapterDom({ scripts: [script, frame, animate], elements: [img, inline, link, tabbed] });
   const formatter = formatterWithDom('src/formatters/html.js', 'HtmlFormatter', dom);
   formatter.sanitizeChapterDom(dom.doc.body);
   assert.ok(script.removed && frame.removed);
   assert.deepEqual(img.attrs, { src: 'https://img.example/1.jpg', alt: 'x' });
   assert.deepEqual(inline.attrs, { src: 'data:image/png;base64,AAAA' });
   assert.deepEqual(link.attrs, { title: 't' });
+  assert.deepEqual(tabbed.attrs, {});
+  assert.ok(animate.removed);
 });
 
 for (const [file, className] of [['src/formatters/epub.js', 'EpubFormatter'], ['src/formatters/html.js', 'HtmlFormatter']]) {
