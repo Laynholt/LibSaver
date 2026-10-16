@@ -946,7 +946,8 @@ class HtmlFormatter extends BaseFormatter {
     for (const chapter of chapters) {
       const title = chapter.displayTitle || 'Глава ' + chapter.number;
       const index = chapters.indexOf(chapter);
-      content += '<div class="chapter" id="ch-' + chapter.volume + '-' + chapter.number + '" data-chapter-index="' + index + '">';
+      const isFirstChapter = index === 0 ? ' first-chapter' : '';
+      content += '<div class="chapter' + isFirstChapter + '" id="ch-' + chapter.volume + '-' + chapter.number + '" data-chapter-index="' + index + '">';
       content += '<h3 class="chapter-title">' + title + '</h3>';
 
       if (chapter.htmlContent) {
@@ -1169,7 +1170,7 @@ class HtmlFormatter extends BaseFormatter {
 
       .book-header {
         text-align: center;
-        padding: 100px 20px 40px;
+        padding: 40px 20px 40px;
         border-bottom: 1px solid var(--border-color);
         margin-bottom: 2em;
       }
@@ -1285,16 +1286,12 @@ class HtmlFormatter extends BaseFormatter {
       .chapter {
         margin-top: 2em;
         padding-top: 1em;
+        border-top: none;
       }
 
       /* Границы между главами только в режиме скроллинга */
-      .content-wrapper:not(.page-mode) .chapter:not(:first-child) {
+      .content-wrapper:not(.page-mode) .chapter:not(.first-chapter) {
         border-top: 1px solid var(--border-color);
-      }
-
-      /* В режиме листания нет границ между главами */
-      .content-wrapper.page-mode .chapter {
-        border-top: none;
       }
 
       .chapter-title {
