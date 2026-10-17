@@ -832,8 +832,7 @@ document.getElementById('btn-save').addEventListener('click', async () => {
   if (oldTocFormat !== settings.tocFormat || oldCustomTocFormat !== settings.customTocFormat ||
       oldHideChapterName !== settings.hideChapterName || oldHideVolumeNumber !== settings.hideVolumeNumber) {
     // Удаляем сохранённые displayTitle из titleData
-    const titleDataResult = await chrome.storage.local.get(['titleData']);
-    const titleData = titleDataResult.titleData || {};
+    const titleData = await getAllTitleData();
     if (titleData) {
       for (const slug in titleData) {
         if (titleData[slug].chapters) {
@@ -842,7 +841,7 @@ document.getElementById('btn-save').addEventListener('click', async () => {
           });
         }
       }
-      await chrome.storage.local.set({ titleData });
+      await setTitleStore({ titleData });
     }
     // Отправляем сообщение для переформатирования в открытых окнах
     chrome.runtime.sendMessage({ action: 'reformatChapters' });

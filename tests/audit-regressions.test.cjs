@@ -21,13 +21,15 @@ function functionSource(file, name) {
   assert.ok(match, `Missing function: ${name}`);
   return text.slice(match.index, text.indexOf('\n}', match.index) + 2);
 }
+// Как chrome.storage.local: отсутствующие ключи не возвращаются, get(null) отдаёт всё
 function storageApi(data) {
   return {
-    get: async keys => structuredClone(Object.fromEntries(keys.map(key => [key, data[key]]))),
+    get: async keys => structuredClone(keys === null ? data : Object.fromEntries([].concat(keys).filter(key => key in data).map(key => [key, data[key]]))),
     set: async values => Object.assign(data, structuredClone(values)),
-    remove: async key => { delete data[key]; }
+    remove: async keys => { for (const key of [].concat(keys)) delete data[key]; }
   };
 }
+const titleStore = source('src/utils/title-store.js');
 function epub() {
   const context = vm.createContext({ crypto, console });
   vm.runInContext(source('src/formatters/base.js') + source('src/formatters/epub.js') + '\nthis.Formatter = EpubFormatter;', context);
@@ -100,38 +102,97 @@ test('EPUB assigns unique IDs and exactly one primary cover', () => {
 });
 
 test('switching titles preserves the previous title edits', async () => {
-  const data = { currentSlug: 'old', titleData: { old: { metadata: { titleRu: 'Edited' }, covers: ['local'], chapterBranchOverrides: { 1: '2_team' } } }, originalTitleData: { old: { chapters: [] } } };
-  const before = structuredClone(data.titleData.old);
+  const data = { currentSlug: 'old', 'titleData:old': { metadata: { titleRu: 'Edited' }, covers: ['local'], chapterBranchOverrides: { 1: '2_team' } }, 'originalTitleData:old': { chapters: [] } };
+  const before = structuredClone(data['titleData:old']);
   const context = vm.createContext({ chaptersResult: { slug: 'new' }, currentSlug: 'old', chrome: { storage: { local: storageApi(data) } } });
+  vm.runInContext(titleStore, context);
   await vm.runInContext('(async () => {' + between('src/core/popup.js', '      const newSlug = chaptersResult.slug;', '      // Загружаем приоритет переводчиков') + '})()', context);
-  assert.deepEqual(data.titleData.old, before);
+  assert.deepEqual(data['titleData:old'], before);
   assert.equal(data.currentSlug, 'new');
 });
 
 test('opening popup preserves old saved edits even after cache expiry', async () => {
-  const data = { titleData: { old: { cacheTimestamp: 1, metadata: { titleRu: 'Edited' }, covers: ['local'] } } };
+  const data = { 'titleData:old': { cacheTimestamp: 1, metadata: { titleRu: 'Edited' }, covers: ['local'] } };
   const before = structuredClone(data);
   const context = vm.createContext({ chrome: { storage: { local: storageApi(data) } } });
   const init = between('src/core/popup.js', '  // Удаляем старый downloadData', '  // Проверка обновлений при открытии popup');
   await vm.runInContext('(async () => {' + init + '})()', context);
-  assert.deepEqual(data.titleData, before.titleData);
+  assert.deepEqual(data['titleData:old'], before['titleData:old']);
 });
 
 test('saving title format clears stale generated titles and notifies consumers', async () => {
   let save;
   const messages = [];
-  const data = { tocFormat: 'default', titleData: { title: { chapters: [{ displayTitle: 'Old' }] } } };
+  const data = { tocFormat: 'default', 'titleData:title': { chapters: [{ displayTitle: 'Old' }] } };
   const context = vm.createContext({
     defaultSiteLinks: {}, wasSaved: false,
     document: { getElementById: id => id === 'btn-save' ? { addEventListener: (_, fn) => save = fn } : { value: id === 'toc-format' ? 'custom' : '1', checked: false } },
     chrome: { storage: { local: storageApi(data) }, runtime: { sendMessage: message => messages.push(message) } },
     window: { close() {} }
   });
+  vm.runInContext(titleStore, context);
   vm.runInContext(between('src/core/settings.js', "document.getElementById('btn-save').addEventListener", '\n});') + '\n});', context);
   await save();
   assert.equal(data.tocFormat, 'custom');
-  assert.equal(data.titleData.title.chapters[0].displayTitle, undefined);
+  assert.equal(data['titleData:title'].chapters[0].displayTitle, undefined);
   assert.ok(messages.some(message => message.action === 'reformatChapters'));
+});
+
+function titleStoreContext(data) {
+  const context = vm.createContext({ chrome: { storage: { local: storageApi(data) } } });
+  vm.runInContext(titleStore, context);
+  return context;
+}
+
+test('title store migrates the legacy shared objects into per-title keys', async () => {
+  const data = {
+    currentSlug: 'a',
+    titleData: { a: { metadata: { titleRu: 'A' } }, b: { metadata: { titleRu: 'stale B' } } },
+    originalTitleData: { a: { chapters: [1] } },
+    'titleData:b': { metadata: { titleRu: 'newer B' } }
+  };
+  const result = await titleStoreContext(data).getTitleStore(['titleData', 'originalTitleData', 'currentSlug']);
+  assert.deepEqual(structuredClone(result), { currentSlug: 'a', titleData: { a: { metadata: { titleRu: 'A' } } }, originalTitleData: { a: { chapters: [1] } } });
+  assert.ok(!('titleData' in data) && !('originalTitleData' in data));
+  assert.deepEqual(data['titleData:a'], { metadata: { titleRu: 'A' } });
+  assert.deepEqual(data['titleData:b'], { metadata: { titleRu: 'newer B' } });
+  assert.deepEqual(data['originalTitleData:a'], { chapters: [1] });
+});
+
+test('title store reads and writes only the requested title', async () => {
+  const data = { currentSlug: 'a', 'titleData:a': { n: 1 }, 'titleData:b': { n: 2 }, siteType: 'manga' };
+  const store = titleStoreContext(data);
+  assert.deepEqual(structuredClone(await store.getTitleStore(['titleData', 'siteType'], 'b')), { siteType: 'manga', titleData: { b: { n: 2 } } });
+  assert.deepEqual(structuredClone(await store.getTitleStore(['titleData', 'originalTitleData'])), { titleData: { a: { n: 1 } }, originalTitleData: {} });
+  await store.setTitleStore({ titleData: { b: { n: 3 } }, originalTitleData: { b: { o: 1 } }, fromIdx: 4 });
+  assert.deepEqual(data, { currentSlug: 'a', 'titleData:a': { n: 1 }, 'titleData:b': { n: 3 }, 'originalTitleData:b': { o: 1 }, siteType: 'manga', fromIdx: 4 });
+  assert.deepEqual(structuredClone(await store.getAllTitleData()), { a: { n: 1 }, b: { n: 3 } });
+  const change = { 'titleData:a': { newValue: { n: 5 } } };
+  assert.equal(store.getTitleChange(change, 'titleData', 'a'), change['titleData:a']);
+  assert.equal(store.getTitleChange(change, 'titleData', 'b'), undefined);
+});
+
+test('title data is only accessed through the title store, which every page using it loads', () => {
+  const scripts = ['src/core/popup.js', 'src/core/prepare.js', 'src/core/download.js', 'src/core/settings.js',
+    'src/editors/chapters.js', 'src/editors/covers.js', 'src/editors/metadata.js', 'src/formatters/cbz.js'];
+  for (const file of scripts) {
+    assert.doesNotMatch(source(file), /chrome\.storage\.local\.(get|set)\([^;]*\b(titleData|originalTitleData)\b/, file);
+  }
+  for (const page of fs.readdirSync(path.join(root, 'src/html')).filter(name => name.endsWith('.html'))) {
+    const html = source(`src/html/${page}`);
+    const firstUser = [...html.matchAll(/<script src="\.\.\/([^"]+)"/g)]
+      .find(([, file]) => !file.includes('title-store') && /\b(getTitleStore|setTitleStore|getAllTitleData|getTitleChange)\(/.test(source(`src/${file}`)));
+    if (firstUser) {
+      const store = html.indexOf('utils/title-store.js');
+      assert.ok(store >= 0 && store < firstUser.index, page);
+    }
+  }
+});
+
+test('popup requests chapters, metadata and covers together without artificial waits', () => {
+  const start = between('src/core/popup.js', "document.addEventListener('DOMContentLoaded'", '// Функция для открытия popup окна');
+  assert.match(start, /Promise\.all\(\[\s*trackProgress\(loadChapters\(activeTab\.id\)\),\s*trackProgress\(loadMetadata\(activeTab\.id\)\),\s*trackProgress\(loadCovers\(activeTab\.id, urlSlug\)\)/);
+  assert.doesNotMatch(start, /await (loadChapters|loadMetadata|loadCovers)\(|setTimeout\(resolve|\b(fast|slowSmooth|ready|animate)Progress\(/);
 });
 
 test('window detection ignores unrelated websites and recognizes own page', async () => {
@@ -195,7 +256,7 @@ function downloadHarness({ fail = false, partial = false, storageFailure = false
     statsUpdateInterval: null, skippedChapters: [],
     document: { getElementById: element, querySelectorAll: () => checkboxes },
     resetDownloadState: noop, calculateInitialSpeed: () => 60, updateStatisticsDisplay: noop,
-    formatChapterTitle: () => 'Test', trackRequest: noop, updateProgress: noop,
+    formatChapterTitle: () => 'Test', trackRequest: noop, updateProgress: noop, getTitleStore: async () => ({ titleData: {} }),
     handleChapterError: noop, handleImageError: noop, onTranslatorSelected: noop,
     addLog: noop, setExactFileSize: noop, saveAs: () => saved++,
     setInterval: () => { const id = timers.size + 1; timers.add(id); return id; }, clearInterval: id => timers.delete(id),

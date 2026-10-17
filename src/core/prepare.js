@@ -252,7 +252,7 @@ async function loadDownloadData() {
   // Загружаем пользовательские данные для получения изменённых обложек, метаданных и переводчиков
   const slug = downloadData.slug;
   if (slug) {
-    const titleDataResult = await chrome.storage.local.get(['titleData']);
+    const titleDataResult = await getTitleStore(['titleData'], slug);
     const titleData = titleDataResult.titleData || {};
     
     // Если есть пользовательские обложки, используем их (даже если пустые)
@@ -1229,7 +1229,7 @@ function loadSavedCheckboxes() {
   const slug = downloadData.slug;
   if (!slug) return;
 
-  chrome.storage.local.get(['titleData'], (result) => {
+  getTitleStore(['titleData'], slug).then((result) => {
     const titleData = result.titleData || {};
     const savedData = titleData[slug];
 
@@ -1524,13 +1524,13 @@ function updateSelectedChapters() {
   // Сохраняем выбранные главы для текущего тайтла
   const slug = downloadData.slug;
   if (slug) {
-    chrome.storage.local.get(['titleData'], (result) => {
+    getTitleStore(['titleData'], slug).then((result) => {
       const titleData = result.titleData || {};
       if (!titleData[slug]) {
         titleData[slug] = {};
       }
       titleData[slug].selectedChapterIds = Array.from(selectedChapterIds);
-      chrome.storage.local.set({ titleData });
+      setTitleStore({ titleData });
     });
   }
 }

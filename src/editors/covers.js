@@ -188,7 +188,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     window.applySiteAccent(sourceUrl);
   }
   
-  const dataResult = await chrome.storage.local.get(['currentSlug', 'titleData', 'originalTitleData', 'disableDragAnimations']);
+  const dataResult = await getTitleStore(['currentSlug', 'titleData', 'originalTitleData', 'disableDragAnimations']);
   currentSlug = dataResult.currentSlug;
   disableDragAnimations = dataResult.disableDragAnimations || false;
 
@@ -720,7 +720,7 @@ document.getElementById('btn-add').addEventListener('click', () => {
 document.getElementById('btn-save').addEventListener('click', async () => {
   if (!currentSlug) return;
   
-  const titleDataResult = await chrome.storage.local.get(['titleData']);
+  const titleDataResult = await getTitleStore(['titleData']);
   const titleData = titleDataResult.titleData || {};
   
   // Инициализируем структуру если нет
@@ -738,7 +738,7 @@ document.getElementById('btn-save').addEventListener('click', async () => {
   // Обновляем timestamp кэша (продлеваем срок действия на 10 минут)
   titleData[currentSlug].cacheTimestamp = Date.now();
 
-  await chrome.storage.local.set({ titleData });
+  await setTitleStore({ titleData });
   
   // Отправляем toast уведомление в popup
   chrome.runtime.sendMessage({ action: 'showToast', message: 'Сохранено!', type: 'success' });

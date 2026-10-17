@@ -543,7 +543,7 @@ function resetDownloadState() {
 async function startDownload() {
     try {
         resetDownloadState();
-        const result = await chrome.storage.local.get(['downloadData', 'rateLimit', 'metadataFieldOrder', 'fieldLabels', 'debugLogging', 'disableToc', 'titleData', 'currentSlug', 'speedMode', 'txtImageMarker', 'pdfFont', 'pdfFontSize', 'pdfPageSize', 'pdfLineSpacing', 'pdfParagraphSpacing', 'tocFormat', 'customTocFormat', 'hideChapterName', 'hideVolumeNumber', 'generateComicInfo']);
+        const result = await chrome.storage.local.get(['downloadData', 'rateLimit', 'metadataFieldOrder', 'fieldLabels', 'debugLogging', 'disableToc', 'currentSlug', 'speedMode', 'txtImageMarker', 'pdfFont', 'pdfFontSize', 'pdfPageSize', 'pdfLineSpacing', 'pdfParagraphSpacing', 'tocFormat', 'customTocFormat', 'hideChapterName', 'hideVolumeNumber', 'generateComicInfo']);
         // Устанавливаем режим детального логирования из настроек
         debugMode = result.debugLogging || false;
 
@@ -579,9 +579,10 @@ async function startDownload() {
         
         // Добавляем настройки выбора перевода из titleData
         const currentSlug = options.slug;
-        if (result.titleData && result.titleData[currentSlug]) {
-            options.chapterBranchOverrides = result.titleData[currentSlug].chapterBranchOverrides || {};
-            options.translatorPriority = result.titleData[currentSlug].translatorPriority || [];
+        const { titleData } = await getTitleStore(['titleData'], currentSlug);
+        if (titleData[currentSlug]) {
+            options.chapterBranchOverrides = titleData[currentSlug].chapterBranchOverrides || {};
+            options.translatorPriority = titleData[currentSlug].translatorPriority || [];
         } else {
             options.chapterBranchOverrides = {};
             options.translatorPriority = [];

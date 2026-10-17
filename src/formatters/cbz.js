@@ -24,7 +24,7 @@ class CbzFormatter extends BaseFormatter {
 
     if (tabId && slug) {
       try {
-        const result = await chrome.storage.local.get(['originalTitleData', 'titleData', 'sourceUrl']);
+        const result = await getTitleStore(['originalTitleData', 'titleData', 'sourceUrl'], slug);
 
         // Загружаем оригинальные метаданные с сайта
         if (result.originalTitleData && result.originalTitleData[slug]) {
