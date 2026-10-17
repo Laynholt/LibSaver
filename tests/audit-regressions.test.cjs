@@ -101,23 +101,36 @@ test('EPUB assigns unique IDs and exactly one primary cover', () => {
   assert.ok(files['content.opf'].includes(`<meta name="cover" content="${mainCover}"`));
 });
 
-test('switching titles preserves the previous title edits', async () => {
-  const data = { currentSlug: 'old', 'titleData:old': { metadata: { titleRu: 'Edited' }, covers: ['local'], chapterBranchOverrides: { 1: '2_team' } }, 'originalTitleData:old': { chapters: [] } };
-  const before = structuredClone(data['titleData:old']);
-  const context = vm.createContext({ chaptersResult: { slug: 'new' }, currentSlug: 'old', chrome: { storage: { local: storageApi(data) } } });
-  vm.runInContext(titleStore, context);
-  await vm.runInContext('(async () => {' + between('src/core/popup.js', '    const newSlug = chaptersResult.slug;', '    // Загружаем приоритет переводчиков') + '})()', context);
-  assert.deepEqual(data['titleData:old'], before);
-  assert.equal(data.currentSlug, 'new');
+test('switching titles removes the previous title unless cleanup on title change is off', async () => {
+  for (const cleanupOnTitleChange of [undefined, false]) {
+    const data = { currentSlug: 'old', 'titleData:old': { metadata: { titleRu: 'Edited' } }, 'originalTitleData:old': { chapters: [] }, 'titleData:new': { covers: ['local'] } };
+    if (cleanupOnTitleChange === false) data.cleanupOnTitleChange = false;
+    const before = structuredClone(data);
+    const context = vm.createContext({ chaptersResult: { slug: 'new' }, currentSlug: 'old', chrome: { storage: { local: storageApi(data) } } });
+    vm.runInContext(titleStore, context);
+    await vm.runInContext('(async () => {' + between('src/core/popup.js', '    const newSlug = chaptersResult.slug;', '    // Загружаем приоритет переводчиков') + '})()', context);
+    const kept = cleanupOnTitleChange === false;
+    assert.deepEqual(data['titleData:old'], kept ? before['titleData:old'] : undefined);
+    assert.deepEqual(data['originalTitleData:old'], kept ? before['originalTitleData:old'] : undefined);
+    assert.deepEqual(data['titleData:new'], before['titleData:new']);
+    assert.equal(data.currentSlug, 'new');
+  }
 });
 
-test('opening popup preserves old saved edits even after cache expiry', async () => {
-  const data = { 'titleData:old': { cacheTimestamp: 1, metadata: { titleRu: 'Edited' }, covers: ['local'] } };
-  const before = structuredClone(data);
-  const context = vm.createContext({ chrome: { storage: { local: storageApi(data) } } });
-  const init = between('src/core/popup.js', '  // Удаляем старый downloadData', '  // Проверка обновлений при открытии popup');
-  await vm.runInContext('(async () => {' + init + '})()', context);
-  assert.deepEqual(data['titleData:old'], before['titleData:old']);
+test('opening popup removes titles older than 7 days unless that cleanup is off', async () => {
+  for (const cleanupOldTitles of [undefined, false]) {
+    const data = { 'titleData:old': { cacheTimestamp: 1 }, 'originalTitleData:old': {}, 'titleData:fresh': { cacheTimestamp: Date.now() } };
+    if (cleanupOldTitles === false) data.cleanupOldTitles = false;
+    const before = structuredClone(data);
+    const context = vm.createContext({ console, chrome: { storage: { local: storageApi(data) } } });
+    const cleanup = between('src/core/popup.js', '// Очистка старых titleData', '// Запуск при открытии всплывающего окна');
+    const init = between('src/core/popup.js', '  // Удаляем старый downloadData', '  // Проверка обновлений при открытии popup');
+    await vm.runInContext(cleanup + '(async () => {' + init + '})()', context);
+    const kept = cleanupOldTitles === false;
+    assert.deepEqual(data['titleData:old'], kept ? before['titleData:old'] : undefined);
+    assert.deepEqual(data['originalTitleData:old'], kept ? before['originalTitleData:old'] : undefined);
+    assert.deepEqual(data['titleData:fresh'], before['titleData:fresh']);
+  }
 });
 
 test('saving title format clears stale generated titles and notifies consumers', async () => {

@@ -265,6 +265,10 @@ function applySettingsToUI(settings) {
   // Show/hide pagination settings based on checkbox
   updatePaginationSettingsVisibility();
 
+  // Storage settings
+  document.getElementById('cleanup-on-title-change').checked = settings.cleanupOnTitleChange !== false;
+  document.getElementById('cleanup-old-titles').checked = settings.cleanupOldTitles !== false;
+
   // PDF settings
   document.getElementById('pdf-font').value = settings.pdfFont || 'merriweather';
   // Применяем шрифт к select
@@ -409,6 +413,12 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // Отображаем версию расширения
   displayVersion();
+
+  // Отображаем размер storage
+  updateStorageSizeDisplay();
+
+  // Обработчик клика для очистки старых данных
+  document.getElementById('storage-size-display').addEventListener('click', cleanupOldTitles);
 
   // Регистрируем окно настроек
   // Внутри окна с вкладками (iframe) регистрируется само окно
@@ -821,7 +831,9 @@ document.getElementById('btn-save').addEventListener('click', async () => {
     pdfJpegQuality: parseFloat(document.getElementById('pdf-jpeg-quality').value),
     enablePagination: document.getElementById('enable-pagination').checked,
     initialChapters: parseInt(document.getElementById('initial-chapters').value),
-    loadMoreChapters: parseInt(document.getElementById('load-more-chapters').value)
+    loadMoreChapters: parseInt(document.getElementById('load-more-chapters').value),
+    cleanupOnTitleChange: document.getElementById('cleanup-on-title-change').checked,
+    cleanupOldTitles: document.getElementById('cleanup-old-titles').checked
   };
 
   // Если изменился формат заголовков - отправляем сообщение для переформатирования
@@ -902,6 +914,10 @@ const DEFAULT_SETTINGS_BY_GROUP = {
     'pdf-paragraph-spacing': 1,
     'pdf-image-format': 'original-png',
     'pdf-jpeg-quality': 1.0
+  },
+  storage: {
+    'cleanup-on-title-change': true,
+    'cleanup-old-titles': true
   }
 };
 
@@ -1287,6 +1303,48 @@ async function checkForUpdates() {
 
 // Клик по версии для проверки обновлений
 document.getElementById('extension-version').addEventListener('click', checkForUpdates);
+
+// Отображение размера storage
+async function updateStorageSizeDisplay() {
+  try {
+    const bytes = await new Promise((resolve) => {
+      chrome.storage.local.getBytesInUse(null, resolve);
+    });
+    const mb = (bytes / (1024 * 1024)).toFixed(2);
+    const display = document.getElementById('storage-size-display');
+    if (display) {
+      display.textContent = `${mb} MB`;
+    }
+  } catch (error) {
+    console.error('Ошибка при получении размера storage:', error);
+  }
+}
+
+// Очистка старых данных по клику
+async function cleanupOldTitles() {
+  try {
+    const all = await chrome.storage.local.get(null);
+    const currentSlug = all.currentSlug;
+
+    const titleKeys = Object.keys(all).filter(k => k.startsWith('titleData:'));
+    const toDelete = [];
+
+    for (const key of titleKeys) {
+      const slug = key.split(':')[1];
+      // НЕ удаляем текущий тайтл
+      if (slug !== currentSlug) {
+        toDelete.push(key, `originalTitleData:${slug}`);
+      }
+    }
+
+    if (toDelete.length > 0) {
+      await chrome.storage.local.remove(toDelete);
+      await updateStorageSizeDisplay();
+    }
+  } catch (error) {
+    // Ошибка при очистке - игнорируем
+  }
+}
 
 // Инициализируем после загрузки DOM
 document.addEventListener('DOMContentLoaded', () => {
