@@ -720,9 +720,16 @@ function enableVolumeCheckboxes() {
   });
 }
 
+// «Ускорить» можно переключить в разделе «Загрузки»: галочка здесь следует за storage
+function followSpeedMode(changes) {
+  const checkbox = document.getElementById('speed-mode-checkbox');
+  if (checkbox && changes.speedMode) checkbox.checked = !!changes.speedMode.newValue;
+}
+
 // Слушаем изменения качества в реальном времени
 chrome.storage.onChanged.addListener((changes, areaName) => {
   if (areaName === 'local') {
+    followSpeedMode(changes);
     if (changes.imageQuality || changes.coverQuality) {
       // Обновляем downloadData
       if (changes.imageQuality) {
@@ -1038,8 +1045,8 @@ function setupEventListeners() {
           selectedChapterIds: downloadData.selectedChapterIds,
           format: downloadData.selectedFormat,
           imageServer: downloadData.imageServer,
-          textOnly: downloadData.textOnly,
-          speedMode: document.getElementById('speed-mode-checkbox')?.checked
+          textOnly: downloadData.textOnly
+          // «Ускорить» снимок читает из storage: там единый флаг, общий с разделом «Загрузки»
         });
         await enqueueAndShow(snapshot);
       } catch (error) {

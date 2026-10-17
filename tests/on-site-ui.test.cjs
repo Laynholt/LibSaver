@@ -615,19 +615,28 @@ test('downloads page is self-contained: theme, port client and view, no download
 
 // --- Downloads view: the port client over a fake DOM and a fake port ---
 
-function wiringContext() {
+function wiringContext({ failures = 0 } = {}) {
   const elements = {};
   const clone = value => JSON.parse(JSON.stringify(value)); // vm objects have another Object.prototype
-  const element = id => elements[id] ||= { id, innerHTML: '', hidden: false, style: {}, checked: false, scrollTop: 0, scrollHeight: 100, clientHeight: 50, listeners: {}, addEventListener(type, fn) { this.listeners[type] = fn; } };
+  const element = id => elements[id] ||= { id, innerHTML: '', hidden: false, style: {}, checked: false, scrollTop: 0, scrollHeight: 100, clientHeight: 50, listeners: {}, textContent: '', classes: new Set(), classList: { toggle: (name, on) => { on ? elements[id].classes.add(name) : elements[id].classes.delete(name); } }, addEventListener(type, fn) { this.listeners[type] = fn; } };
   const ports = [];
   const created = [];
   const stored = [];
+  const delays = [];
+  const seenWhileRetrying = [];
+  const storageListeners = [];
+  let attempts = 0;
   const ctx = vm.createContext({
-    console, setTimeout: () => 0,
+    console: { error() {}, log() {} }, setTimeout: (fn, ms) => { delays.push(ms); fn(); return 0; },
     document: { getElementById: element, addEventListener() {} },
     chrome: {
       runtime: {
-        sendMessage: async message => { ports.push({ ensure: clone(message) }); return true; },
+        sendMessage: async message => {
+          if (++attempts > 1) seenWhileRetrying.push(element('dl-connection').textContent);
+          if (attempts <= failures) throw new Error('engine restarting');
+          ports.push({ ensure: clone(message) });
+          return true;
+        },
         connect: options => {
           const port = { options, posted: [], postMessage: message => port.posted.push(clone(message)), onMessage: { addListener: fn => { port.receive = fn; } }, onDisconnect: { addListener: fn => { port.drop = fn; } } };
           ports.push(port);
@@ -635,11 +644,11 @@ function wiringContext() {
         }
       },
       tabs: { create: options => created.push(clone(options)) },
-      storage: { local: { get: async () => ({ speedMode: true }), set: async values => stored.push(clone(values)) } }
+      storage: { onChanged: { addListener: fn => storageListeners.push(fn) }, local: { get: async () => ({ speedMode: true }), set: async values => stored.push(clone(values)) } }
     }
   });
   vm.runInContext(source('src/utils/page-call.js') + source('src/core/downloads-view.js'), ctx);
-  return { ctx, element, ports, created, stored };
+  return { ctx, element, ports, created, stored, delays, seenWhileRetrying, storageListeners };
 }
 
 test('view ensures the engine, connects to the port and draws the state it receives', async () => {
@@ -756,4 +765,81 @@ test('the preparation window no longer runs, renders or saves downloads itself',
   const html = source('src/html/prepare.html');
   assert.doesNotMatch(html, /download\.js|formatters\/|jszip|pica|FileSaver|id="log"|id="btn-pause"|stats-time/);
   assert.match(html, /<iframe id="downloads-frame"/);
+});
+
+test('view shows «Подключаюсь…» until the first state, then the queue or «Очередь пуста»', async () => {
+  const { ctx, element, ports } = wiringContext();
+  await ctx.initDownloadsView();
+  assert.equal(element('dl-connection').textContent, 'Подключаюсь…');
+  assert.equal(element('dl-connection').hidden, false);
+  assert.equal(element('dl-empty').hidden, true); // the empty-queue text must not appear before the engine has answered
+  assert.equal(element('dl-list').classes.has('dl-offline'), true);
+  ports[1].receive({ type: 'state', state: { items: [], stats: null, logTail: [] } });
+  assert.equal(element('dl-connection').hidden, true);
+  assert.equal(element('dl-empty').hidden, false);
+  assert.equal(element('dl-list').classes.has('dl-offline'), false);
+});
+
+test('view keeps reconnecting with a growing delay, says so meanwhile, and commands reach the new port', async () => {
+  const { ctx, element, ports, delays, seenWhileRetrying } = wiringContext({ failures: 3 });
+  await ctx.initDownloadsView();
+  assert.deepEqual(delays, [1000, 2000, 4000]);
+  assert.deepEqual(seenWhileRetrying, Array(3).fill('Нет связи с движком, переподключаюсь…'));
+  const port = ports[1];
+  port.receive({ type: 'state', state: { items: [queueItem()], stats: null, logTail: [] } });
+  const click = cmd => element('dl-list').listeners.click({ target: { closest: selector => selector === '[data-cmd]' ? { dataset: { cmd, id: 'a' } } : null }, preventDefault() {} });
+  click('cancel');
+  assert.deepEqual(port.posted, [{ cmd: 'cancel', id: 'a' }]);
+  // the port drops (engine restart): offline notice, commands are not sent into the void, a new connection follows
+  port.drop();
+  assert.equal(element('dl-connection').hidden, false);
+  assert.equal(element('dl-connection').textContent, 'Нет связи с движком, переподключаюсь…');
+  click('remove');
+  assert.deepEqual(port.posted, [{ cmd: 'cancel', id: 'a' }]);
+  await settle(); // the fake timer fires at once, so the new connection comes up
+  assert.equal(ports.length, 4); // ensure + port, twice
+  assert.equal(element('dl-connection').textContent, 'Подключаюсь…');
+  ports[3].receive({ type: 'state', state: { items: [queueItem()], stats: null, logTail: [] } });
+  click('remove');
+  assert.deepEqual(port.posted, [{ cmd: 'cancel', id: 'a' }]);
+  assert.deepEqual(ports[3].posted, [{ cmd: 'remove', id: 'a' }]);
+});
+
+test('the reconnect delay is capped', async () => {
+  const { ctx, delays } = wiringContext({ failures: 6 });
+  await ctx.initDownloadsView();
+  assert.deepEqual(delays, [1000, 2000, 4000, 8000, 10000, 10000]);
+});
+
+test('«Ускорить» in the downloads view follows storage changes', async () => {
+  const { ctx, element, storageListeners } = wiringContext();
+  await ctx.initDownloadsView();
+  assert.equal(storageListeners.length, 1);
+  const speed = element('speed-mode-checkbox');
+  assert.equal(speed.checked, true);
+  storageListeners[0]({ speedMode: { newValue: false } }, 'local');
+  assert.equal(speed.checked, false);
+  storageListeners[0]({ speedMode: { newValue: true } }, 'sync');
+  assert.equal(speed.checked, false); // other areas are ignored
+  storageListeners[0]({ speedMode: { newValue: true } }, 'local');
+  assert.equal(speed.checked, true);
+});
+
+test('prepare follows the shared «Ускорить» flag and its snapshot takes the flag from storage', async () => {
+  const checkbox = { checked: false };
+  const ctx = vm.createContext({ document: { getElementById: id => id === 'speed-mode-checkbox' ? checkbox : null } });
+  vm.runInContext(functionSource('src/core/prepare.js', 'followSpeedMode'), ctx);
+  ctx.followSpeedMode({ speedMode: { newValue: true } });
+  assert.equal(checkbox.checked, true);
+  ctx.followSpeedMode({ imageQuality: { newValue: 'HD' } });
+  assert.equal(checkbox.checked, true); // unrelated changes leave it alone
+  assert.match(source('src/core/prepare.js'), /if \(areaName === 'local'\) \{\s*followSpeedMode\(changes\);/);
+  // no value from the (possibly stale) checkbox: the snapshot reads storage itself
+  const text = source('src/core/prepare.js');
+  const handler = text.slice(text.indexOf("btnDownload.addEventListener('click'"), text.indexOf("document.querySelectorAll('.volume-header')"));
+  assert.match(handler, /buildDownloadSnapshot/);
+  assert.doesNotMatch(handler, /speedMode/);
+  const snapshot = await snapshotContext({ speedMode: true, 'titleData:s': { metadata: { titleRu: 'T' } }, 'originalTitleData:s': { metadata: {} } })
+    .buildDownloadSnapshot({ slug: 's', tabId: 5, sourceUrl: 'https://mangalib.me/ru/manga/s', selectedChapterIds: [1], format: 'cbz', imageServer: 'normal', textOnly: false });
+  assert.equal(snapshot.stored.speedMode, true);
 });

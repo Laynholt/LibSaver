@@ -3,6 +3,7 @@
 
 const SITE_NAMES = { mangalib: 'MangaLIB', hentailib: 'HentaiLIB', shlib: 'SlashLIB', ranobelib: 'RanobeLIB' };
 const RECONNECT_DELAY = 1000;
+const MAX_RECONNECT_DELAY = 10000;
 
 const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]);
 
@@ -138,17 +139,45 @@ function sendCommand(command, id) {
   enginePort?.postMessage(message);
 }
 
+const CONNECTION_TEXT = { connecting: 'Подключаюсь…', lost: 'Нет связи с движком, переподключаюсь…' };
+
+// status: 'connecting' (ждём первое состояние), 'lost' (порт закрыт или движок недоступен), 'ok'; без связи кнопки команд не работают
+function setConnection(status) {
+  const byId = id => document.getElementById(id);
+  const notice = byId('dl-connection');
+  notice.hidden = status === 'ok';
+  if (status !== 'ok') {
+    notice.textContent = CONNECTION_TEXT[status];
+    byId('dl-empty').hidden = true; // «Очередь пуста» говорить без связи нельзя
+  }
+  byId('dl-list').classList.toggle('dl-offline', status !== 'ok');
+}
+
+// Подключается, пока не получится: service worker или offscreen-документ могут быть в середине перезапуска
 async function connectEngine() {
-  await chrome.runtime.sendMessage({ action: 'ensureEngine' });
-  const port = chrome.runtime.connect({ name: 'libsaver-engine' });
-  enginePort = port;
-  port.onMessage.addListener(message => {
-    if (message.type === 'state') renderState(message.state);
-  });
-  port.onDisconnect.addListener(() => {
-    enginePort = null;
-    setTimeout(() => connectEngine().catch(error => console.error('[LibSaver downloads]', error)), RECONNECT_DELAY);
-  });
+  for (let delay = RECONNECT_DELAY; ; delay = Math.min(delay * 2, MAX_RECONNECT_DELAY)) {
+    try {
+      await chrome.runtime.sendMessage({ action: 'ensureEngine' });
+      const port = chrome.runtime.connect({ name: 'libsaver-engine' });
+      enginePort = port;
+      setConnection('connecting');
+      port.onMessage.addListener(message => {
+        if (message.type !== 'state') return;
+        setConnection('ok');
+        renderState(message.state);
+      });
+      port.onDisconnect.addListener(() => {
+        enginePort = null;
+        setConnection('lost');
+        setTimeout(connectEngine, RECONNECT_DELAY);
+      });
+      return;
+    } catch (error) {
+      console.error('[LibSaver downloads]', error);
+      setConnection('lost');
+      await new Promise(resolve => setTimeout(resolve, delay));
+    }
+  }
 }
 
 async function initDownloadsView() {
@@ -164,7 +193,7 @@ async function initDownloadsView() {
       return;
     }
     const button = event.target.closest('[data-cmd]');
-    if (button) sendCommand(button.dataset.cmd, button.dataset.id);
+    if (button && enginePort) sendCommand(button.dataset.cmd, button.dataset.id);
   });
 
   const panel = byId('dl-log-panel');
@@ -172,7 +201,13 @@ async function initDownloadsView() {
     autoScrollLog = panel.scrollHeight - panel.scrollTop <= panel.clientHeight + 50;
   });
 
+  setConnection('connecting');
+
   const speed = byId('speed-mode-checkbox');
+  // «Ускорить» в окне «Подготовка» и здесь - один флаг в storage
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area === 'local' && changes.speedMode) speed.checked = !!changes.speedMode.newValue;
+  });
   speed.addEventListener('change', () => {
     enginePort?.postMessage({ cmd: 'speedMode', on: speed.checked });
     chrome.storage.local.set({ speedMode: speed.checked });
