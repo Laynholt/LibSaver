@@ -1127,6 +1127,18 @@ function enableVolumeCheckboxes() {
   });
 }
 
+function restoreDownloadControls() {
+  enableControls();
+  enableVolumeCheckboxes();
+  document.querySelectorAll('.chapter-checkbox').forEach(checkbox => {
+    checkbox.disabled = false;
+  });
+  const button = document.getElementById('btn-start-download');
+  if (button) button.style.display = 'inline-flex';
+}
+
+window.restoreDownloadControls = restoreDownloadControls;
+
 // Экспортируем функции для использования в download.js
 window.disableControls = disableControls;
 window.enableControls = enableControls;
@@ -1639,8 +1651,16 @@ function setupEventListeners() {
         startStatisticsUpdate();
 
         // Запускаем загрузку
-        if (typeof startDownload === 'function') {
-          startDownload();
+        try {
+          if (typeof startDownload === 'function') {
+            startDownload();
+          } else {
+            throw new Error('Загрузчик недоступен');
+          }
+        } catch (error) {
+          stopStatisticsUpdate();
+          restoreDownloadControls();
+          showToast(`Не удалось начать загрузку: ${error.message}`, 'error');
         }
       });
     });
