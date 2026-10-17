@@ -306,16 +306,22 @@ function ensureEngine() {
 }
 
 // Движку: поднять offscreen-документ; сохранить собранный им файл (в offscreen нет chrome.downloads)
-chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+function handleEngineMessage(request, sender, sendResponse) {
   if (request.action === 'ensureEngine') {
     ensureEngine().then(sendResponse, error => { console.error('[LibSaver] ensureEngine', error); sendResponse(false); });
     return true;
   }
   if (request.action === 'saveFile') {
+    // Движок живёт в offscreen без вкладки; скрипт страницы сайта не должен тихо качать произвольный URL
+    if (sender.tab) {
+      sendResponse({ ok: false, error: 'saveFile доступен только фоновому движку' });
+      return;
+    }
     chrome.downloads.download({ url: request.url, filename: request.filename, saveAs: false }).then(
       () => sendResponse({ ok: true }),
       error => sendResponse({ ok: false, error: error.message })
     );
     return true;
   }
-});
+}
+chrome.runtime.onMessage.addListener(handleEngineMessage);

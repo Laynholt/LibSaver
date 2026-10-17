@@ -399,6 +399,31 @@ test('cancel of a title waiting for a tab ends the wait and the next title start
   await assert.rejects(runs[1], { message: 'Загрузка отменена' });
 });
 
+test('cancel that arrives while the tab lookup is in flight still ends the wait', async () => {
+  const lookups = [];
+  const runs = [];
+  const ctx = engineContext({
+    findSiteTab: () => new Promise(resolve => lookups.push(resolve)),
+    startDownload: (snapshot, { noTab }) => {
+      const done = snapshot.slug === 'a' ? noTab(snapshot.siteKey).then(() => ({ blob: {}, filename: 'a' })) : Promise.resolve({ blob: {}, filename: 'b.cbz' });
+      runs.push(done);
+      return done;
+    }
+  });
+  const port = ctx.connect();
+  port.send({ cmd: 'enqueue', snapshot: snap('a') });
+  port.send({ cmd: 'enqueue', snapshot: snap('b') });
+  await settle();
+  assert.equal(lookups.length, 1); // first poll is waiting for findSiteTab
+  port.send({ cmd: 'cancel', id: 'a' });
+  lookups[0](null);
+  await settle();
+  await assert.rejects(runs[0], { message: 'Загрузка отменена' });
+  assert.equal(lookups.length, 1); // no polling after the cancel
+  const { items } = port.posted.filter(m => m.type === 'state').at(-1).state;
+  assert.deepEqual(items.map(item => item.status), ['canceled', 'done']);
+});
+
 test('engine turns download events into state, forwards commands and saves the file', async () => {
   let finish;
   const ctx = engineContext({
@@ -461,6 +486,19 @@ test('ensureEngine creates one offscreen document even for concurrent calls', as
   assert.equal(await ctx.ensureEngine(), true);
   assert.deepEqual(created, [{ url: 'engine/engine.html', reasons: ['DOM_PARSER', 'BLOBS'], justification: 'Фоновая сборка файлов LibSaver' }]);
   assert.ok(JSON.parse(source('src/manifest.json')).permissions.includes('offscreen'));
+});
+
+test('saveFile is refused to a page context with a tab (content script) and served to the engine', async () => {
+  const downloads = [];
+  const ctx = vm.createContext({ chrome: { downloads: { download: async options => { downloads.push({ ...options }); return 1; } } }, console });
+  vm.runInContext(functionSource('src/background.js', 'handleEngineMessage'), ctx);
+  const ask = sender => new Promise(resolve => ctx.handleEngineMessage({ action: 'saveFile', url: 'blob:x', filename: 'a.cbz' }, sender, response => resolve(JSON.parse(JSON.stringify(response)))));
+  const refused = await ask({ id: 'ext', tab: { id: 3 } });
+  assert.equal(refused.ok, false);
+  assert.ok(refused.error);
+  assert.deepEqual(downloads, []);
+  assert.deepEqual(await ask({ id: 'ext', url: 'chrome-extension://ext/engine/engine.html' }), { ok: true });
+  assert.deepEqual(downloads, [{ url: 'blob:x', filename: 'a.cbz', saveAs: false }]);
 });
 
 test('scripts of the engine page use neither storage, tabs, downloads nor the window DOM', () => {

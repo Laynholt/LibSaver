@@ -109,7 +109,9 @@ setNoTabHandler(async siteKey => {
         const timer = setTimeout(resolve, TAB_POLL_INTERVAL);
         run.stopWait = () => { clearTimeout(timer); reject(canceledError()); };
       });
-      if (await findSiteTab(siteKey) != null) break;
+      const tabId = await findSiteTab(siteKey);
+      if (run.canceled) throw canceledError(); // отмена пришла, пока шёл поиск вкладки
+      if (tabId != null) break;
     }
   } finally {
     run.stopWait = null;
