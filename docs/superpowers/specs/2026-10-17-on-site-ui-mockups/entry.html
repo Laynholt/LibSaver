@@ -1,0 +1,84 @@
+<style>
+  .site{background:#18181b;border-radius:10px;padding:16px;color:#e4e4e7;font:14px/1.3 Inter,system-ui,sans-serif}
+  .cover{width:200px;height:280px;border-radius:8px;background:linear-gradient(160deg,#6d4c8f,#2b6cb0)}
+  .btn{display:flex;align-items:center;gap:8px;height:40px;border-radius:8px;padding:0 12px;font-weight:600;box-sizing:border-box}
+  .read{background:#ef6c00;color:#fff;width:200px;margin-top:10px}
+  .row{display:flex;gap:6px;width:200px;margin-top:6px}
+  .dl{flex:1;background:#27272a;color:#fb923c;border:1px solid #3f3f46}
+  .dl small{margin-left:auto;color:#a1a1aa;font-weight:500}
+  .gear{width:40px;height:40px;border-radius:8px;background:#27272a;border:1px solid #3f3f46;display:flex;align-items:center;justify-content:center;color:#a1a1aa}
+  .ghost{background:#202024;color:#a1a1aa;width:200px;margin-top:6px}
+  .wrap{display:flex;gap:24px;align-items:flex-start;flex-wrap:wrap}
+  .pop{width:260px;background:#202024;border:1px solid #3f3f46;border-radius:12px;padding:12px;color:#e4e4e7;font:13px Inter,system-ui,sans-serif;box-shadow:0 10px 30px #0008}
+  .pop .f{display:flex;justify-content:space-between;background:#27272a;border-radius:8px;padding:8px 10px;margin-top:6px}
+  .pop .go{background:#ef6c00;color:#fff;justify-content:center;margin-top:10px}
+  .lbl{font-size:11px;color:#a1a1aa;text-transform:uppercase;letter-spacing:.04em;margin-top:10px}
+  .scr{background:#0f0f12;border-radius:10px;position:relative;overflow:hidden;color:#e4e4e7;font:12px Inter,system-ui,sans-serif}
+  .dim{position:absolute;inset:0;background:#0009}
+  .modal{position:absolute;left:12%;right:12%;top:10%;bottom:10%;background:#202024;border-radius:12px;border:1px solid #3f3f46;padding:10px}
+  .drawer{position:absolute;right:0;top:0;bottom:0;width:42%;background:#202024;border-left:1px solid #3f3f46;padding:10px}
+  .tabs{display:flex;gap:10px;border-bottom:1px solid #3f3f46;padding-bottom:6px;color:#a1a1aa}
+  .tabs b{color:#fb923c}
+  .blk{background:#27272a;border-radius:8px;height:34px;margin-top:8px}
+  .phone{width:150px;height:300px;border-radius:18px;border:3px solid #3f3f46;background:#0f0f12;position:relative;overflow:hidden}
+  .sheet{position:absolute;left:0;right:0;bottom:0;height:70%;background:#202024;border-radius:14px 14px 0 0;padding:8px}
+  .full{position:absolute;inset:0;background:#202024;padding:8px}
+</style>
+
+<h2>Кнопки на странице тайтла</h2>
+<p class="subtitle">Под «Начать читать» стоит «Скачать», она чуть уже. Справа от неё квадратная кнопка настроек. Сначала проверь, что сама кнопка выглядит как ты себе представлял.</p>
+
+<div class="wrap">
+  <div class="site">
+    <div class="cover"></div>
+    <div class="btn read">▶ Начать читать <small style="margin-left:auto;opacity:.8">0 / 109</small></div>
+    <div class="row">
+      <div class="btn dl">⬇ Скачать <small>CBZ</small></div>
+      <div class="gear">⚙</div>
+    </div>
+    <div class="btn ghost">＋ Добавить в планы</div>
+  </div>
+
+  <div>
+    <div class="label">Нажал «Скачать»: маленькое окошко прямо под кнопкой</div>
+    <div class="pop">
+      <div class="lbl">Главы</div>
+      <div class="f"><span>от</span><span>Том 1 · Глава 1</span></div>
+      <div class="f"><span>до</span><span>Том 3 · Глава 24</span></div>
+      <div class="lbl">Формат</div>
+      <div class="f"><span>CBZ</span><span>▾</span></div>
+      <div class="btn go">Скачать 24 главы</div>
+      <div style="text-align:center;color:#a1a1aa;margin-top:8px">Подробнее… (то же, что ⚙)</div>
+    </div>
+  </div>
+</div>
+
+<h3 style="margin-top:28px">Нажал ⚙: где открываются все настройки и редакторы?</h3>
+<p class="subtitle">Метаданные, обложки, оглавление, картинки, форматы — всё, что сейчас в отдельном окне.</p>
+
+<div class="options">
+  <div class="option" data-choice="modal" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>Окно по центру поверх сайта</h3>
+      <p>Сайт затемняется, большое окно с вкладками сверху. На телефоне занимает весь экран.</p>
+      <div style="display:flex;gap:12px;align-items:flex-end;margin-top:8px">
+        <div class="scr" style="width:300px;height:190px"><div class="dim"></div>
+          <div class="modal"><div class="tabs"><b>Главы</b><span>Метаданные</span><span>Обложки</span><span>Картинки</span><span>Формат</span></div><div class="blk"></div><div class="blk"></div><div class="blk"></div></div></div>
+        <div class="phone"><div class="full"><div class="tabs" style="font-size:10px;gap:6px"><b>Главы</b><span>Мета</span><span>Обл…</span></div><div class="blk"></div><div class="blk"></div><div class="blk"></div><div class="blk"></div></div></div>
+      </div>
+    </div>
+  </div>
+  <div class="option" data-choice="drawer" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>Шторка сбоку</h3>
+      <p>Выезжает справа, тайтл слева остаётся видно. На телефоне поднимается снизу, как в приложениях.</p>
+      <div style="display:flex;gap:12px;align-items:flex-end;margin-top:8px">
+        <div class="scr" style="width:300px;height:190px"><div class="dim" style="right:42%"></div>
+          <div class="drawer"><div class="tabs" style="gap:6px;font-size:11px"><b>Главы</b><span>Мета</span><span>Обложки</span><span>…</span></div><div class="blk"></div><div class="blk"></div><div class="blk"></div></div></div>
+        <div class="phone"><div class="dim"></div><div class="sheet"><div style="width:30px;height:4px;background:#52525b;border-radius:2px;margin:0 auto 6px"></div><div class="tabs" style="font-size:10px;gap:6px"><b>Главы</b><span>Мета</span><span>Обл…</span></div><div class="blk"></div><div class="blk"></div></div></div>
+      </div>
+    </div>
+  </div>
+</div>
