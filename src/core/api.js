@@ -238,12 +238,17 @@ async function loadChapters(tabId) {
                   await new Promise(resolve => setTimeout(resolve, delay));
                   continue;
                 }
+                // 404/403 и прочие 4xx повтор не исправит — сразу ошибка
+                if (response.status < 500 && response.status !== 408) {
+                  throw Object.assign(new Error(`HTTP ${response.status}`), { noRetry: true });
+                }
                 
                 if (attempt < maxRetries) {
                   const delay = initialDelay * Math.pow(2, attempt);
                   await new Promise(resolve => setTimeout(resolve, delay));
                 }
               } catch (error) {
+                if (error.noRetry) throw error;
                 lastError = error;
                 if (attempt < maxRetries) {
                   const delay = initialDelay * Math.pow(2, attempt);
@@ -456,12 +461,17 @@ async function loadMetadata(tabId) {
                     await new Promise(resolve => setTimeout(resolve, delay));
                     continue;
                   }
+                  // 404/403 и прочие 4xx повтор не исправит — сразу ошибка
+                  if (response.status < 500 && response.status !== 408) {
+                    throw Object.assign(new Error(`HTTP ${response.status}`), { noRetry: true });
+                  }
                   
                   if (attempt < maxRetries) {
                     const delay = initialDelay * Math.pow(2, attempt);
                     await new Promise(resolve => setTimeout(resolve, delay));
                   }
                 } catch (error) {
+                  if (error.noRetry) throw error;
                   lastError = error;
                   if (attempt < maxRetries) {
                     const delay = initialDelay * Math.pow(2, attempt);
@@ -673,12 +683,17 @@ async function loadCovers(tabId, slug) {
                   await new Promise(resolve => setTimeout(resolve, delay));
                   continue;
                 }
+                // 404/403 и прочие 4xx повтор не исправит — сразу ошибка
+                if (response.status < 500 && response.status !== 408) {
+                  throw Object.assign(new Error(`HTTP ${response.status}`), { noRetry: true });
+                }
                 
                 if (attempt < maxRetries) {
                   const delay = initialDelay * Math.pow(2, attempt);
                   await new Promise(resolve => setTimeout(resolve, delay));
                 }
               } catch (error) {
+                if (error.noRetry) throw error;
                 lastError = error;
                 if (attempt < maxRetries) {
                   const delay = initialDelay * Math.pow(2, attempt);
@@ -863,12 +878,17 @@ async function loadChapterPages(tabId, chapterId, slug, imageServer = 'normal') 
                   await new Promise(resolve => setTimeout(resolve, delay));
                   continue;
                 }
+                // 404/403 и прочие 4xx повтор не исправит — сразу ошибка
+                if (response.status < 500 && response.status !== 408) {
+                  throw Object.assign(new Error(`HTTP ${response.status}`), { noRetry: true });
+                }
                 
                 if (attempt < maxRetries) {
                   const delay = initialDelay * Math.pow(2, attempt);
                   await new Promise(resolve => setTimeout(resolve, delay));
                 }
               } catch (error) {
+                if (error.noRetry) throw error;
                 lastError = error;
                 if (attempt < maxRetries) {
                   const delay = initialDelay * Math.pow(2, attempt);

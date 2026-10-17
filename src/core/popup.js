@@ -98,19 +98,19 @@ async function syncOpenWindows() {
   for (const win of windows) {
     for (const tab of win.tabs) {
       if (tab.url) {
-        if (tab.url.includes('settings.html')) {
+        if (tab.url === chrome.runtime.getURL('html/settings.html')) {
           foundWindow = 'settings';
           break;
-        } else if (tab.url.includes('prepare.html')) {
+        } else if (tab.url === chrome.runtime.getURL('html/prepare.html')) {
           foundWindow = 'prepare';
           break;
-        } else if (tab.url.includes('chapters.html')) {
+        } else if (tab.url === chrome.runtime.getURL('html/chapters.html')) {
           foundWindow = 'chapters';
           break;
-        } else if (tab.url.includes('metadata.html')) {
+        } else if (tab.url === chrome.runtime.getURL('html/metadata.html')) {
           foundWindow = 'metadata';
           break;
-        } else if (tab.url.includes('covers.html')) {
+        } else if (tab.url === chrome.runtime.getURL('html/covers.html')) {
           foundWindow = 'covers';
           break;
         }
@@ -223,20 +223,21 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
     }
     
     // Обновление глав
-    if (changes.titleData && currentSlug) {
-      const newData = changes.titleData.newValue;
-      if (newData && newData[currentSlug] && newData[currentSlug].chapters) {
-        allChapters = newData[currentSlug].chapters;
+    const titleChange = getTitleChange(changes, 'titleData', currentSlug);
+    if (titleChange) {
+      const newData = titleChange.newValue;
+      if (newData && newData.chapters) {
+        allChapters = newData.chapters;
         populateChapters();
       }
     }
     // Обновление названия при изменении в редакторе метаданных
-    if (changes.titleData && currentSlug) {
-      const newData = changes.titleData.newValue;
-      if (newData && newData[currentSlug] && newData[currentSlug].metadata && newData[currentSlug].metadata.titleRu) {
+    if (titleChange) {
+      const newData = titleChange.newValue;
+      if (newData && newData.metadata && newData.metadata.titleRu) {
         const bookTitleElement = document.getElementById('book-title');
         if (bookTitleElement) {
-          bookTitleElement.textContent = newData[currentSlug].metadata.titleRu;
+          bookTitleElement.textContent = newData.metadata.titleRu;
         }
       }
     }
@@ -277,7 +278,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       if (result.hideVolumeNumber !== undefined) hideVolumeNumber = result.hideVolumeNumber;
 
       // Перезагружаем главы из originalTitleData
-      chrome.storage.local.get(['originalTitleData', 'currentSlug'], (result) => {
+      getTitleStore(['originalTitleData', 'currentSlug']).then((result) => {
         if (result.originalTitleData && result.currentSlug && result.originalTitleData[result.currentSlug]) {
           const originalChapters = result.originalTitleData[result.currentSlug].chapters;
           if (originalChapters && allChapters.length > 0) {
@@ -317,87 +318,6 @@ async function getRandomCoverInspectionText() {
   }
 }
 
-// Функция для очень быстрого прогресса (для основных этапов)
-async function fastProgress(targetProgress) {
-  const loaderProgress = document.getElementById('loader-progress');
-  if (!loaderProgress) return;
-  
-  const currentProgress = parseFloat(loaderProgress.style.width) || 0;
-  const diff = targetProgress - currentProgress;
-  
-  if (diff <= 0.5) {
-    await animateProgress(targetProgress, 20);
-  } else {
-    // Быстрые шаги по 3-5%
-    const stepCount = Math.ceil(diff / 4);
-    const stepSize = diff / stepCount;
-    const durationPerStep = 25 / stepCount; // 25ms всего
-    
-    let progress = currentProgress;
-    for (let i = 0; i < stepCount; i++) {
-      const nextProgress = Math.min(progress + stepSize, targetProgress);
-      await animateProgress(nextProgress, durationPerStep);
-      progress = nextProgress;
-    }
-  }
-}
-
-// Функция для медленного плавного прогресса (для Рассматриваем обложку - 800мс)
-async function slowSmoothProgress(targetProgress) {
-  const loaderProgress = document.getElementById('loader-progress');
-  if (!loaderProgress) return;
-  
-  const currentProgress = parseFloat(loaderProgress.style.width) || 0;
-  const diff = targetProgress - currentProgress;
-  
-  if (diff <= 0.5) {
-    await animateProgress(targetProgress, 50);
-  } else {
-    // Очень мелкие шаги по 0.5% для максимальной плавности
-    const stepCount = Math.ceil(diff / 0.5);
-    const stepSize = diff / stepCount;
-    const durationPerStep = 1200 / stepCount; // 1200ms всего
-    
-    let progress = currentProgress;
-    for (let i = 0; i < stepCount; i++) {
-      const nextProgress = Math.min(progress + stepSize, targetProgress);
-      await animateProgress(nextProgress, durationPerStep);
-      progress = nextProgress;
-    }
-  }
-}
-
-// Функция для Готово (400мс)
-async function readyProgress(targetProgress) {
-  const loaderProgress = document.getElementById('loader-progress');
-  if (!loaderProgress) return;
-  
-  const currentProgress = parseFloat(loaderProgress.style.width) || 0;
-  const diff = targetProgress - currentProgress;
-  
-  if (diff <= 0.5) {
-    await animateProgress(targetProgress, 50);
-  } else {
-    // Шаги по 1% для плавности
-    const stepCount = Math.ceil(diff / 1);
-    const stepSize = diff / stepCount;
-    const durationPerStep = 400 / stepCount; // 400ms всего
-    
-    let progress = currentProgress;
-    for (let i = 0; i < stepCount; i++) {
-      const nextProgress = Math.min(progress + stepSize, targetProgress);
-      await animateProgress(nextProgress, durationPerStep);
-      progress = nextProgress;
-    }
-  }
-}
-
-// Функция для случайной задержки
-function randomDelay(min, max) {
-  const delay = Math.random() * (max - min) + min;
-  return new Promise(resolve => setTimeout(resolve, delay));
-}
-
 // Функция обновления текста лоадера и прогресс-бара
 function updateLoader(text, progress) {
   const loaderText = document.getElementById('loader-text');
@@ -408,36 +328,6 @@ function updateLoader(text, progress) {
     loaderProgress.style.transition = 'width 0.3s ease';
     loaderProgress.style.width = progress + '%';
   }
-}
-
-// Функция для плавного увеличения прогресса
-function animateProgress(targetProgress, duration = 300) {
-  return new Promise(resolve => {
-    const loaderProgress = document.getElementById('loader-progress');
-    if (!loaderProgress) {
-      resolve();
-      return;
-    }
-    
-    const startProgress = parseFloat(loaderProgress.style.width) || 0;
-    const startTime = performance.now();
-    
-    function animate(currentTime) {
-      const elapsed = currentTime - startTime;
-      const progress = Math.min(elapsed / duration, 1);
-      const currentProgress = startProgress + (targetProgress - startProgress) * progress;
-      
-      loaderProgress.style.width = currentProgress + '%';
-      
-      if (progress < 1) {
-        requestAnimationFrame(animate);
-      } else {
-        resolve();
-      }
-    }
-    
-    requestAnimationFrame(animate);
-  });
 }
 
 // Функция для включения/выключения кнопок
@@ -457,7 +347,6 @@ function enableEditorButtons(enabled) {
 }
 
 // Глобальная переменная для начального прогресса
-let globalStartProgress = 0;
 
 // Слушатель сообщений для обновления темы
 setupThemeMessageListener();
@@ -494,24 +383,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Удаляем старый downloadData при открытии popup (предотвращаем накопление мусора)
   chrome.storage.local.remove('downloadData');
 
-  // Очищаем старые titleData (старше 7 дней) для предотвращения мусора
-  const result = await chrome.storage.local.get(['titleData']);
-  if (result.titleData) {
-    const titleData = result.titleData;
-    const sevenDaysAgo = Date.now() - (7 * 24 * 60 * 60 * 1000);
-    let modified = false;
-    
-    for (const slug in titleData) {
-      if (titleData[slug].cacheTimestamp && titleData[slug].cacheTimestamp < sevenDaysAgo) {
-        delete titleData[slug];
-        modified = true;
-      }
-    }
-    
-    if (modified) {
-      await chrome.storage.local.set({ titleData });
-    }
-  }
+  // titleData содержит пользовательские правки: срок кэша не должен удалять их.
 
   // Проверка обновлений при открытии popup (с задержкой 2 секунды)
   setTimeout(checkForUpdatesPopup, 2000);
@@ -579,7 +451,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     // Проверяем кэш - есть ли полные данные для этого тайтла
-    const cachedData = urlSlug ? await chrome.storage.local.get(['titleData', 'originalTitleData', 'currentSlug']) : { titleData: {}, originalTitleData: {}, currentSlug: null };
+    const cachedData = urlSlug ? await getTitleStore(['titleData', 'originalTitleData', 'currentSlug'], urlSlug) : { titleData: {}, originalTitleData: {}, currentSlug: null };
     const titleData = cachedData.titleData || {};
     const originalTitleData = cachedData.originalTitleData || {};
     const hasChapters = urlSlug && titleData[urlSlug] && titleData[urlSlug].chapters && titleData[urlSlug].chapters.length > 0;
@@ -615,11 +487,6 @@ document.addEventListener('DOMContentLoaded', async () => {
       const displayTitle = titleData[urlSlug].metadata.titleRu || titleData[urlSlug].metadata.titleEn || titleData[urlSlug].metadata.titleOriginal || 'Без названия';
       document.getElementById('book-title').textContent = displayTitle;
 
-      // Готово (400мс - визуальный маркер)
-      updateLoader('Готово!', 100);
-      await readyProgress(100);
-      await new Promise(resolve => setTimeout(resolve, 400));
-
       // Показываем UI
       document.getElementById('loader').classList.add('hidden');
       document.getElementById('main-view').classList.remove('hidden');
@@ -632,28 +499,25 @@ document.addEventListener('DOMContentLoaded', async () => {
       return;
     }
 
-    // Загружаем данные о ранобэ
-    globalStartProgress = 0;
-    
-    // Загрузка данных через API
-    updateLoader('Загрузка данных...', 5);
-    
-    // Загружаем главы
-    const chaptersResult = await loadChapters(activeTab.id);
+    // Загрузка данных через API: главы, метаданные и обложки независимы, запрашиваем их сразу
+    let loaderText = await getRandomCoverInspectionText();
+    let loadedParts = 0;
+    const trackProgress = promise => promise.then(result => {
+      updateLoader(loaderText, 10 + 30 * ++loadedParts);
+      return result;
+    });
+    updateLoader(loaderText, 10);
+    const [chaptersResult, metadataResult, coversResult] = await Promise.all([
+      trackProgress(loadChapters(activeTab.id)),
+      trackProgress(loadMetadata(activeTab.id)),
+      trackProgress(loadCovers(activeTab.id, urlSlug))
+    ]);
+
+    // Главы
     if (chaptersResult && chaptersResult.success) {
       const newSlug = chaptersResult.slug;
 
-      // Проверяем, изменился ли тайтл
-      const result = await chrome.storage.local.get(['currentSlug', 'titleData', 'originalTitleData']);
-      const oldSlug = result.currentSlug;
-      if (oldSlug !== newSlug) {
-        // Очищаем данные для старой книги
-        const titleData = result.titleData || {};
-        const originalTitleData = result.originalTitleData || {};
-        delete titleData[oldSlug];
-        delete originalTitleData[oldSlug];
-        await chrome.storage.local.set({ titleData, originalTitleData });
-      }
+      const result = await getTitleStore(['currentSlug', 'titleData', 'originalTitleData'], newSlug);
       await chrome.storage.local.set({ currentSlug: newSlug });
       currentSlug = newSlug;
 
@@ -679,14 +543,13 @@ document.addEventListener('DOMContentLoaded', async () => {
       return;
     }
 
-    // Загружаем метаданные
-    const metadataResult = await loadMetadata(activeTab.id);
+    // Метаданные
     if (metadataResult && metadataResult.success) {
       const metadata = metadataResult.metadata;
       const slug = metadataResult.slug;
 
       // Загружаем пользовательские метаданные
-      const titleDataResult = await chrome.storage.local.get(['titleData']);
+      const titleDataResult = await getTitleStore(['titleData'], slug);
       const titleData = titleDataResult.titleData || {};
 
       // Устанавливаем заголовок с цепочкой fallback
@@ -700,10 +563,10 @@ document.addEventListener('DOMContentLoaded', async () => {
       }
       titleData[slug].itemsCount = metadata.totalChapters;
       titleData[slug].cacheTimestamp = Date.now();
-      await chrome.storage.local.set({ titleData });
+      await setTitleStore({ titleData });
       
       // Сохраняем метаданные в storage
-      chrome.storage.local.get(['titleData', 'originalTitleData'], (result) => {
+      await getTitleStore(['titleData', 'originalTitleData'], slug).then((result) => {
         const titleData = result.titleData || {};
         const originalTitleData = result.originalTitleData || {};
         
@@ -729,14 +592,13 @@ document.addEventListener('DOMContentLoaded', async () => {
         // Сохраняем timestamp кэша (для устаревания через 10 минут)
         titleData[slug].cacheTimestamp = Date.now();
 
-        chrome.storage.local.set({ titleData, originalTitleData });
+        return setTitleStore({ titleData, originalTitleData });
       });
     } else {
       console.error('Не удалось загрузить метаданные:', metadataResult?.error);
     }
     
-    // Загружаем обложки
-    const coversResult = await loadCovers(activeTab.id, currentSlug);
+    // Обложки
     if (coversResult && coversResult.success) {
       allCovers = coversResult.covers;
       
@@ -746,7 +608,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       }
       
       // Обновляем данные с обложками
-      chrome.storage.local.get(['titleData', 'originalTitleData'], (result) => {
+      await getTitleStore(['titleData', 'originalTitleData'], currentSlug).then((result) => {
         const titleData = result.titleData || {};
         const originalTitleData = result.originalTitleData || {};
         
@@ -770,29 +632,12 @@ document.addEventListener('DOMContentLoaded', async () => {
         // Обновляем timestamp кэша (чтобы устаревал через 10 минут)
         titleData[currentSlug].cacheTimestamp = Date.now();
 
-        chrome.storage.local.set({ titleData, originalTitleData });
+        return setTitleStore({ titleData, originalTitleData });
       });
     } else {
       allCovers = [originalCover];
     }
     
-    // Обновляем прогресс сразу без анимации
-    const loaderProgress = document.getElementById('loader-progress');
-    if (loaderProgress) {
-      loaderProgress.style.width = (globalStartProgress + 25) + '%';
-    }
-    
-    // Шуточный этап (медленно и плавно - 800мс)
-    const coverInspectionText = await getRandomCoverInspectionText();
-    updateLoader(coverInspectionText, globalStartProgress + 25);
-    await slowSmoothProgress(globalStartProgress + 50);
-    
-    // Готово (400мс - визуальный маркер)
-    updateLoader('Готово!', globalStartProgress + 50);
-    await readyProgress(100);
-    // Ждем завершения CSS transition
-    await new Promise(resolve => setTimeout(resolve, 400));
-
     // Сначала скрываем loader
     document.getElementById('loader').classList.add('hidden');
     
@@ -879,7 +724,7 @@ document.getElementById('btn-edit-chapters').addEventListener('click', async () 
   const toIdx = parseInt(document.getElementById('chapter-to').value);
   
   // Сохраняем главы в titleData
-  const result = await chrome.storage.local.get(['titleData', 'currentSlug']);
+  const result = await getTitleStore(['titleData', 'currentSlug']);
   const titleData = result.titleData || {};
   const currentSlug = result.currentSlug;
   
@@ -894,7 +739,7 @@ document.getElementById('btn-edit-chapters').addEventListener('click', async () 
   titleData[currentSlug].filteredChapters = filteredChapters; // Сохраняем отфильтрованные главы для редактора
   titleData[currentSlug].fromIdx = fromIdx;
   titleData[currentSlug].toIdx = toIdx;
-  await chrome.storage.local.set({ titleData });
+  await setTitleStore({ titleData });
   
   openPopupWindow('html/chapters.html');
 });
@@ -923,7 +768,7 @@ document.getElementById('btn-download').addEventListener('click', () => {
   const selectedChapters = allChapters.slice(fromIdx, toIdx + 1);
 
   // Получаем метаданные из storage
-  chrome.storage.local.get(['titleData', 'originalTitleData', 'siteType'], (result) => {
+  getTitleStore(['titleData', 'originalTitleData', 'siteType'], currentSlug).then((result) => {
     const metadata = result.titleData && result.titleData[currentSlug] && result.titleData[currentSlug].metadata ? result.titleData[currentSlug].metadata : {};
     const originalMetadata = result.originalTitleData && result.originalTitleData[currentSlug] && result.originalTitleData[currentSlug].metadata ? result.originalTitleData[currentSlug].metadata : {};
     const translatorPriority = result.titleData && result.titleData[currentSlug] ? (result.titleData[currentSlug].translatorPriority || []) : [];
@@ -979,7 +824,7 @@ document.getElementById('chapter-from').addEventListener('change', async (e) => 
   }
 
   // Обновляем сохраненный диапазон и пересоздаём filteredChapters при изменении
-  const result = await chrome.storage.local.get(['titleData', 'currentSlug']);
+  const result = await getTitleStore(['titleData', 'currentSlug']);
   const titleData = result.titleData || {};
   const currentSlug = result.currentSlug;
 
@@ -990,7 +835,7 @@ document.getElementById('chapter-from').addEventListener('change', async (e) => 
     if (titleData[currentSlug].chapters) {
       titleData[currentSlug].filteredChapters = titleData[currentSlug].chapters.slice(fromIdx, parseInt(toSelect.value) + 1);
     }
-    await chrome.storage.local.set({ titleData });
+    await setTitleStore({ titleData });
   }
 });
 
@@ -1003,7 +848,7 @@ document.getElementById('chapter-to').addEventListener('change', async (e) => {
   }
 
   // Обновляем сохраненный диапазон и пересоздаём filteredChapters при изменении
-  const result = await chrome.storage.local.get(['titleData', 'currentSlug']);
+  const result = await getTitleStore(['titleData', 'currentSlug']);
   const titleData = result.titleData || {};
   const currentSlug = result.currentSlug;
 
@@ -1014,7 +859,7 @@ document.getElementById('chapter-to').addEventListener('change', async (e) => {
     if (titleData[currentSlug].chapters) {
       titleData[currentSlug].filteredChapters = titleData[currentSlug].chapters.slice(parseInt(fromSelect.value), toIdx + 1);
     }
-    await chrome.storage.local.set({ titleData });
+    await setTitleStore({ titleData });
   }
 });
 
@@ -1193,7 +1038,7 @@ function processChapters(chaptersList) {
   });
 
   // Восстанавливаем сохраненные displayTitle из titleData
-  chrome.storage.local.get(['titleData', 'currentSlug'], (result) => {
+  getTitleStore(['titleData', 'currentSlug']).then((result) => {
     if (result.titleData && result.currentSlug && result.titleData[result.currentSlug] && result.titleData[result.currentSlug].chapters) {
       const savedChapters = result.titleData[result.currentSlug].chapters;
       const savedMap = new Map(savedChapters.map(ch => [`${ch.id}_${ch.branchId || 'null'}`, ch]));
@@ -1378,7 +1223,7 @@ function applyTranslatorPriority() {
     }
   });
   
-  chrome.storage.local.get(['titleData', 'currentSlug'], (result) => {
+  getTitleStore(['titleData', 'currentSlug']).then((result) => {
     const titleData = result.titleData || {};
     const currentSlug = result.currentSlug;
     if (!titleData[currentSlug]) {
@@ -1387,6 +1232,6 @@ function applyTranslatorPriority() {
     titleData[currentSlug].translatorPriority = translatorPriority;
     titleData[currentSlug].chapterBranchOverrides = chapterBranchOverrides;
     titleData[currentSlug].chapters = allChapters;
-    chrome.storage.local.set({ titleData });
+    setTitleStore({ titleData });
   });
 }

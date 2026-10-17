@@ -252,8 +252,7 @@ async function loadDownloadData() {
   // Загружаем пользовательские данные для получения изменённых обложек, метаданных и переводчиков
   const slug = downloadData.slug;
   if (slug) {
-    const titleDataResult = await chrome.storage.local.get(['titleData']);
-    const titleData = titleDataResult.titleData || {};
+    const { titleData } = await getTitleStore(['titleData'], slug);
     
     // Если есть пользовательские обложки, используем их (даже если пустые)
     if (titleData[slug] && titleData[slug].covers !== undefined) {
@@ -1272,7 +1271,7 @@ function loadSavedCheckboxes() {
   const slug = downloadData.slug;
   if (!slug) return;
 
-  chrome.storage.local.get(['titleData'], (result) => {
+  getTitleStore(['titleData'], slug).then((result) => {
     const titleData = result.titleData || {};
     const savedData = titleData[slug];
 
@@ -1414,6 +1413,9 @@ function setupEventListeners() {
     });
     
     if (serverSelect && serverDropdown) {
+      // Добавляем tabindex для клавиатурной навигации
+      serverSelect.setAttribute('tabindex', '0');
+      
       serverSelect.addEventListener('click', (e) => {
         e.stopPropagation();
         // Закрываем другие dropdown при открытии этого
@@ -1423,7 +1425,23 @@ function setupEventListeners() {
         serverDropdown.style.display = serverDropdown.style.display === 'none' ? 'block' : 'none';
       });
       
-      serverOptions.forEach(option => {
+      // Поддержка клавиатуры
+      serverSelect.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          e.stopPropagation();
+          if (formatDropdown) {
+            formatDropdown.style.display = 'none';
+          }
+          serverDropdown.style.display = serverDropdown.style.display === 'none' ? 'block' : 'none';
+        } else if (e.key === 'Escape') {
+          serverDropdown.style.display = 'none';
+        }
+      });
+      
+      serverOptions.forEach((option, index) => {
+        option.setAttribute('tabindex', '-1');
+        
         option.addEventListener('click', (e) => {
           e.stopPropagation();
           selectedServer = option.dataset.value;
@@ -1437,7 +1455,37 @@ function setupEventListeners() {
           chrome.storage.local.set({ imageServer: selectedServer });
           
           serverDropdown.style.display = 'none';
+          serverSelect.focus();
         });
+        
+        option.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            option.click();
+          } else if (e.key === 'ArrowDown') {
+            e.preventDefault();
+            const nextIndex = (index + 1) % serverOptions.length;
+            serverOptions[nextIndex].focus();
+          } else if (e.key === 'ArrowUp') {
+            e.preventDefault();
+            const prevIndex = (index - 1 + serverOptions.length) % serverOptions.length;
+            serverOptions[prevIndex].focus();
+          } else if (e.key === 'Escape') {
+            e.preventDefault();
+            serverDropdown.style.display = 'none';
+            serverSelect.focus();
+          }
+        });
+      });
+      
+      // Навигация стрелками когда dropdown открыт
+      serverSelect.addEventListener('keydown', (e) => {
+        if (serverDropdown.style.display === 'block') {
+          if (e.key === 'ArrowDown') {
+            e.preventDefault();
+            serverOptions[0].focus();
+          }
+        }
       });
       
       // Закрытие dropdown при клике вне
@@ -1454,6 +1502,9 @@ function setupEventListeners() {
     });
     
     if (formatSelect && formatDropdown) {
+      // Добавляем tabindex для клавиатурной навигации
+      formatSelect.setAttribute('tabindex', '0');
+      
       formatSelect.addEventListener('click', (e) => {
         e.stopPropagation();
         // Закрываем другие dropdown при открытии этого
@@ -1463,7 +1514,25 @@ function setupEventListeners() {
         formatDropdown.style.display = formatDropdown.style.display === 'none' ? 'block' : 'none';
       });
       
-      formatOptions.forEach(option => {
+      // Поддержка клавиатуры
+      formatSelect.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          e.stopPropagation();
+          if (serverDropdown) {
+            serverDropdown.style.display = 'none';
+          }
+          formatDropdown.style.display = formatDropdown.style.display === 'none' ? 'block' : 'none';
+        } else if (e.key === 'Escape') {
+          formatDropdown.style.display = 'none';
+        }
+      });
+      
+      let focusedOptionIndex = -1;
+      
+      formatOptions.forEach((option, index) => {
+        option.setAttribute('tabindex', '-1');
+        
         option.addEventListener('click', (e) => {
           e.stopPropagation();
           selectedFormat = option.dataset.value;
@@ -1481,7 +1550,37 @@ function setupEventListeners() {
           updateTextOnlyVisibility();
           
           formatDropdown.style.display = 'none';
+          formatSelect.focus();
         });
+        
+        option.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            option.click();
+          } else if (e.key === 'ArrowDown') {
+            e.preventDefault();
+            const nextIndex = (index + 1) % formatOptions.length;
+            formatOptions[nextIndex].focus();
+          } else if (e.key === 'ArrowUp') {
+            e.preventDefault();
+            const prevIndex = (index - 1 + formatOptions.length) % formatOptions.length;
+            formatOptions[prevIndex].focus();
+          } else if (e.key === 'Escape') {
+            e.preventDefault();
+            formatDropdown.style.display = 'none';
+            formatSelect.focus();
+          }
+        });
+      });
+      
+      // Навигация стрелками когда dropdown открыт
+      formatSelect.addEventListener('keydown', (e) => {
+        if (formatDropdown.style.display === 'block') {
+          if (e.key === 'ArrowDown') {
+            e.preventDefault();
+            formatOptions[0].focus();
+          }
+        }
       });
       
       // Закрытие dropdown при клике вне
@@ -1669,13 +1768,13 @@ function updateSelectedChapters() {
   // Сохраняем выбранные главы для текущего тайтла
   const slug = downloadData.slug;
   if (slug) {
-    chrome.storage.local.get(['titleData'], (result) => {
+    getTitleStore(['titleData'], slug).then((result) => {
       const titleData = result.titleData || {};
       if (!titleData[slug]) {
         titleData[slug] = {};
       }
       titleData[slug].selectedChapterIds = Array.from(selectedChapterIds);
-      chrome.storage.local.set({ titleData });
+      return setTitleStore({ titleData });
     });
   }
 }

@@ -32,7 +32,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
   
   // Получаем метаданные из storage (загруженные popup.js)
-  chrome.storage.local.get(['currentSlug', 'titleData', 'originalTitleData', 'metadataFields'], (result) => {
+  getTitleStore(['currentSlug', 'titleData', 'originalTitleData', 'metadataFields']).then((result) => {
     if (result.currentSlug) {
       currentSlug = result.currentSlug;
     }
@@ -74,7 +74,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       
       // originalMetadata должна содержать оригинальные данные из API для сброса
       // Загружаем отдельно через callback как в бэкапе
-      chrome.storage.local.get(['originalTitleData'], (origResult) => {
+      getTitleStore(['originalTitleData']).then((origResult) => {
         if (origResult.originalTitleData && origResult.originalTitleData[currentSlug] && origResult.originalTitleData[currentSlug].metadata) {
           originalMetadata = { ...origResult.originalTitleData[currentSlug].metadata };
         } else {
@@ -298,7 +298,7 @@ document.getElementById('btn-save').addEventListener('click', () => {
     metadata.tags = document.getElementById('tags').value;
   }
 
-  chrome.storage.local.get(['titleData'], (result) => {
+  getTitleStore(['titleData']).then((result) => {
     const titleData = result.titleData || {};
     // Инициализируем структуру если нет
     if (!titleData[currentSlug]) {
@@ -315,10 +315,10 @@ document.getElementById('btn-save').addEventListener('click', () => {
     titleData[currentSlug].cacheTimestamp = Date.now();
 
     // Сохраняем временные изменения названий полей в storage
-    chrome.storage.local.set({
+    setTitleStore({
       titleData,
       fieldLabels: tempFieldLabels
-    }, () => {
+    }).then(() => {
       // Отправляем toast уведомление в popup
       chrome.runtime.sendMessage({ action: 'showToast', message: 'Сохранено!', type: 'success' });
       
@@ -336,7 +336,7 @@ document.getElementById('btn-save').addEventListener('click', () => {
 // Сброс к данным с сайта
 document.getElementById('btn-reset').addEventListener('click', () => {
   // Загружаем оригинальные метаданные из API (originalTitleData)
-  chrome.storage.local.get(['originalTitleData', 'currentSlug'], (result) => {
+  getTitleStore(['originalTitleData', 'currentSlug']).then((result) => {
     if (result.originalTitleData && result.currentSlug && result.originalTitleData[result.currentSlug] && result.originalTitleData[result.currentSlug].metadata) {
       const resetMetadata = result.originalTitleData[result.currentSlug].metadata;
       document.getElementById('title-ru').value = resetMetadata.titleRu || '';
@@ -372,7 +372,7 @@ document.getElementById('btn-reset').addEventListener('click', () => {
       resetAllFieldLabels();
     } else {
       // Fallback: если originalTitleData нет, пробуем из titleData
-      chrome.storage.local.get(['titleData', 'currentSlug'], (result) => {
+      getTitleStore(['titleData', 'currentSlug']).then((result) => {
         if (result.titleData && result.currentSlug && result.titleData[result.currentSlug] && result.titleData[result.currentSlug].metadata) {
           const savedMetadata = result.titleData[result.currentSlug].metadata;
           document.getElementById('title-ru').value = savedMetadata.titleRu || '';

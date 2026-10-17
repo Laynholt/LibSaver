@@ -94,7 +94,7 @@ class BaseFormatter {
 
         if (response.status === 429) {
           if (attempt < maxRetries) {
-            const delay = delays[attempt];
+            const delay = delays[Math.min(attempt, delays.length - 1)];
             if (this.options.addLog) {
               this.options.addLog(`Rate limited (429), waiting ${delay/1000}s before retry ${attempt + 1}/${maxRetries + 1}`);
             }
@@ -109,19 +109,23 @@ class BaseFormatter {
           if (this.options.addLog) {
             this.options.addLog(`Server error (${response.status}), adaptive speed reduced`, true);
           }
+        } else if (response.status !== 408) {
+          // 404/403 и прочие 4xx повтор не исправит — не ждём зря минуту
+          throw Object.assign(new Error(`HTTP ${response.status}: ${response.statusText}`), { noRetry: true });
         }
 
         if (attempt < maxRetries) {
-          const delay = delays[attempt];
+          const delay = delays[Math.min(attempt, delays.length - 1)];
           if (this.options.addLog) {
             this.options.addLog(`Request failed (${response.status}), retrying in ${delay/1000}s (attempt ${attempt + 1}/${maxRetries + 1})`);
           }
           await new Promise(resolve => setTimeout(resolve, delay));
         }
       } catch (error) {
+        if (error.noRetry) throw error;
         lastError = error;
         if (attempt < maxRetries) {
-          const delay = delays[attempt];
+          const delay = delays[Math.min(attempt, delays.length - 1)];
           if (this.options.addLog) {
             this.options.addLog(`Network error (${error.message}), retrying in ${delay/1000}s (attempt ${attempt + 1}/${maxRetries + 1})`);
           }
@@ -1273,12 +1277,42 @@ class BaseFormatter {
 
   // Экранирование XML специальных символов
   escapeXml(text) {
-    if (!text) return '';
-    return text
+    return String(text ?? '')
       .replace(/&/g, '&amp;')
       .replace(/</g, '&lt;')
       .replace(/>/g, '&gt;')
       .replace(/"/g, '&quot;')
       .replace(/'/g, '&apos;');
+  }
+
+  // HTML главы пишут пользователи сайта: в итоговый файл не пускаем скрипты, обработчики и javascript:-ссылки
+  sanitizeChapterDom(root) {
+    root.querySelectorAll('script,style,iframe,frame,frameset,object,embed,applet,form,link,meta,base,template,noscript,animate,set').forEach(el => el.remove());
+    for (const el of root.querySelectorAll('*')) {
+      for (const { name, value } of Array.from(el.attributes)) {
+        // Браузер игнорирует пробелы и управляющие символы в схеме URL (java\tscript:), поэтому убираем их перед проверкой
+        if (/^on/i.test(name) || (/^(href|src|xlink:href|action|formaction|srcdoc)$/i.test(name) && /^(javascript|vbscript|data:text)/i.test(value.replace(/[\u0000- ]/g, '')))) {
+          el.removeAttribute(name);
+        }
+      }
+    }
+    return root;
+  }
+
+  // Картинки выключены: заменяем их текстовой пометкой (textContent сам экранирует alt)
+  replaceImagesWithPlaceholders(doc, withAlt) {
+    for (const img of Array.from(doc.querySelectorAll('img'))) {
+      const alt = withAlt ? img.getAttribute('alt') || '' : '';
+      const span = doc.createElement('span');
+      span.className = 'image-placeholder';
+      span.textContent = alt ? `[Изображение пропущено: ${alt}]` : '[Изображение пропущено]';
+      img.replaceWith(span);
+    }
+  }
+
+  // innerHTML даёт HTML-сериализацию (<br>, &nbsp;), а главы EPUB — это XML: сериализуем узлы как XHTML
+  serializeXhtml(root) {
+    const serializer = new XMLSerializer();
+    return Array.from(root.childNodes, node => serializer.serializeToString(node)).join('');
   }
 }

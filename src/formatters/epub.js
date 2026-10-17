@@ -198,7 +198,7 @@ class EpubFormatter extends BaseFormatter {
     }
 
     let tocItems = '';
-    tocItems += chapterFiles.map(ch => `<div class="toc-item"><a href="${ch.file}">${ch.title}</a></div>`).join('\n        ');
+    tocItems += chapterFiles.map(ch => `<div class="toc-item"><a href="${this.escapeXml(ch.file)}">${this.escapeXml(ch.title)}</a></div>`).join('\n        ');
 
     const tocHtml = `<?xml version="1.0" encoding="utf-8"?>
 <html xmlns="http://www.w3.org/1999/xhtml">
@@ -272,8 +272,9 @@ class EpubFormatter extends BaseFormatter {
       .map(fieldId => fieldMapping[fieldId])
       .filter(field => field && field.value)
       .map(field => {
-        const formattedValue = field.format ? field.format(field.value) : field.value;
-        return `<div class="info-row"><span class="info-label"><strong>${field.label}:</strong> </span><span class="info-value">${formattedValue}</span></div>`;
+          const value = this.escapeXml(field.value);
+          const formattedValue = field.format ? field.format(value) : value;
+          return `<div class="info-row"><span class="info-label"><strong>${this.escapeXml(field.label)}:</strong> </span><span class="info-value">${formattedValue}</span></div>`;
       })
       .join('');
 
@@ -404,11 +405,11 @@ class EpubFormatter extends BaseFormatter {
       const fullHtml = `<?xml version="1.0" encoding="utf-8"?>
 <html xmlns="http://www.w3.org/1999/xhtml">
 <head>
-    <title>${ch.displayTitle}</title>
+    <title>${this.escapeXml(ch.displayTitle)}</title>
     <link rel="stylesheet" type="text/css" href="styles.css"/>
 </head>
 <body>
-    ${noHeaders ? '' : `<h1>${ch.displayTitle}</h1>`}
+    ${noHeaders ? '' : `<h1>${this.escapeXml(ch.displayTitle)}</h1>`}
     ${htmlContent}
 </body>
 </html>`;
@@ -648,11 +649,11 @@ class EpubFormatter extends BaseFormatter {
       const fullHtml = `<?xml version="1.0" encoding="utf-8"?>
 <html xmlns="http://www.w3.org/1999/xhtml">
 <head>
-    <title>${ch.displayTitle}</title>
+    <title>${this.escapeXml(ch.displayTitle)}</title>
     <link rel="stylesheet" type="text/css" href="styles.css"/>
 </head>
 <body>
-    ${noHeaders ? '' : `<h1>${ch.displayTitle}</h1>`}
+    ${noHeaders ? '' : `<h1>${this.escapeXml(ch.displayTitle)}</h1>`}
     <div class="manga-chapter">
 ${chapterHtml}
     </div>
@@ -731,20 +732,13 @@ ${chapterHtml}
         node = tempDiv.innerHTML;
       }
 
-      if (disableImages) {
-        const parser = new DOMParser();
-        const doc = parser.parseFromString(`<div>${node}</div>`, 'text/html');
-        const images = doc.querySelectorAll('img');
-        for (const img of images) {
-          const alt = img.alt || '';
-          const placeholder = alt ? `<span class="image-placeholder">[Изображение пропущено: ${alt}]</span>` : '<span class="image-placeholder">[Изображение пропущено]</span>';
-          img.outerHTML = placeholder;
-        }
-        return doc.body.innerHTML;
-      }
-
       const parser = new DOMParser();
       const doc = parser.parseFromString(`<div>${node}</div>`, 'text/html');
+      this.sanitizeChapterDom(doc.body);
+      if (disableImages) {
+        this.replaceImagesWithPlaceholders(doc, true);
+        return this.serializeXhtml(doc.body);
+      }
 
       const images = doc.querySelectorAll('img');
       for (const img of images) {
@@ -753,8 +747,9 @@ ${chapterHtml}
           try {
             const getNextImageNumber = context.getNextImageNumber || (() => `img_${Math.random().toString(36).substr(2, 9)}`);
             const imageResult = await this.downloadAndResizeImage(src, this.options.quality, imageFormat, 'картинка');
-            if (imagesFolder && imageResult && imageResult.blob) {
-              const blob = imageResult.blob;
+            const blob = imageResult?.blob;
+            if (!blob) throw new Error('пустой ответ сервера картинок');
+            if (imagesFolder) {
               const imageFormat = this.options.imageFormat || 'original';
               const imgExtension = this.getImageExtension(blob, imageFormat, src);
               const imgId = `${getNextImageNumber()}${imgExtension}`;
@@ -781,7 +776,7 @@ ${chapterHtml}
           }
         }
       }
-      return doc.body.innerHTML;
+      return this.serializeXhtml(doc.body);
     }
 
     if (Array.isArray(node)) {
@@ -812,8 +807,7 @@ ${chapterHtml}
     if (node.type === 'hardBreak') return '<br/>';
     
     if (node.type === 'text') {
-      let text = node.text || "";
-      text = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+      let text = this.escapeXml(node.text);
       if (node.marks) {
         node.marks.forEach(mark => {
           if (mark.type === 'italic') text = `<em>${text}</em>`;
@@ -827,14 +821,14 @@ ${chapterHtml}
 
     if (node.type === 'image') {
       const caption = node.attrs?.description || '';
-      const captionHtml = caption ? `<p class="image-caption">${caption}</p>` : '';
+      const captionHtml = caption ? `<p class="image-caption">${this.escapeXml(caption)}</p>` : '';
 
       if (this.options.quality === 'NONE') {
         return `${captionHtml}<span class="image-placeholder">[Картинка пропущена]</span>`;
       }
 
       const imagesData = node.attrs?.images;
-      let captionEscaped = caption.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+      const captionEscaped = this.escapeXml(caption);
 
       // Проверяем, есть ли массив изображений (группа картинок)
       if (Array.isArray(imagesData) && imagesData.length > 0) {
@@ -906,14 +900,14 @@ ${chapterHtml}
               const imgId = `${getNextImageNumber()}${imgExtension}`;
               if (imagesFolder) {
                 imagesFolder.file(imgId, blob);
-                imagesHtml += `<img src="images/${imgId}" alt="${caption || 'Иллюстрация'}" />`;
+                imagesHtml += `<img src="images/${imgId}" alt="${this.escapeXml(caption || 'Иллюстрация')}" />`;
               } else {
                 const reader = new FileReader();
                 const base64 = await new Promise(r => {
                   reader.onloadend = () => r(reader.result);
                   reader.readAsDataURL(blob);
                 });
-                imagesHtml += `<img src="${base64}" alt="${caption || 'Иллюстрация'}" />`;
+                imagesHtml += `<img src="${base64}" alt="${this.escapeXml(caption || 'Иллюстрация')}" />`;
               }
               onImageDownloaded();
             } catch (e) {
@@ -930,7 +924,7 @@ ${chapterHtml}
         }
         
         // Оборачиваем все картинки в div с подписью
-        const captionHtml = caption ? `<p class="image-caption">${caption}</p>` : '';
+        const captionHtml = caption ? `<p class="image-caption">${this.escapeXml(caption)}</p>` : '';
         return `<div class="image-group">${captionHtml}${imagesHtml}</div>`;
       }
       
@@ -954,18 +948,18 @@ ${chapterHtml}
             const imgId = `${getNextImageNumber()}${imgExtension}`;
             if (imagesFolder) {
               imagesFolder.file(imgId, blob);
-              const captionHtml = caption ? `<p class="image-caption">${caption}</p>` : '';
+              const captionHtml = caption ? `<p class="image-caption">${this.escapeXml(caption)}</p>` : '';
               onImageDownloaded();
-              return `${captionHtml}<img src="images/${imgId}" alt="${caption || 'Иллюстрация'}" />`;
+              return `${captionHtml}<img src="images/${imgId}" alt="${this.escapeXml(caption || 'Иллюстрация')}" />`;
             } else {
               const reader = new FileReader();
               const base64 = await new Promise(r => {
                 reader.onloadend = () => r(reader.result);
                 reader.readAsDataURL(blob);
               });
-              const captionHtml = caption ? `<p class="image-caption">${caption}</p>` : '';
+              const captionHtml = caption ? `<p class="image-caption">${this.escapeXml(caption)}</p>` : '';
               onImageDownloaded();
-              return `${captionHtml}<img src="${base64}" alt="${caption || 'Иллюстрация'}" />`;
+              return `${captionHtml}<img src="${base64}" alt="${this.escapeXml(caption || 'Иллюстрация')}" />`;
             }
           } catch (e) {
             if (this.options.addLog) {
@@ -995,18 +989,18 @@ ${chapterHtml}
             const imgExtension = this.getImageExtension(blob, imageFormat, imgUrl);
             const imgId = `${getNextImageNumber()}${imgExtension}`;
             imagesFolder.file(imgId, blob);
-            const captionHtml = caption ? `<p class="image-caption">${caption}</p>` : '';
+            const captionHtml = caption ? `<p class="image-caption">${this.escapeXml(caption)}</p>` : '';
             onImageDownloaded();
-            return `${captionHtml}<img src="images/${imgId}" alt="${caption || 'Иллюстрация'}" />`;
+            return `${captionHtml}<img src="images/${imgId}" alt="${this.escapeXml(caption || 'Иллюстрация')}" />`;
           } else {
             const reader = new FileReader();
             const base64 = await new Promise(r => {
               reader.onloadend = () => r(reader.result);
               reader.readAsDataURL(blob);
             });
-            const captionHtml = caption ? `<p class="image-caption">${caption}</p>` : '';
+            const captionHtml = caption ? `<p class="image-caption">${this.escapeXml(caption)}</p>` : '';
             onImageDownloaded();
-            return `${captionHtml}<img src="${base64}" alt="${caption || 'Иллюстрация'}" />`;
+            return `${captionHtml}<img src="${base64}" alt="${this.escapeXml(caption || 'Иллюстрация')}" />`;
           }
         } catch (e) {
           if (this.options.addLog) {
@@ -1047,13 +1041,14 @@ ${chapterHtml}
     
     const disableToc = this.options.disableToc || false;
     
-    const manifest = chapterFiles.map((ch, i) => `<item id="ch${i+1}" href="${ch.file}" media-type="application/xhtml+xml"/>`).join('\n    ');
+    const manifest = chapterFiles.map((ch, i) => `<item id="ch${i+1}" href="${this.escapeXml(ch.file)}" media-type="application/xhtml+xml"/>`).join('\n    ');
     const spine = chapterFiles.map((ch, i) => `<itemref idref="ch${i+1}"/>`).join('\n    ');
     
     const images = Object.keys(this.zip.files).filter(path => path.startsWith('OEBPS/images/') && !path.endsWith('/'));
+    const primaryCover = images.find(path => path.split('/').pop().startsWith('cover'));
     const imageItems = images.map(path => {
       const name = path.split('/').pop();
-      const id = name.startsWith('cover') ? 'cover-image' : 'img_' + name.replace(/\.[^/.]+$/, "").replace(/[^a-zA-Z0-9]/g, '_');
+      const id = path === primaryCover ? 'cover-image' : 'img_' + name.replace(/\.[^/.]+$/, "").replace(/[^a-zA-Z0-9]/g, '_');
       const ext = name.split('.').pop().toLowerCase();
       const mimeTypeMap = {
         'jpg': 'image/jpeg',
@@ -1070,7 +1065,7 @@ ${chapterHtml}
         'heif': 'image/heif'
       };
       const mimeType = mimeTypeMap[ext] || 'image/jpeg';
-      const coverProps = name.startsWith('cover') ? ' properties="cover-image"' : '';
+      const coverProps = path === primaryCover ? ' properties="cover-image"' : '';
       return `<item id="${id}" href="images/${name}" media-type="${mimeType}"${coverProps}/>`;
     }).join('\n    ');
 
@@ -1108,19 +1103,19 @@ ${chapterHtml}
     const opfContent = `<?xml version="1.0" encoding="utf-8"?>
 <package xmlns="http://www.idpf.org/2007/opf" unique-identifier="bookid" version="3.0">
   <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
-    <dc:title>${titleRu}</dc:title>
-    ${metadata.titleEn ? `<dc:title id="title-en">${metadata.titleEn}</dc:title>` : ''}
-    ${metadata.titleOriginal ? `<dc:title id="title-original">${metadata.titleOriginal}</dc:title>` : ''}
-    ${author ? `<dc:creator>${author}</dc:creator>` : ''}
-    ${artist ? `<dc:contributor>${artist}</dc:contributor>` : ''}
-    ${publisher ? `<dc:publisher>${publisher}</dc:publisher>` : ''}
+    <dc:title>${this.escapeXml(titleRu)}</dc:title>
+    ${metadata.titleEn ? `<dc:title id="title-en">${this.escapeXml(metadata.titleEn)}</dc:title>` : ''}
+    ${metadata.titleOriginal ? `<dc:title id="title-original">${this.escapeXml(metadata.titleOriginal)}</dc:title>` : ''}
+    ${author ? `<dc:creator>${this.escapeXml(author)}</dc:creator>` : ''}
+    ${artist ? `<dc:contributor>${this.escapeXml(artist)}</dc:contributor>` : ''}
+    ${publisher ? `<dc:publisher>${this.escapeXml(publisher)}</dc:publisher>` : ''}
     <dc:language>ru</dc:language>
-    ${year ? `<dc:date>${year}</dc:date>` : ''}
-    ${country ? `<dc:subject>${country}</dc:subject>` : ''}
-    ${status ? `<meta property="calibre:series">${status}</meta>` : ''}
-    ${ageRestriction ? `<meta property="calibre:rating">${ageRestriction}</meta>` : ''}
-    ${genres ? `<dc:subject>${genres}</dc:subject>` : ''}
-    ${tags ? `<dc:subject>${tags}</dc:subject>` : ''}
+    ${year ? `<dc:date>${this.escapeXml(year)}</dc:date>` : ''}
+    ${country ? `<dc:subject>${this.escapeXml(country)}</dc:subject>` : ''}
+    ${status ? `<meta property="calibre:series">${this.escapeXml(status)}</meta>` : ''}
+    ${ageRestriction ? `<meta property="calibre:rating">${this.escapeXml(ageRestriction)}</meta>` : ''}
+    ${genres ? `<dc:subject>${this.escapeXml(genres)}</dc:subject>` : ''}
+    ${tags ? `<dc:subject>${this.escapeXml(tags)}</dc:subject>` : ''}
     <dc:identifier id="bookid">urn:uuid:${crypto.randomUUID()}</dc:identifier>
     <meta property="dcterms:modified">${new Date().toISOString().replace(/\.[0-9]{3}Z/, 'Z')}</meta>
     ${this.zip.files['OEBPS/cover.xhtml'] || Object.keys(this.zip.files).some(path => path.startsWith('OEBPS/images/cover')) ? '<meta name="cover" content="cover-image"/>\n    <meta property="cover-image" content="cover-image"/>' : ''}
@@ -1169,7 +1164,7 @@ ${manifestItems}
       if (this.zip.files['OEBPS/info.xhtml']) {
         navItems += '<li><a href="info.xhtml">Информация о произведении</a></li>\n        ';
       }
-      navItems += chapterFiles.map(ch => `<li><a href="${ch.file}">${ch.title}</a></li>`).join('\n        ');
+      navItems += chapterFiles.map(ch => `<li><a href="${this.escapeXml(ch.file)}">${this.escapeXml(ch.title)}</a></li>`).join('\n        ');
       const navHtml = `<?xml version="1.0" encoding="utf-8"?>
 <html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops">
 <head><title>Оглавление</title>
@@ -1210,8 +1205,8 @@ ${manifestItems}
     
     navPoints += chapterFiles.map((ch, i) => `
       <navPoint id="nav${playOrder++}" playOrder="${playOrder - 1}">
-        <navLabel><text>${ch.title}</text></navLabel>
-        <content src="${ch.file}"/>
+        <navLabel><text>${this.escapeXml(ch.title)}</text></navLabel>
+        <content src="${this.escapeXml(ch.file)}"/>
       </navPoint>`).join('');
     
     const ncxContent = `<?xml version="1.0" encoding="utf-8"?>
@@ -1220,7 +1215,7 @@ ${manifestItems}
     <meta name="dtb:uid" content="urn:uuid:${crypto.randomUUID()}"/>
     <meta name="dtb:depth" content="1"/>
   </head>
-  <docTitle><text>${titleRu}</text></docTitle>
+  <docTitle><text>${this.escapeXml(titleRu)}</text></docTitle>
   <navMap>
     ${navPoints}
   </navMap>

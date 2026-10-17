@@ -13,15 +13,6 @@ class Fb2Formatter extends BaseFormatter {
     return 'application/fb2+zip';
   }
 
-  escapeXml(text) {
-    return text
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;')
-      .replace(/'/g, '&#39;');
-  }
-
   htmlToFb2(node) {
     if (!node) return '';
     
@@ -461,18 +452,10 @@ class Fb2Formatter extends BaseFormatter {
         node = tempDiv.innerHTML;
       }
 
-      if (disableImages) {
-        const parser = new DOMParser();
-        const doc = parser.parseFromString(`<div>${node}</div>`, 'text/html');
-        const images = doc.querySelectorAll('img');
-        for (const img of images) {
-          img.outerHTML = '[Изображение пропущено]';
-        }
-        return this.escapeXml(doc.body.innerHTML);
-      }
-
       const parser = new DOMParser();
       const doc = parser.parseFromString(`<div>${node}</div>`, 'text/html');
+      // Без картинок разметку всё равно переводим в FB2 ниже, а не экранируем: иначе в книге видны теги
+      if (disableImages) this.replaceImagesWithPlaceholders(doc, false);
 
       // Convert HTML headings to paragraphs with strong formatting
       const headings = doc.querySelectorAll('h1, h2, h3, h4, h5, h6');

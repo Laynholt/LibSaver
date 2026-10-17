@@ -820,19 +820,19 @@ document.getElementById('btn-save').addEventListener('click', async () => {
     loadMoreChapters: parseInt(document.getElementById('load-more-chapters').value)
   };
 
-  await chrome.storage.local.set(settings);
-
   // Если изменился формат заголовков - отправляем сообщение для переформатирования
-  const oldTocFormat = (await chrome.storage.local.get(['tocFormat'])).tocFormat;
-  const oldCustomTocFormat = (await chrome.storage.local.get(['customTocFormat'])).customTocFormat;
-  const oldHideChapterName = (await chrome.storage.local.get(['hideChapterName'])).hideChapterName;
-  const oldHideVolumeNumber = (await chrome.storage.local.get(['hideVolumeNumber'])).hideVolumeNumber;
+  const {
+    tocFormat: oldTocFormat,
+    customTocFormat: oldCustomTocFormat,
+    hideChapterName: oldHideChapterName,
+    hideVolumeNumber: oldHideVolumeNumber
+  } = await chrome.storage.local.get(['tocFormat', 'customTocFormat', 'hideChapterName', 'hideVolumeNumber']);
+  await chrome.storage.local.set(settings);
 
   if (oldTocFormat !== settings.tocFormat || oldCustomTocFormat !== settings.customTocFormat ||
       oldHideChapterName !== settings.hideChapterName || oldHideVolumeNumber !== settings.hideVolumeNumber) {
     // Удаляем сохранённые displayTitle из titleData
-    const titleDataResult = await chrome.storage.local.get(['titleData']);
-    const titleData = titleDataResult.titleData || {};
+    const titleData = await getAllTitleData();
     if (titleData) {
       for (const slug in titleData) {
         if (titleData[slug].chapters) {
@@ -841,7 +841,7 @@ document.getElementById('btn-save').addEventListener('click', async () => {
           });
         }
       }
-      await chrome.storage.local.set({ titleData });
+      await setTitleStore({ titleData });
     }
     // Отправляем сообщение для переформатирования в открытых окнах
     chrome.runtime.sendMessage({ action: 'reformatChapters' });

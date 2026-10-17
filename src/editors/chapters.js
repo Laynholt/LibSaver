@@ -178,7 +178,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   await loadAndApplyTheme();
 
   // Применяем акцентный цвет по сайту (из storage)
-  const result = await chrome.storage.local.get(['sourceUrl', 'titleData', 'originalTitleData', 'currentSlug', 'tocFormat', 'customTocFormat', 'hideChapterName', 'hideVolumeNumber', 'enablePagination', 'initialChapters', 'loadMoreChapters']);
+  const result = await getTitleStore(['sourceUrl', 'titleData', 'originalTitleData', 'currentSlug', 'tocFormat', 'customTocFormat', 'hideChapterName', 'hideVolumeNumber', 'enablePagination', 'initialChapters', 'loadMoreChapters']);
   const sourceUrl = result.sourceUrl;
   if (sourceUrl) {
     window.applySiteAccent(sourceUrl);
@@ -710,7 +710,7 @@ document.getElementById('btn-save').addEventListener('click', () => {
     }
   });
 
-  chrome.storage.local.get(['titleData', 'currentSlug'], (result) => {
+  getTitleStore(['titleData', 'currentSlug']).then((result) => {
     const titleData = result.titleData || {};
     const currentSlug = result.currentSlug;
     
@@ -726,7 +726,7 @@ document.getElementById('btn-save').addEventListener('click', () => {
     // Обновляем timestamp кэша (продлеваем срок действия на 10 минут)
     titleData[currentSlug].cacheTimestamp = Date.now();
 
-    chrome.storage.local.set({ titleData }, () => {
+    setTitleStore({ titleData }).then(() => {
       wasSaved = true;
       chrome.runtime.sendMessage({ action: 'showToast', message: 'Сохранено!', type: 'success' });
       chrome.windows.getCurrent((window) => {

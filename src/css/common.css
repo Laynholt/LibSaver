@@ -120,6 +120,12 @@ input[type="checkbox"]:disabled ~ * {
   cursor: default;
 }
 
+/* Focus-visible для клавиатурной навигации (только при Tab, не при клике мышкой) */
+.checkbox-group input:focus-visible ~ .control__indicator {
+  outline: 2px solid var(--text-primary);
+  outline-offset: 3px;
+}
+
 /* Стили для disabled checkbox-group */
 .checkbox-group-disabled {
   cursor: default !important;

@@ -190,6 +190,18 @@ body {
   color: var(--text-primary);
 }
 
+.format-dropdown-option:focus-visible,
+.server-option:focus-visible {
+  outline: 1px solid var(--text-primary);
+  outline-offset: -1px;
+}
+
+.format-select:focus-visible,
+.server-select:focus-visible {
+  outline: 1px solid var(--text-primary);
+  outline-offset: 1px;
+}
+
 .image-server-selector {
   position: relative;
 }
