@@ -1,3 +1,6 @@
+// Вызовы в странице сайта (выбор вкладки, PAGE_CALLS)
+if (typeof importScripts === 'function') importScripts('core/page-calls.js', 'utils/page-call.js');
+
 // Хранилище auth токенов с TTL
 const authTokens = {};
 const TOKEN_TTL = 3600000; // 1 час в миллисекундах
@@ -275,4 +278,17 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     directFetch(request, sendResponse);
     return true;
   }
+});
+
+// Вызовы в странице сайта для контекстов без chrome.tabs/scripting (см. utils/page-call.js)
+chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+  const run = request.action === 'pageCall:findTab' ? () => findSiteTab(request.siteKey, request.preferredTabId)
+    : request.action === 'pageCall:exec' ? () => execPageCall(request.tabId, request.name, request.args)
+    : null;
+  if (!run) return;
+  run().then(
+    result => sendResponse({ ok: true, result }),
+    error => sendResponse({ ok: false, error: error.message, tabGone: !!error.tabGone })
+  );
+  return true;
 });

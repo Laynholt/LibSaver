@@ -538,12 +538,12 @@ for (const status of [403, 404]) {
   }
 }
 
-// api.js keeps a copy of fetchWithRetry inside every function injected into the site tab
-const apiRetryCopies = source('src/core/api.js').match(/async function fetchWithRetry\(url, options = \{\}, maxRetries = 3[\s\S]*?throw lastError \|\| new Error\('Max retries exceeded'\);\s*\}/g);
-test('api.js has four injected retry loops', () => assert.equal(apiRetryCopies.length, 4));
+// page-calls.js keeps a copy of fetchWithRetry inside every function injected into the site tab
+const apiRetryCopies = source('src/core/page-calls.js').match(/async function fetchWithRetry\(url, options = \{\}, maxRetries = 3[\s\S]*?throw lastError \|\| new Error\('Max retries exceeded'\);\s*\}/g);
+test('page-calls has four injected retry loops', () => assert.equal(apiRetryCopies.length, 4));
 apiRetryCopies.forEach((copy, index) => {
   for (const [status, expectedRequests] of [[404, 1], [403, 1], [503, 4]]) {
-    test(`api.js retry loop #${index + 1}: HTTP ${status} makes ${expectedRequests} request(s)`, async () => {
+    test(`page-calls retry loop #${index + 1}: HTTP ${status} makes ${expectedRequests} request(s)`, async () => {
       let requests = 0;
       const context = vm.createContext({
         fetch: async () => { requests++; return { ok: false, status }; },
@@ -616,9 +616,10 @@ test('same-width option scales manga pages to the most common width of the first
   const context = vm.createContext({
     URL,
     chrome: {
-      runtime: { sendMessage: (message, reply) => reply({ success: true, data: 'data:image/png;base64,' }) },
-      scripting: { executeScript: async () => [{ result: { success: true, pages: pageWidths.map(width => ({ width })) } }] }
+      runtime: { sendMessage: (message, reply) => reply({ success: true, data: 'data:image/png;base64,' }) }
     },
+    siteKeyOfTab: async () => 'mangalib',
+    pageCall: async () => ({ success: true, pages: pageWidths.map(width => ({ width })) }),
     Image: class { set src(value) { this.width = 1000; this.height = 1500; this.onload(); } },
     fetch: async () => ({ blob: async () => ({ size: 1000, type: 'image/png' }) }),
     document: { createElement: () => {
