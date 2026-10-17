@@ -1530,7 +1530,7 @@ function updateSelectedChapters() {
         titleData[slug] = {};
       }
       titleData[slug].selectedChapterIds = Array.from(selectedChapterIds);
-      setTitleStore({ titleData });
+      return setTitleStore({ titleData });
     });
   }
 }

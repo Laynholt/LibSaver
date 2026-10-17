@@ -502,7 +502,7 @@ async function loadTitle() {
   }
 
   // Загрузка данных через API: главы, метаданные и обложки независимы, запрашиваем их сразу
-  let loaderText = 'Загрузка данных...';
+  const loaderText = await getRandomCoverInspectionText();
   let loadedParts = 0;
   const trackProgress = promise => promise.then(result => {
     updateLoader(loaderText, 10 + 30 * ++loadedParts);
@@ -512,8 +512,7 @@ async function loadTitle() {
   const [chaptersResult, metadataResult, coversResult] = await Promise.all([
     trackProgress(loadChapters(activeTab.id)),
     trackProgress(loadMetadata(activeTab.id)),
-    trackProgress(loadCovers(activeTab.id, urlSlug)),
-    getRandomCoverInspectionText().then(text => { loaderText = text; })
+    trackProgress(loadCovers(activeTab.id, urlSlug))
   ]);
 
   // Главы
