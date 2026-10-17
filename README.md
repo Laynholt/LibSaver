@@ -53,7 +53,7 @@
 - FB2 (только для RanobeLIB)
 - TXT + картинки (только для RanobeLIB)
 - CBZ / ZIP (только манга-сайты)
-- HTML (в разработке)
+- HTML (в след. релизе)
 
 ## Установка
 
@@ -85,10 +85,31 @@
 
 ## Заметки
 
-- Скачивание в формате HTML уже в разработке.
+- Скачивание в HTML формате - в следующем релизе.
+- Ведётся работа над дизайном...
 - Поддержка Mozilla Firefox планируется...
 - Поддержка AnimeLIB планируется (прям в мечтах)...
 
 ## Лицензия
 
 [GPL-3.0 license](LICENSE)
+
+<div align="center">
+
+# ~ Контрибьюторы и благодарности ~
+
+Спасибо всем, кто пользуется **LibSaver**!<br>
+Огромное спасибо тем, кто находит ошибки и баги!<br>
+И особая благодарность всем участникам **LibSaver**!!!
+<br>
+<br>
+
+</div>
+
+<p align="center">
+
+<a href="https://github.com/dfy-dpg/LibSaver/graphs/contributors">
+  <img src="https://contrib.rocks/image?repo=dfy-dpg/LibSaver" />
+</a>
+
+</p>
