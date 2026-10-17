@@ -36,22 +36,28 @@ body {
   gap: 12px;
 }
 
-/* На широком окне раскладываем секции в две колонки вместо узкой полосы посередине */
+.settings-column {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+}
+
+/* На широком окне две колонки вместо узкой полосы посередине. Не CSS columns: те перебалансируют группы при смене высоты */
 @media (min-width: 1000px) {
   .container {
-    display: block;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: start;
     max-width: 1200px;
-    columns: 2;
-    column-gap: var(--spacing-sm);
+    gap: var(--spacing-sm);
   }
 
-  .container > .panel {
-    break-inside: avoid;
-    margin-bottom: var(--spacing-sm);
+  .settings-column {
+    gap: var(--spacing-sm);
   }
 
   .container > .version-info {
-    column-span: all;
+    grid-column: 1 / -1;
   }
 }
 
