@@ -1,6 +1,4 @@
 let allChapters = []; // Все главы из API
-let translatorPriority = []; // Приоритет переводчиков (порядок выбора)
-let chapterBranchOverrides = {}; // Переопределения переводчиков для конкретных глав
 
 // Загрузка сохраненных настроек
 let savedQuality = 'ORIGINAL'; // По умолчанию без сжатия
@@ -373,40 +371,6 @@ async function loadInlineSvg() {
   }
 }
 
-// Очистка старых titleData (старше 7 дней)
-async function cleanupOldTitles() {
-  try {
-    const settings = await chrome.storage.local.get(['cleanupOldTitles']);
-    if (settings.cleanupOldTitles === false) {
-      return;
-    }
-
-    const all = await chrome.storage.local.get(null);
-    const titleKeys = Object.keys(all).filter(k => k.startsWith('titleData:'));
-
-    if (titleKeys.length === 0) return;
-
-    const sevenDaysAgo = Date.now() - (7 * 24 * 60 * 60 * 1000);
-    let modified = false;
-    const toDelete = [];
-
-    for (const key of titleKeys) {
-      const data = all[key];
-      if (data && data.cacheTimestamp && data.cacheTimestamp < sevenDaysAgo) {
-        const slug = key.split(':')[1];
-        toDelete.push(key, `originalTitleData:${slug}`);
-        modified = true;
-      }
-    }
-
-    if (modified && toDelete.length > 0) {
-      await chrome.storage.local.remove(toDelete);
-    }
-  } catch (error) {
-    console.error('[popup.js] Ошибка при очистке старых тайтлов:', error);
-  }
-}
-
 // Запуск при открытии всплывающего окна
 document.addEventListener('DOMContentLoaded', async () => {
   // Загружаем и применяем тему
@@ -417,9 +381,6 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // Удаляем старый downloadData при открытии popup (предотвращаем накопление мусора)
   chrome.storage.local.remove('downloadData');
-
-  // Очищаем старые titleData (старше 7 дней) для предотвращения роста storage
-  await cleanupOldTitles();
 
   // Проверка обновлений при открытии popup (с задержкой 2 секунды)
   setTimeout(checkForUpdatesPopup, 2000);
@@ -439,258 +400,46 @@ async function loadTitle() {
 
   // Применяем акцентный цвет по сайту
   window.applySiteAccent(url);
-  // Проверка, что мы находимся на поддерживаемом сайте
-  const isRanobeLib = url.includes('ranobelib.me') || url.includes('novelslib.me');
-  const isMangaLib = url.includes('mangalib.me') || url.includes('mangalib.org');
-  const isHentaiLib = url.includes('hentailib.me') || url.includes('hentailib.org');
-  const isShLib = url.includes('v2.shlib.life') || url.includes('shlib.life');
-  const isAnimeLib = url.includes('animelib.org') || url.includes('anilib.me');
-  const isSupportedSite = isRanobeLib || isMangaLib || isHentaiLib || isShLib || isAnimeLib;
-  
   // Определяем тип сайта и сохраняем
-  let siteType = 'ranobe';
-  if (isMangaLib || isHentaiLib || isShLib) {
-    siteType = 'manga';
-  } else if (isAnimeLib) {
-    siteType = 'anime';
-  }
-  await chrome.storage.local.set({ siteType, sourceUrl: url });
-  
-  // Проверка, что мы находимся на странице тайтла
-  const isBookPage = url.includes('/book/') || url.includes('/manga/') || url.includes('/anime/');
+  await chrome.storage.local.set({ siteType: siteTypeOf(siteKeyOf(url)), sourceUrl: url });
 
-  if (!isSupportedSite) {
-    showMessage('Перейдите на один из поддерживаемых сайтов.', false, 'not_on_site');
-    enableButton('btn-settings', true);
-    return;
-  }
+  let loaderText;
+  const showProgress = loadedParts => {
+    loaderText ??= getRandomCoverInspectionText();
+    loaderText.then(text => updateLoader(text, 10 + 30 * loadedParts));
+  };
 
-  if (!isBookPage) {
-    showMessage('Перейдите на главную страницу нужного тайтла.', false, 'no_title');
-    enableButton('btn-settings', true);
-    return;
-  }
-
-  // Извлекаем slug из URL для кэширования (используем тот же паттерн что и в API)
-  let urlSlug = null;
-  if (url.includes('ranobelib.me') || url.includes('novelslib.me')) {
-    const slugMatch = url.match(/\/ru\/book\/([^-]+)(--[^?]+)?/);
-    urlSlug = slugMatch ? slugMatch[1] + (slugMatch[2] || '') : null;
-  } else if (url.includes('mangalib.me') || url.includes('mangalib.org')) {
-    const slugMatch = url.match(/\/ru\/manga\/([^-]+)(--[^?]+)?/);
-    urlSlug = slugMatch ? slugMatch[1] + (slugMatch[2] || '') : null;
-  } else if (url.includes('hentailib.me') || url.includes('hentailib.org')) {
-    const slugMatch = url.match(/\/ru\/manga\/([^-]+)(--[^?]+)?/);
-    urlSlug = slugMatch ? slugMatch[1] + (slugMatch[2] || '') : null;
-  } else if (url.includes('v2.shlib.life') || url.includes('shlib.life')) {
-    const slugMatch = url.match(/\/ru\/manga\/([^-]+)(--[^?]+)?/);
-    urlSlug = slugMatch ? slugMatch[1] + (slugMatch[2] || '') : null;
-  } else if (url.includes('animelib.org') || url.includes('anilib.me')) {
-    const slugMatch = url.match(/\/ru\/anime\/([^-]+)(--[^?]+)?/);
-    urlSlug = slugMatch ? slugMatch[1] + (slugMatch[2] || '') : null;
-  }
-
-  // Проверяем кэш - есть ли полные данные для этого тайтла
-  const cachedData = urlSlug ? await getTitleStore(['titleData', 'originalTitleData', 'currentSlug'], urlSlug) : { titleData: {}, originalTitleData: {}, currentSlug: null };
-  const titleData = cachedData.titleData || {};
-  const originalTitleData = cachedData.originalTitleData || {};
-  const hasChapters = urlSlug && titleData[urlSlug] && titleData[urlSlug].chapters && titleData[urlSlug].chapters.length > 0;
-  const hasMetadata = urlSlug && titleData[urlSlug] && titleData[urlSlug].metadata && Object.keys(titleData[urlSlug].metadata).length > 0;
-  const hasCovers = urlSlug && titleData[urlSlug] && (titleData[urlSlug].covers || titleData[urlSlug].metadata?.cover);
-  const hasOriginalMetadata = urlSlug && originalTitleData[urlSlug] && originalTitleData[urlSlug].metadata && Object.keys(originalTitleData[urlSlug].metadata).length > 0;
-
-  // Проверяем timestamp кэша (устаревает через 10 минут = 600000 мс)
-  const cacheTimestamp = urlSlug && titleData[urlSlug] ? titleData[urlSlug].cacheTimestamp : 0;
-  const cacheAge = Date.now() - cacheTimestamp;
-  const CACHE_MAX_AGE = 10 * 60 * 1000; // 10 минут
-  const isCacheFresh = cacheAge < CACHE_MAX_AGE;
-
-  // Используем кэш если есть полные данные, они свежие и включены originalTitleData
-  if (hasChapters && hasMetadata && hasCovers && hasOriginalMetadata && isCacheFresh) {
-    await chrome.storage.local.set({ currentSlug: urlSlug });
-    currentSlug = urlSlug;
-
-    // Восстанавливаем данные из кэша
-    allChapters = titleData[urlSlug].chapters;
-    originalCover = titleData[urlSlug].metadata.cover || '';
-    allCovers = titleData[urlSlug].covers || (titleData[urlSlug].metadata?.cover ? [titleData[urlSlug].metadata.cover] : []);
-
-    // Восстанавливаем приоритет переводчиков
-    translatorPriority = titleData[urlSlug].translatorPriority || [];
-    chapterBranchOverrides = titleData[urlSlug].chapterBranchOverrides || {};
-
-    // Обновляем UI
-    processChapters(allChapters);
-    applyTranslatorPriority();
-    populateChapters();
-
-    const displayTitle = titleData[urlSlug].metadata.titleRu || titleData[urlSlug].metadata.titleEn || titleData[urlSlug].metadata.titleOriginal || 'Без названия';
-    document.getElementById('book-title').textContent = displayTitle;
-
-    // Показываем UI
-    document.getElementById('loader').classList.add('hidden');
-    document.getElementById('main-view').classList.remove('hidden');
-    document.querySelector('.btn-group').classList.remove('hidden');
-    enableButton('btn-download', true);
-    enableButton('btn-settings', true);
-    return;
-  }
-
-  // Загрузка данных через API: главы, метаданные и обложки независимы, запрашиваем их сразу
-  const loaderText = await getRandomCoverInspectionText();
-  let loadedParts = 0;
-  const trackProgress = promise => promise.then(result => {
-    updateLoader(loaderText, 10 + 30 * ++loadedParts);
-    return result;
-  });
-  updateLoader(loaderText, 10);
-  const [chaptersResult, metadataResult, coversResult] = await Promise.all([
-    trackProgress(loadChapters(activeTab.id)),
-    trackProgress(loadMetadata(activeTab.id)),
-    trackProgress(loadCovers(activeTab.id, urlSlug))
-  ]);
-
-  // Главы
-  if (chaptersResult && chaptersResult.success) {
-    const newSlug = chaptersResult.slug;
-
-    const result = await getTitleStore(['currentSlug', 'titleData', 'originalTitleData'], newSlug);
-    const oldSlug = result.currentSlug;
-
-    // Удаляем данные старого тайтла при смене (как в RanobeDL). getTitleStore отдаёт только новый тайтл, поэтому удаляем ключи старого
-    if (oldSlug && oldSlug !== newSlug) {
-      const { cleanupOnTitleChange } = await chrome.storage.local.get(['cleanupOnTitleChange']);
-      if (cleanupOnTitleChange !== false) {
-        await chrome.storage.local.remove(TITLE_STORE_KINDS.map(kind => titleStoreKey(kind, oldSlug)));
-      }
-    }
-
-    await chrome.storage.local.set({ currentSlug: newSlug });
-    currentSlug = newSlug;
-
-    // Загружаем приоритет переводчиков (НЕ восстанавливаем диапазон - пользователь может свободно менять его)
-    if (result.titleData && result.titleData[newSlug]) {
-      translatorPriority = result.titleData[newSlug].translatorPriority || [];
-      chapterBranchOverrides = result.titleData[newSlug].chapterBranchOverrides || {};
-    } else {
-      translatorPriority = [];
-      chapterBranchOverrides = {};
-    }
-    if (chaptersResult.chapters) {
-      processChapters(chaptersResult.chapters);
-      applyTranslatorPriority();
-      populateChapters();
-    } else {
-      console.error('Главы не получены из API:', chaptersResult);
+  let info;
+  try {
+    info = await loadTitleData({ tabId: activeTab.id, url, onProgress: showProgress });
+  } catch (error) {
+    if (error.code === 'unsupported-site') {
+      showMessage('Перейдите на один из поддерживаемых сайтов.', false, 'not_on_site');
+      enableButton('btn-settings', true);
+    } else if (error.code === 'not-title-page') {
+      showMessage('Перейдите на главную страницу нужного тайтла.', false, 'no_title');
+      enableButton('btn-settings', true);
+    } else if (error.code === 'load-failed') {
       showMessage('Не удалось получить данные из API.', true, 'chapters_error');
-      return;
+    } else {
+      throw error;
     }
-  } else {
-    showMessage('Не удалось получить данные из API.', true, 'chapters_error');
     return;
   }
 
-  // Метаданные
-  if (metadataResult && metadataResult.success) {
-    const metadata = metadataResult.metadata;
-    const slug = metadataResult.slug;
+  currentSlug = info.slug;
+  allChapters = info.allChapters;
+  originalCover = info.originalCover;
+  allCovers = info.covers;
+  populateChapters();
+  document.getElementById('book-title').textContent = info.title;
 
-    // Загружаем пользовательские метаданные
-    const titleDataResult = await getTitleStore(['titleData'], slug);
-    const titleData = titleDataResult.titleData || {};
-
-    // Устанавливаем заголовок с цепочкой fallback
-    const userMetadata = titleData && titleData[slug] ? titleData[slug].metadata : {};
-    const displayTitle = userMetadata.titleRu || metadata.titleRu || metadata.titleEn || metadata.titleOriginal || 'Без названия';
-    document.getElementById('book-title').textContent = displayTitle;
-    originalCover = metadata.cover || '';
-
-    if (!titleData[slug]) {
-      titleData[slug] = { chapters: null, metadata: {} };
-    }
-    titleData[slug].itemsCount = metadata.totalChapters;
-    titleData[slug].cacheTimestamp = Date.now();
-    await setTitleStore({ titleData });
-    
-    // Сохраняем метаданные в storage
-    await getTitleStore(['titleData', 'originalTitleData'], slug).then((result) => {
-      const titleData = result.titleData || {};
-      const originalTitleData = result.originalTitleData || {};
-      
-      
-      // Инициализируем структуру если нет
-      if (!titleData[slug]) {
-        titleData[slug] = { chapters: null, metadata: {} };
-      }
-      if (!originalTitleData[slug]) {
-        originalTitleData[slug] = { chapters: null, metadata: {} };
-      }
-      
-      // Сохраняем оригинальные данные из API (всегда обновляем)
-      originalTitleData[slug].metadata = { ...metadata };
-
-      // Сохраняем пользовательские данные только если их нет (не перезаписываем правки)
-      // Проверяем по наличию хотя бы одного ключа в metadata
-      const userMetadataKeys = Object.keys(titleData[slug].metadata);
-      if (userMetadataKeys.length === 0) {
-        titleData[slug].metadata = { ...metadata };
-      }
-
-      // Сохраняем timestamp кэша (для устаревания через 10 минут)
-      titleData[slug].cacheTimestamp = Date.now();
-
-      return setTitleStore({ titleData, originalTitleData });
-    });
-  } else {
-    console.error('Не удалось загрузить метаданные:', metadataResult?.error);
-  }
-  
-  // Обложки
-  if (coversResult && coversResult.success) {
-    allCovers = coversResult.covers;
-    
-    // Если covers API вернул пустой массив, fallback на metadata.cover
-    if (allCovers.length === 0 && originalCover) {
-      allCovers = [originalCover];
-    }
-    
-    // Обновляем данные с обложками
-    await getTitleStore(['titleData', 'originalTitleData'], currentSlug).then((result) => {
-      const titleData = result.titleData || {};
-      const originalTitleData = result.originalTitleData || {};
-      
-      // Инициализируем структуру если нет
-      if (!titleData[currentSlug]) {
-        titleData[currentSlug] = { chapters: null, metadata: {} };
-      }
-      if (!originalTitleData[currentSlug]) {
-        originalTitleData[currentSlug] = { chapters: null, metadata: {} };
-      }
-      
-      // Сохраняем оригинальные обложки (всегда обновляем)
-      originalTitleData[currentSlug].covers = allCovers.map(url => ({ url, type: 'url' }));
-      
-      // Сохраняем пользовательские обложки только если их нет (не перезаписываем правки)
-      // Перезаписываем только если массив вообще не существует, а не если он пустой
-      if (!titleData[currentSlug].covers) {
-        titleData[currentSlug].covers = allCovers.map(url => ({ url, type: 'url' }));
-      }
-
-      // Обновляем timestamp кэша (чтобы устаревал через 10 минут)
-      titleData[currentSlug].cacheTimestamp = Date.now();
-
-      return setTitleStore({ titleData, originalTitleData });
-    });
-  } else {
-    allCovers = [originalCover];
-  }
-  
   // Сначала скрываем loader
   document.getElementById('loader').classList.add('hidden');
-  
+
   // Потом показываем main-view
   document.getElementById('main-view').classList.remove('hidden');
-  
+
   // Потом включаем кнопки
   enableEditorButtons(true);
   enableButton('btn-settings', true);
@@ -1021,78 +770,6 @@ document.getElementById('btn-settings').addEventListener('click', async () => {
   }
 });
 
-// Обработка сырых данных из API
-function processChapters(chaptersList) {
-  allChapters = [];
-
-  if (!chaptersList || !Array.isArray(chaptersList)) {
-    console.error('Некорректный список глав:', chaptersList);
-    return;
-  }
-
-  chaptersList.forEach(item => {
-    // Нормализуем branches: если это объект, конвертируем в массив
-    let branches = item.branches;
-    if (branches && !Array.isArray(branches)) {
-      branches = Object.values(branches);
-    }
-    
-    const vol = item.volume || '1';
-    const num = item.number || '1';
-    const name = item.name || '';
-    
-    // Берем первую доступную ветку или команду
-    let teamName = 'Основной перевод';
-    let branchId = null;
-    
-    if (branches && branches.length > 0) {
-      const firstBranch = branches[0];
-      branchId = firstBranch.branch_id !== null ? String(firstBranch.branch_id) : null;
-      
-      teamName = getTranslatorName(firstBranch);
-    } else if (item.team?.name) {
-      teamName = item.team.name;
-    }
-    
-    allChapters.push({
-      id: item.id,
-      volume: vol,
-      number: num,
-      name: name,
-      branchId: branchId,
-      branchTeamName: teamName,
-      branches: branches, // Сохраняем нормализованные branches
-      displayTitle: formatChapterTitle(vol, num, name, tocFormat, customTocFormat, hideChapterName, hideVolumeNumber)
-    });
-  });
-
-  // Сортировка глав по возрастанию
-  allChapters.sort((a, b) => {
-    const vA = parseFloat(a.volume) || 0;
-    const vB = parseFloat(b.volume) || 0;
-    if (vA !== vB) return vA - vB;
-    const nA = parseFloat(a.number) || 0;
-    const nB = parseFloat(b.number) || 0;
-    return nA - nB;
-  });
-
-  // Восстанавливаем сохраненные displayTitle из titleData
-  getTitleStore(['titleData', 'currentSlug']).then((result) => {
-    if (result.titleData && result.currentSlug && result.titleData[result.currentSlug] && result.titleData[result.currentSlug].chapters) {
-      const savedChapters = result.titleData[result.currentSlug].chapters;
-      const savedMap = new Map(savedChapters.map(ch => [`${ch.id}_${ch.branchId || 'null'}`, ch]));
-
-      allChapters.forEach(ch => {
-        const key = `${ch.id}_${ch.branchId || 'null'}`;
-        const saved = savedMap.get(key);
-        if (saved && saved.displayTitle) {
-          ch.displayTitle = saved.displayTitle;
-        }
-      });
-    }
-  });
-}
-
 // Обновление списков диапазонов
 function populateChapters() {
   const fromSelect = document.getElementById('chapter-from');
@@ -1154,123 +831,4 @@ function populateChapters() {
   } else {
     toSelect.value = allChapters.length - 1;
   }
-}
-
-function getTranslatorKey(branch) {
-  const branchId = branch.branch_id === null ? 'null' : branch.branch_id;
-  let teamId = 'unknown';
-  if (branch.teams && branch.teams[0]) {
-    teamId = branch.teams[0].id;
-  } else if (branch.team) {
-    teamId = branch.team.id;
-  }
-  return `${branchId}_${teamId}`;
-}
-
-function getTranslatorName(branch) {
-  if (branch.teams && branch.teams[0]) {
-    const teamName = branch.teams[0].name;
-    // Если команда "Неизвестный", но есть пользователь, добавляем никнейм в скобках
-    if (teamName === 'Неизвестный' && branch.user?.username) {
-      return `${teamName} (${branch.user.username})`;
-    }
-    return teamName;
-  } else if (branch.team) {
-    const teamName = branch.team.name;
-    if (teamName === 'Неизвестный' && branch.user?.username) {
-      return `${teamName} (${branch.user.username})`;
-    }
-    return teamName;
-  }
-  return branch.user?.username || 'Основной перевод';
-}
-
-function getChapterVariants(chapterId) {
-  const variants = new Map();
-  allChapters.forEach(ch => {
-    if (ch.id === chapterId && ch.branches && Array.isArray(ch.branches)) {
-      ch.branches.forEach(branch => {
-        const key = getTranslatorKey(branch);
-        const name = getTranslatorName(branch);
-        variants.set(key, name);
-      });
-    }
-  });
-  return variants;
-}
-
-function getUniqueChapters(chapters) {
-  const uniqueChapterIds = new Set();
-  const uniqueChapters = [];
-  
-  chapters.forEach(ch => {
-    if (!uniqueChapterIds.has(ch.id)) {
-      uniqueChapterIds.add(ch.id);
-      uniqueChapters.push(ch);
-    }
-  });
-  
-  return uniqueChapters;
-}
-
-function applyTranslatorPriority() {
-  if (translatorPriority.length === 0) {
-    const translatorCounts = {};
-    allChapters.forEach(ch => {
-      if (ch.branches && Array.isArray(ch.branches)) {
-        ch.branches.forEach(branch => {
-          const key = getTranslatorKey(branch);
-          if (!translatorCounts[key]) {
-            translatorCounts[key] = 0;
-          }
-          translatorCounts[key]++;
-        });
-      }
-    });
-    
-    translatorPriority = Object.keys(translatorCounts).sort((a, b) => translatorCounts[b] - translatorCounts[a]);
-  }
-  
-  const uniqueChapters = getUniqueChapters(allChapters);
-  
-  uniqueChapters.forEach(ch => {
-    const variants = getChapterVariants(ch.id);
-    if (variants.size > 1) {
-      for (const translatorKey of translatorPriority) {
-        if (variants.has(translatorKey)) {
-          chapterBranchOverrides[ch.id] = translatorKey;
-          break;
-        }
-      }
-    }
-  });
-  
-  allChapters.forEach(ch => {
-    if (chapterBranchOverrides[ch.id]) {
-      const targetKey = chapterBranchOverrides[ch.id];
-      if (ch.branches && Array.isArray(ch.branches)) {
-        const targetBranch = ch.branches.find(branch => getTranslatorKey(branch) === targetKey);
-        if (targetBranch) {
-          if (targetBranch.teams && targetBranch.teams.length > 0) {
-            ch.branchTeamName = targetBranch.teams.map(t => t.name).join(' & ');
-          } else if (targetBranch.user?.username) {
-            ch.branchTeamName = targetBranch.user.username;
-          }
-          ch.branchId = targetBranch.branch_id !== null ? String(targetBranch.branch_id) : null;
-        }
-      }
-    }
-  });
-  
-  getTitleStore(['titleData', 'currentSlug']).then((result) => {
-    const titleData = result.titleData || {};
-    const currentSlug = result.currentSlug;
-    if (!titleData[currentSlug]) {
-      titleData[currentSlug] = { chapters: null, metadata: {} };
-    }
-    titleData[currentSlug].translatorPriority = translatorPriority;
-    titleData[currentSlug].chapterBranchOverrides = chapterBranchOverrides;
-    titleData[currentSlug].chapters = allChapters;
-    setTitleStore({ titleData });
-  });
 }

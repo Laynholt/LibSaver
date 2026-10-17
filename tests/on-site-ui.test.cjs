@@ -843,3 +843,154 @@ test('prepare follows the shared «Ускорить» flag and its snapshot take
     .buildDownloadSnapshot({ slug: 's', tabId: 5, sourceUrl: 'https://mangalib.me/ru/manga/s', selectedChapterIds: [1], format: 'cbz', imageServer: 'normal', textOnly: false });
   assert.equal(snapshot.stored.speedMode, true);
 });
+
+// Задача 6: chapter-range.js, ?slug= в title-store, title-loader.js
+
+function chapterRangeContext() {
+  const ctx = vm.createContext({});
+  vm.runInContext(source('src/core/chapter-range.js'), ctx);
+  return ctx;
+}
+
+test('rangeChapterIds returns ids between two indices inclusive, in either order', () => {
+  const { rangeChapterIds } = chapterRangeContext();
+  const chapters = [{ id: 1 }, { id: 2 }, { id: 3 }];
+  assert.deepEqual(rangeChapterIds(chapters, 2, 0), [1, 2, 3]);
+  assert.deepEqual(rangeChapterIds(chapters, 0, 1), [1, 2]);
+  assert.deepEqual(rangeChapterIds(chapters, 1, 1), [2]);
+});
+
+test('chapterLabel is «Том X. Глава Y. Название» and drops the name part when empty', () => {
+  const { chapterLabel } = chapterRangeContext();
+  assert.equal(chapterLabel({ volume: '2', number: '15', name: 'Встреча' }), 'Том 2. Глава 15. Встреча');
+  assert.equal(chapterLabel({ volume: '1', number: '3', name: '' }), 'Том 1. Глава 3');
+  assert.equal(chapterLabel({ volume: '1', number: '3' }), 'Том 1. Глава 3');
+});
+
+test('applyTranslatorPriority picks the preferred translator per chapter and records it in the overrides', () => {
+  const { applyTranslatorPriority, getUniqueChapters } = chapterRangeContext();
+  const branch = (id, team) => ({ branch_id: id, teams: [{ id: team, name: 'T' + team }] });
+  const chapter = (id, ...branches) => ({ id, branches, branchId: String(branches[0].branch_id), branchTeamName: 'x' });
+  const chapters = [chapter(1, branch(10, 1), branch(20, 2)), chapter(2, branch(10, 1), branch(20, 2)), chapter(3, branch(20, 2))];
+  // без приоритета он строится по числу глав у переводчика: у T2 три главы, у T1 две
+  const priority = applyTranslatorPriority(chapters, [], {});
+  assert.deepEqual(Array.from(priority), ['20_2', '10_1']);
+  assert.deepEqual(chapters.map(ch => ch.branchId), ['20', '20', '20']);
+  // явный приоритет; одиночная глава остаётся у единственного переводчика
+  const overrides = {};
+  applyTranslatorPriority(chapters, ['10_1', '20_2'], overrides);
+  assert.deepEqual(chapters.map(ch => ch.branchId), ['10', '10', '20']);
+  assert.deepEqual({ ...overrides }, { 1: '10_1', 2: '10_1' });
+  assert.equal(getUniqueChapters([{ id: 1 }, { id: 1 }, { id: 2 }]).length, 2);
+});
+
+test('getTitleStore takes currentSlug from ?slug= in the page URL, else from storage', async () => {
+  const run = async search => {
+    const data = { currentSlug: 'stored', 'titleData:abc': { n: 1 }, 'titleData:stored': { n: 2 } };
+    const ctx = vm.createContext({ chrome: { storage: { local: {
+      get: async keys => structuredClone(Object.fromEntries([].concat(keys).filter(key => key in data).map(key => [key, data[key]]))),
+      set: async values => Object.assign(data, values),
+      remove: async keys => { for (const key of [].concat(keys)) delete data[key]; }
+    } } }, location: { search } });
+    vm.runInContext(source('src/utils/title-store.js'), ctx);
+    return structuredClone(await ctx.getTitleStore(['titleData', 'currentSlug']));
+  };
+  assert.deepEqual(await run('?slug=abc'), { currentSlug: 'abc', titleData: { abc: { n: 1 } } });
+  assert.deepEqual(await run('?title=0'), { currentSlug: 'stored', titleData: { stored: { n: 2 } } });
+  assert.deepEqual(await run(''), { currentSlug: 'stored', titleData: { stored: { n: 2 } } });
+});
+
+// title-loader.js в vm: хранилище на data, загрузчики api.js заменены заглушками
+function titleLoaderContext(data, api = {}) {
+  const calls = [];
+  const ctx = vm.createContext({
+    URL, console: { error() {}, log() {} },
+    chrome: { storage: { local: {
+      get: async keys => structuredClone(keys === null ? data : Object.fromEntries([].concat(keys).filter(key => key in data).map(key => [key, data[key]]))),
+      set: async values => Object.assign(data, structuredClone(values)),
+      remove: async keys => { for (const key of [].concat(keys)) delete data[key]; }
+    } } },
+    formatChapterTitle: (vol, num, name) => `${vol}-${num}-${name}`,
+    loadChapters: async tabId => { calls.push(['chapters', tabId]); return api.chapters; },
+    loadMetadata: async tabId => { calls.push(['metadata', tabId]); return api.metadata; },
+    loadCovers: async (tabId, slug) => { calls.push(['covers', tabId, slug]); return api.covers; }
+  });
+  vm.runInContext(['src/utils/title-store.js', 'src/utils/page-call.js', 'src/core/chapter-range.js', 'src/core/title-loader.js'].map(source).join('\n'), ctx);
+  ctx.calls = calls;
+  return ctx;
+}
+
+const rawChapters = [
+  { id: 2, volume: '1', number: '2', name: 'B', branches: [{ branch_id: 7, teams: [{ id: 1, name: 'Team' }] }] },
+  { id: 1, volume: '1', number: '1', name: '', branches: [{ branch_id: 7, teams: [{ id: 1, name: 'Team' }] }] }
+];
+const mangaApi = () => ({
+  chapters: { success: true, slug: '123--title', chapters: structuredClone(rawChapters) },
+  metadata: { success: true, slug: '123--title', metadata: { titleRu: 'Тайтл', cover: 'c0', totalChapters: 2 } },
+  covers: { success: true, covers: ['c0', 'c1'] }
+});
+
+test('loadTitleData rejects non-title pages and unknown sites with a code and never touches the API', async () => {
+  const ctx = titleLoaderContext({}, mangaApi());
+  await assert.rejects(ctx.loadTitleData({ tabId: 1, url: 'https://example.org/ru/manga/1--a' }), { code: 'unsupported-site' });
+  await assert.rejects(ctx.loadTitleData({ tabId: 1, url: 'https://mangalib.me/ru/catalog' }), { code: 'not-title-page' });
+  assert.deepEqual(ctx.calls, []);
+});
+
+test('loadTitleData loads a title in parallel, saves it and returns unique chapters with the translator priority applied', async () => {
+  const data = {};
+  const ctx = titleLoaderContext(data, mangaApi());
+  const info = await ctx.loadTitleData({ tabId: 5, url: 'https://mangalib.me/ru/manga/123--title?section=info' });
+  assert.deepEqual(ctx.calls, [['chapters', 5], ['metadata', 5], ['covers', 5, '123--title']]);
+  assert.deepEqual([info.slug, info.siteKey, info.siteType, info.title], ['123--title', 'mangalib', 'manga', 'Тайтл']);
+  assert.deepEqual(Array.from(info.chapters, ch => ch.id), [1, 2]); // отсортированы по тому и номеру
+  assert.equal(info.allChapters.length, 2);
+  assert.deepEqual(Array.from(info.covers), ['c0', 'c1']);
+  assert.deepEqual(Array.from(info.translatorPriority), ['7_1']);
+  assert.equal(info.chapters[0].displayTitle, '1-1-');
+  assert.equal(data.currentSlug, '123--title');
+  const stored = data['titleData:123--title'];
+  assert.equal(stored.chapters.length, 2);
+  assert.deepEqual(stored.metadata, { titleRu: 'Тайтл', cover: 'c0', totalChapters: 2 });
+  assert.deepEqual(data['originalTitleData:123--title'].covers, [{ url: 'c0', type: 'url' }, { url: 'c1', type: 'url' }]);
+  assert.ok(stored.cacheTimestamp > 0);
+});
+
+test('loadTitleData answers from a fresh complete cache and reloads when forced or stale', async () => {
+  const data = {};
+  await titleLoaderContext(data, mangaApi()).loadTitleData({ tabId: 5, url: 'https://mangalib.me/ru/manga/123--title' });
+  data.currentSlug = 'other';
+  const cached = titleLoaderContext(data, mangaApi());
+  const info = await cached.loadTitleData({ tabId: 5, url: 'https://mangalib.me/ru/manga/123--title' });
+  assert.deepEqual(cached.calls, []);
+  assert.equal(data.currentSlug, '123--title');
+  assert.deepEqual([info.title, info.chapters.length, info.covers.length], ['Тайтл', 2, 2]);
+  assert.equal(info.metadata.cover, 'c0');
+
+  const forced = titleLoaderContext(data, mangaApi());
+  await forced.loadTitleData({ tabId: 5, url: 'https://mangalib.me/ru/manga/123--title', force: true });
+  assert.equal(forced.calls.length, 3);
+
+  data['titleData:123--title'].cacheTimestamp = Date.now() - 11 * 60 * 1000;
+  const stale = titleLoaderContext(data, mangaApi());
+  await stale.loadTitleData({ tabId: 5, url: 'https://mangalib.me/ru/manga/123--title' });
+  assert.equal(stale.calls.length, 3);
+});
+
+test('loadTitleData survives failing metadata and covers, and fails with load-failed without chapters', async () => {
+  const partial = mangaApi();
+  partial.metadata = { success: false, error: 'x' };
+  partial.covers = { success: false };
+  const info = await titleLoaderContext({}, partial).loadTitleData({ tabId: 1, url: 'https://mangalib.me/ru/manga/123--title' });
+  assert.equal(info.chapters.length, 2);
+  const broken = mangaApi();
+  broken.chapters = { success: false, error: 'x' };
+  const data = {};
+  await assert.rejects(titleLoaderContext(data, broken).loadTitleData({ tabId: 1, url: 'https://mangalib.me/ru/manga/123--title' }), { code: 'load-failed' });
+  assert.equal(data.currentSlug, undefined);
+});
+
+test('title loader and chapter helpers do not touch the page DOM', () => {
+  assert.doesNotMatch(source('src/core/title-loader.js'), /document\.|window\./);
+  assert.doesNotMatch(source('src/core/chapter-range.js'), /document\.|window\./);
+});

@@ -106,9 +106,9 @@ test('switching titles removes the previous title unless cleanup on title change
     const data = { currentSlug: 'old', 'titleData:old': { metadata: { titleRu: 'Edited' } }, 'originalTitleData:old': { chapters: [] }, 'titleData:new': { covers: ['local'] } };
     if (cleanupOnTitleChange === false) data.cleanupOnTitleChange = false;
     const before = structuredClone(data);
-    const context = vm.createContext({ chaptersResult: { slug: 'new' }, currentSlug: 'old', chrome: { storage: { local: storageApi(data) } } });
-    vm.runInContext(titleStore, context);
-    await vm.runInContext('(async () => {' + between('src/core/popup.js', '    const newSlug = chaptersResult.slug;', '    // Загружаем приоритет переводчиков') + '})()', context);
+    const context = vm.createContext({ chrome: { storage: { local: storageApi(data) } } });
+    vm.runInContext(titleStore + functionSource('src/core/title-loader.js', 'switchCurrentTitle'), context);
+    await context.switchCurrentTitle('new');
     const kept = cleanupOnTitleChange === false;
     assert.deepEqual(data['titleData:old'], kept ? before['titleData:old'] : undefined);
     assert.deepEqual(data['originalTitleData:old'], kept ? before['originalTitleData:old'] : undefined);
@@ -117,15 +117,14 @@ test('switching titles removes the previous title unless cleanup on title change
   }
 });
 
-test('opening popup removes titles older than 7 days unless that cleanup is off', async () => {
+test('loading a title removes titles older than 7 days unless that cleanup is off', async () => {
   for (const cleanupOldTitles of [undefined, false]) {
     const data = { 'titleData:old': { cacheTimestamp: 1 }, 'originalTitleData:old': {}, 'titleData:fresh': { cacheTimestamp: Date.now() } };
     if (cleanupOldTitles === false) data.cleanupOldTitles = false;
     const before = structuredClone(data);
     const context = vm.createContext({ console, chrome: { storage: { local: storageApi(data) } } });
-    const cleanup = between('src/core/popup.js', '// Очистка старых titleData', '// Запуск при открытии всплывающего окна');
-    const init = between('src/core/popup.js', '  // Удаляем старый downloadData', '  // Проверка обновлений при открытии popup');
-    await vm.runInContext(cleanup + '(async () => {' + init + '})()', context);
+    vm.runInContext(functionSource('src/core/title-loader.js', 'cleanupOldTitles'), context);
+    await context.cleanupOldTitles();
     const kept = cleanupOldTitles === false;
     assert.deepEqual(data['titleData:old'], kept ? before['titleData:old'] : undefined);
     assert.deepEqual(data['originalTitleData:old'], kept ? before['originalTitleData:old'] : undefined);
@@ -202,10 +201,11 @@ test('title data is only accessed through the title store, which every page usin
   }
 });
 
-test('popup requests chapters, metadata and covers together without artificial waits', () => {
-  const start = between('src/core/popup.js', "document.addEventListener('DOMContentLoaded'", '// Функция для открытия popup окна');
-  assert.match(start, /Promise\.all\(\[\s*trackProgress\(loadChapters\(activeTab\.id\)\),\s*trackProgress\(loadMetadata\(activeTab\.id\)\),\s*trackProgress\(loadCovers\(activeTab\.id, urlSlug\)\)/);
-  assert.doesNotMatch(start, /await (loadChapters|loadMetadata|loadCovers)\(|setTimeout\(resolve|\b(fast|slowSmooth|ready|animate)Progress\(/);
+test('title loader requests chapters, metadata and covers together without artificial waits', () => {
+  const loader = source('src/core/title-loader.js');
+  assert.match(loader, /Promise\.all\(\[\s*trackProgress\(loadChapters\(tabId\)\),\s*trackProgress\(loadMetadata\(tabId\)\),\s*trackProgress\(loadCovers\(tabId, urlSlug\)\)/);
+  assert.doesNotMatch(loader, /await (loadChapters|loadMetadata|loadCovers)\(|setTimeout\(resolve|\b(fast|slowSmooth|ready|animate)Progress\(/);
+  assert.doesNotMatch(source('src/core/popup.js'), /\b(loadChapters|loadMetadata|loadCovers)\(/);
 });
 
 test('window detection ignores unrelated websites and recognizes own page', async () => {
