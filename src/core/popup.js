@@ -372,6 +372,40 @@ async function loadInlineSvg() {
   }
 }
 
+// Очистка старых titleData (старше 7 дней)
+async function cleanupOldTitles() {
+  try {
+    const settings = await chrome.storage.local.get(['cleanupOldTitles']);
+    if (settings.cleanupOldTitles === false) {
+      return;
+    }
+
+    const all = await chrome.storage.local.get(null);
+    const titleKeys = Object.keys(all).filter(k => k.startsWith('titleData:'));
+
+    if (titleKeys.length === 0) return;
+
+    const sevenDaysAgo = Date.now() - (7 * 24 * 60 * 60 * 1000);
+    let modified = false;
+    const toDelete = [];
+
+    for (const key of titleKeys) {
+      const data = all[key];
+      if (data && data.cacheTimestamp && data.cacheTimestamp < sevenDaysAgo) {
+        const slug = key.split(':')[1];
+        toDelete.push(key, `originalTitleData:${slug}`);
+        modified = true;
+      }
+    }
+
+    if (modified && toDelete.length > 0) {
+      await chrome.storage.local.remove(toDelete);
+    }
+  } catch (error) {
+    console.error('[popup.js] Ошибка при очистке старых тайтлов:', error);
+  }
+}
+
 // Запуск при открытии всплывающего окна
 document.addEventListener('DOMContentLoaded', async () => {
   // Загружаем и применяем тему
@@ -383,7 +417,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Удаляем старый downloadData при открытии popup (предотвращаем накопление мусора)
   chrome.storage.local.remove('downloadData');
 
-  // titleData содержит пользовательские правки: срок кэша не должен удалять их.
+  // Очищаем старые titleData (старше 7 дней) для предотвращения роста storage
+  await cleanupOldTitles();
 
   // Проверка обновлений при открытии popup (с задержкой 2 секунды)
   setTimeout(checkForUpdatesPopup, 2000);
@@ -518,6 +553,20 @@ document.addEventListener('DOMContentLoaded', async () => {
       const newSlug = chaptersResult.slug;
 
       const result = await getTitleStore(['currentSlug', 'titleData', 'originalTitleData'], newSlug);
+      const oldSlug = result.currentSlug;
+
+      // Удаляем данные старого тайтла при смене (как в RanobeDL)
+      if (oldSlug && oldSlug !== newSlug) {
+        const settings = await chrome.storage.local.get(['cleanupOnTitleChange']);
+        if (settings.cleanupOnTitleChange !== false) {
+          const titleData = result.titleData || {};
+          const originalTitleData = result.originalTitleData || {};
+          delete titleData[oldSlug];
+          delete originalTitleData[oldSlug];
+          await setTitleStore({ titleData, originalTitleData });
+        }
+      }
+
       await chrome.storage.local.set({ currentSlug: newSlug });
       currentSlug = newSlug;
 
