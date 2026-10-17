@@ -16,57 +16,16 @@
   <link rel="stylesheet" href="../css/scale-subtle.css">
   <script src="../libs/popper.min.js"></script>
   <script src="../libs/tippy-bundle.umd.min.js"></script>
-  <script src="../libs/jszip.min.js"></script>
-  <script src="../libs/pica.min.js"></script>
-  <script src="../libs/FileSaver.min.js"></script>
-  <script src="../core/page-calls.js"></script>
   <script src="../utils/page-call.js"></script>
-  <script src="../core/api.js"></script>
-  <script src="../utils/protection.js"></script>
-  <script src="../utils/header.js"></script>
-  <script src="../core/statistics.js"></script>
-  <script src="../formatters/base.js"></script>
-  <script src="../formatters/epub.js"></script>
-  <script src="../formatters/txt.js"></script>
-  <script src="../formatters/pdf.js"></script>
-  <script src="../formatters/html.js"></script>
-  <script src="../formatters/fb2.js"></script>
-  <script src="../formatters/cbz.js"></script>
-  <script src="../formatters/index.js"></script>
 </head>
 <body>
   <div class="toolbar">
     <div class="toolbar-left">
-      <!-- Кнопка Скачать (исчезает при загрузке) -->
+      <!-- Кнопка Скачать: ставит тайтл в очередь движка -->
       <button class="btn-save" id="btn-start-download">
         <i class="fa-solid fa-download"></i>
         Скачать
       </button>
-      
-      <!-- Прогресс-бар и кнопки управления (появляются при загрузке) -->
-      <div class="download-toolbar" id="download-toolbar" style="display: none;">
-        <div class="progress-bar-wrapper">
-          <div class="progress-counter" id="progress-text" role="status" aria-live="polite">0 / 0 глав</div>
-          <div class="progress-bar-container">
-            <div class="progress-bar" id="progress-bar"></div>
-          </div>
-        </div>
-        <button class="btn-control btn-skip" id="btn-skip" style="display: none;" title="Пропустить главу">
-          <i class="fa-solid fa-forward-step"></i>
-        </button>
-        <button class="btn-control" id="btn-pause" title="Пауза">
-          <i class="fa-solid fa-pause"></i>
-        </button>
-        <button class="btn-control btn-warning" id="btn-retry" style="display: none;" title="Повторить главу">
-          <i class="fa-solid fa-rotate-right"></i>
-        </button>
-        <button class="btn-control btn-success" id="btn-download-file" style="display: none;" title="Скачать файл">
-          <i class="fa-solid fa-download"></i>
-        </button>
-        <button class="btn-control" id="btn-new-download" style="display: none;" title="Скачать ещё раз: в другом формате или с другими настройками">
-          <i class="fa-solid fa-rotate-left"></i>
-        </button>
-      </div>
       
       <div class="format-selector">
         <select class="format-select" id="format-select" aria-label="Формат файла" title="Формат файла"></select>
@@ -151,77 +110,16 @@
       </div>
     </div>
     
-    <!-- Зона Логи -->
-    <div class="zone zone-logs collapsed">
+    <!-- Зона Загрузки: страница downloads.html показывает очередь движка, iframe создаётся при первом «Скачать» -->
+    <div class="zone zone-downloads collapsed" id="zone-downloads" style="display: none;">
       <div class="zone-header">
-        <h2><i class="fa-solid fa-terminal"></i> Логи</h2>
-        <button class="zone-toggle" data-zone="zone-logs">
+        <h2><i class="fa-solid fa-download"></i> Загрузки</h2>
+        <button class="zone-toggle" data-zone="zone-downloads">
           <i class="fa-solid fa-chevron-down"></i>
         </button>
       </div>
       <div class="zone-content">
-        <div class="logs-panel" id="logs-panel">
-          <div class="log" id="log"></div>
-        </div>
-      </div>
-    </div>
-    
-    <!-- Зона Статистика -->
-    <div class="zone zone-statistics collapsed" id="zone-statistics">
-      <div class="zone-header">
-        <h2><i class="fa-solid fa-chart-line"></i> Статистика</h2>
-        <button class="zone-toggle" data-zone="zone-statistics">
-          <i class="fa-solid fa-chevron-down"></i>
-        </button>
-      </div>
-      <div class="zone-content">
-        <div class="analysis-info">
-          <div class="analysis-item">
-            <span class="analysis-label">Время загрузки:</span>
-            <span class="analysis-value" id="stats-time">-</span>
-          </div>
-          <div class="analysis-item">
-            <span class="analysis-label">Примерное время:</span>
-            <span class="analysis-value" id="stats-estimated-time">-</span>
-          </div>
-          <div class="analysis-item">
-            <span class="analysis-label">Размер файла:</span>
-            <span class="analysis-value" id="stats-file-size">-</span>
-          </div>
-          <div class="analysis-item">
-            <span class="analysis-label">Ошибки:</span>
-            <span class="analysis-value" id="stats-errors">-</span>
-          </div>
-          <div class="analysis-item">
-            <span class="analysis-label">Главы старого формата:</span>
-            <span class="analysis-value" id="stats-old-format-chapters">-</span>
-          </div>
-          <div class="analysis-item">
-            <span class="analysis-label">Пропущено глав:</span>
-            <span class="analysis-value" id="stats-skipped-chapters">-</span>
-          </div>
-          <div class="analysis-item">
-            <span class="analysis-label">Пропущено картинок:</span>
-            <span class="analysis-value" id="stats-skipped-images">-</span>
-          </div>
-          <div class="analysis-item">
-            <span class="analysis-label">Загружено глав:</span>
-            <span class="analysis-value" id="stats-total-chapters">-</span>
-          </div>
-          <div class="analysis-item">
-            <span class="analysis-label">Загружено обложек:</span>
-            <span class="analysis-value" id="stats-total-covers">-</span>
-          </div>
-          <div class="analysis-item">
-            <span class="analysis-label">Загружено картинок:</span>
-            <span class="analysis-value" id="stats-total-images">-</span>
-          </div>
-          <div class="analysis-item">
-            <span class="analysis-label">Запросов в минуту:</span>
-            <span class="analysis-value" id="stats-requests-per-minute">-</span>
-          </div>
-
-        </div>
+        <iframe id="downloads-frame" class="downloads-frame" title="Загрузки"></iframe>
       </div>
     </div>
   </div>
@@ -234,7 +132,6 @@
 
   <script src="../core/snapshot.js"></script>
   <script src="../core/prepare.js"></script>
-  <script src="../core/download.js"></script>
   <script src="../utils/scroll.js"></script>
 </body>
 </html>

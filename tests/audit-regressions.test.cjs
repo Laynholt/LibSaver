@@ -317,75 +317,57 @@ test('partial completion reports skipped content and leaves saving to the caller
   assert.ok(harness.logs.includes('Готово с пропусками: 1 / 2 глав; пропущено картинок: 1'));
 });
 
-// Окно «Подготовка»: функции prepare.js над фальшивым DOM, startDownload подменён
-function windowHarness({ start }) {
-  const elements = {};
-  const element = id => elements[id] ||= { style: {}, textContent: '', innerHTML: '', title: '' };
-  const counts = { saved: 0, restored: 0, toasts: 0 };
-  const logged = [];
-  const context = vm.createContext({
-    document: { getElementById: element },
-    setDownloadListener() {}, startDownload: start,
-    saveAs: () => counts.saved++, restoreDownloadControls: () => counts.restored++, showToast: () => counts.toasts++,
-    addLogToContainer: (...args) => logged.push(args)
-  });
-  vm.runInContext(functionSource('src/core/download.js', 'completionText'), context);
-  for (const name of ['renderStats', 'handleDownloadEvent', 'resetDownloadUi', 'runDownload']) {
-    vm.runInContext(functionSource('src/core/prepare.js', name), context);
-  }
-  vm.runInContext('let downloadPaused = false, downloadResult = null;', context);
-  return { context, element, counts, logged };
+// Раздел «Загрузки»: чистая разметка downloads-view.js (ход загрузки приходит из движка состоянием очереди)
+function downloadsView() {
+  const context = vm.createContext({ console, chrome: {} });
+  vm.runInContext(source('src/utils/page-call.js') + source('src/core/downloads-view.js'), context);
+  return context;
 }
+const queued = (over = {}) => ({ id: 'a', slug: 's', siteKey: 'mangalib', title: 'T', format: 'epub', status: 'running', progress: { current: 1, total: 4 }, ...over });
+const commandsOf = html => [...html.matchAll(/data-cmd="([^"]+)"/g)].map(match => match[1]);
 
-test('failed download shows exactly one error and restores controls once', async () => {
-  const { context, element, counts } = windowHarness({ start: async () => { throw new Error('boom'); } });
-  await context.runDownload({});
-  assert.equal(element('progress-text').textContent, 'Ошибка: boom');
-  assert.equal(counts.restored, 1);
-  assert.equal(counts.toasts, 0);
-  assert.equal(counts.saved, 0);
-  for (const id of ['btn-pause', 'btn-retry', 'btn-skip']) assert.equal(element(id).style.display, 'none', id);
+test('failed download shows exactly one error and offers only removal', () => {
+  const html = downloadsView().renderQueueItem(queued({ status: 'error', error: 'boom' }));
+  assert.equal((html.match(/Ошибка/g) || []).length, 1);
+  assert.match(html, /Ошибка: boom/);
+  assert.deepEqual(commandsOf(html), ['remove']); // ни паузы, ни повтора, ни пропуска у завершённой с ошибкой загрузки
 });
 
-test('partial completion reports skipped content instead of unconditional success', async () => {
-  const { context, element, counts } = windowHarness({ start: async () => ({ blob: {}, filename: 'a.epub', downloaded: 1, total: 2, skippedChapters: [{ number: 1 }], skippedImages: 1 }) });
-  await context.runDownload({});
-  assert.equal(counts.saved, 1);
-  assert.equal(counts.restored, 0);
-  assert.equal(element('progress-text').textContent, 'Готово с пропусками: 1 / 2 глав; пропущено картинок: 1');
-  assert.equal(element('progress-bar').style.width, '100%');
-  // После загрузки можно скачать ещё раз в другом формате, не закрывая окно
-  assert.equal(element('btn-new-download').style.display, 'flex');
-  assert.equal(element('btn-download-file').style.display, 'flex');
+test('partial completion reports skipped content instead of unconditional success', () => {
+  const view = downloadsView();
+  const html = view.renderQueueItem(queued({ status: 'done', progress: { current: 1, total: 2 }, filename: 'a.epub' }));
+  assert.match(html, /Готово с пропусками: 1 \/ 2 глав/);
+  assert.match(html, /a\.epub/);
+  assert.match(view.renderStats({ skippedChapters: 1, skippedImages: 3 }), /Пропущено картинок:<\/span>\s*<span class="analysis-value">3</);
+  // полная загрузка пропусков не заявляет
+  assert.doesNotMatch(view.renderQueueItem(queued({ status: 'done', progress: { current: 2, total: 2 } })), /с пропусками/);
 });
 
-test('window draws download events: log, progress, stats, decision buttons, pause', () => {
-  const { context, element, logged } = windowHarness({ start: async () => ({}) });
-  context.handleDownloadEvent({ type: 'log', line: '[t] hi', isError: true, color: null });
-  assert.deepEqual(logged, [['[t] hi', true, null]]);
-  context.handleDownloadEvent({ type: 'progress', current: 1, total: 4 });
-  assert.equal(element('progress-bar').style.width, '25%');
-  assert.equal(element('progress-text').textContent, '1 / 4 глав');
-  context.handleDownloadEvent({ type: 'stats', stats: { elapsed: '5 сек', requestsPerMinute: 7, maxRequestsPerMinute: 75, errors: 2 } });
-  assert.equal(element('stats-requests-per-minute').textContent, '7 (75)');
-  assert.equal(element('stats-errors').textContent, 2);
-  context.handleDownloadEvent({ type: 'decision', decision: { kind: 'chapter', chapterTitle: 'Г', message: 'm' } });
-  assert.equal(element('btn-retry').style.display, '');
-  assert.equal(element('btn-skip').style.display, '');
-  context.handleDownloadEvent({ type: 'decisionDone' });
-  assert.equal(element('btn-retry').style.display, 'none');
-  assert.equal(element('btn-skip').style.display, 'none');
-  context.handleDownloadEvent({ type: 'paused', paused: true });
-  assert.equal(element('btn-pause').title, 'Возобновить');
-  context.handleDownloadEvent({ type: 'paused', paused: false });
-  assert.equal(element('btn-pause').title, 'Пауза');
+test('downloads view draws download events: log, progress, stats, decision buttons, pause', () => {
+  const view = downloadsView();
+  assert.match(view.renderLog([{ line: '[t] hi', isError: true, color: null }]), /<div class="log-entry error">\[t\] hi<\/div>/);
+  const progress = view.renderQueueItem(queued({ progress: { current: 1, total: 4 } }));
+  assert.match(progress, /width: 25%/);
+  assert.match(progress, /1 \/ 4 глав/);
+  const stats = view.renderStats({ elapsed: '5 сек', requestsPerMinute: 7, maxRequestsPerMinute: 75, errors: 2 });
+  assert.match(stats, /Запросов в минуту:<\/span>\s*<span class="analysis-value">7 \(75\)</);
+  assert.match(stats, /Ошибки:<\/span>\s*<span class="analysis-value">2</);
+  const decision = view.renderQueueItem(queued({ status: 'waiting-decision', decision: { kind: 'chapter', chapterTitle: 'Г', message: 'm' } }));
+  assert.deepEqual(commandsOf(decision), ['retry', 'skip', 'cancel']);
+  assert.deepEqual(commandsOf(view.renderQueueItem(queued())), ['pause', 'cancel']);
+  const paused = view.renderQueueItem(queued({ status: 'paused' }));
+  assert.deepEqual(commandsOf(paused), ['resume', 'cancel']);
+  assert.match(paused, /title="Продолжить"/);
 });
 
-test('new download button returns the format and chapter choice in the same window', () => {
-  const handler = between('src/core/prepare.js', "btnNewDownload.addEventListener('click'", '});');
-  assert.match(handler, /download-toolbar'\)\.style\.display = 'none'/);
-  assert.match(handler, /restoreDownloadControls/);
-  assert.match(source('src/html/prepare.html'), /id="btn-new-download"/);
+test('a finished download can be saved again and downloaded again from the same window', () => {
+  const html = downloadsView().renderQueueItem(queued({ status: 'done', progress: { current: 4, total: 4 }, filename: 'a.epub' }));
+  assert.match(html, /data-cmd="saveAgain"[^>]*title="Сохранить файл ещё раз"/);
+  // «Скачать» остаётся в окне «Подготовка» (формат и главы можно выбрать заново), отдельной кнопки возврата больше нет
+  const handler = between('src/core/prepare.js', "btnDownload.addEventListener('click'", "document.querySelectorAll('.volume-header')");
+  assert.match(handler, /finally \{\s*restoreDownloadControls\(\);/);
+  assert.doesNotMatch(handler, /style\.display = 'none'/);
+  assert.doesNotMatch(source('src/html/prepare.html'), /btn-new-download/);
 });
 
 test('recovery restores chapter selection and the download button', () => {
@@ -694,6 +676,7 @@ test('same-width option scales manga pages to the most common width of the first
 
 test('PDF libraries load lazily and fonts are embedded whole', () => {
   assert.doesNotMatch(source('src/html/prepare.html'), /pdf-lib|fontkit/);
+  assert.doesNotMatch(source('src/engine/engine.html'), /pdf-lib|fontkit/);
   const pdf = source('src/formatters/pdf.js');
   assert.match(between('src/formatters/pdf.js', '  async format(chapters, metadata) {', 'const { PDFDocument'), /await loadPdfLibs\(\);/);
   // subset в pdf-lib/fontkit рисует кириллицу Merriweather, Inter и Crimson Text пустыми местами

@@ -55,7 +55,7 @@
   },
   "web_accessible_resources": [
     {
-      "resources": ["html/popup.html", "html/settings.html", "html/metadata.html", "html/chapters.html", "html/covers.html", "html/prepare.html", "assets/local_data", "assets/svg/*.svg", "assets/fonts/*", "assets/gif/*"],
+      "resources": ["html/popup.html", "html/settings.html", "html/metadata.html", "html/chapters.html", "html/covers.html", "html/prepare.html", "html/downloads.html", "assets/local_data", "assets/svg/*.svg", "assets/fonts/*", "assets/gif/*"],
       "matches": ["<all_urls>"]
     }
   ]

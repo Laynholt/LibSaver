@@ -5,7 +5,6 @@ let metadataFields = {};
 let coverQuality = 'ORIGINAL';
 let tippyInstances = [];
 let tooltipContents = [];
-let autoScrollLogs = true; // Флаг для автоскролла логов
 
 // Функция получения имени переводчика
 function getTranslatorName(branch) {
@@ -199,15 +198,6 @@ document.addEventListener('DOMContentLoaded', async () => {
   groupChaptersByVolume();
   renderChaptersList();
   setupEventListeners();
-  
-  // Инициализируем начальную статистику
-  initializeStatistics();
-  
-  // Логируем настройки при загрузке страницы
-  logDownloadSettings();
-  
-  // Настраиваем автоскролл логов
-  setupLogAutoScroll();
 });
 
 async function loadDownloadData() {
@@ -671,243 +661,6 @@ function renderSettings() {
   }
 }
 
-function initializeStatistics() {
-  // Инициализируем начальные значения статистики
-  const statsTime = document.getElementById('stats-time');
-  const statsEstimatedTime = document.getElementById('stats-estimated-time');
-  const statsFileSize = document.getElementById('stats-file-size');
-  const statsErrors = document.getElementById('stats-errors');
-  const statsOldFormatChapters = document.getElementById('stats-old-format-chapters');
-  const statsSkippedChapters = document.getElementById('stats-skipped-chapters');
-  const statsSkippedImages = document.getElementById('stats-skipped-images');
-  const statsTotalChapters = document.getElementById('stats-total-chapters');
-  const statsTotalCovers = document.getElementById('stats-total-covers');
-  const statsTotalImages = document.getElementById('stats-total-images');
-  const statsRequestsPerMinute = document.getElementById('stats-requests-per-minute');
-
-  if (statsTime) statsTime.textContent = '0';
-  if (statsEstimatedTime) statsEstimatedTime.textContent = '0';
-  if (statsFileSize) statsFileSize.textContent = '0 B';
-  if (statsErrors) statsErrors.textContent = '0';
-  if (statsOldFormatChapters) statsOldFormatChapters.textContent = '0';
-  if (statsSkippedChapters) statsSkippedChapters.textContent = '0';
-  if (statsSkippedImages) statsSkippedImages.textContent = '0';
-  if (statsTotalChapters) statsTotalChapters.textContent = '0';
-  if (statsTotalCovers) statsTotalCovers.textContent = '0';
-  if (statsTotalImages) statsTotalImages.textContent = '0';
-
-  // Скрываем поле "Главы старого формата" для манга сайтов
-  chrome.storage.local.get(['siteType'], (result) => {
-    const siteType = result.siteType || 'ranobe';
-    const isManga = siteType === 'manga' || siteType === 'hentai' || siteType === 'shlib';
-    if (isManga && statsOldFormatChapters) {
-      statsOldFormatChapters.parentElement.style.display = 'none';
-    }
-  });
-  
-  if (statsRequestsPerMinute) {
-    statsRequestsPerMinute.textContent = `0 (0)`;
-  }
-}
-
-// Ход загрузки приходит событиями download.js (setDownloadListener); окно рисует его само
-function renderStats(stats) {
-  const set = (id, value) => {
-    const element = document.getElementById(id);
-    if (element) element.textContent = value;
-  };
-  set('stats-time', stats.elapsed);
-  set('stats-estimated-time', stats.estimated);
-  set('stats-file-size', stats.fileSize);
-  set('stats-errors', stats.errors);
-  set('stats-old-format-chapters', stats.oldFormatChapters);
-  set('stats-total-chapters', stats.totalChapters);
-  set('stats-total-covers', stats.totalCovers);
-  set('stats-total-images', stats.totalImages);
-  set('stats-skipped-chapters', stats.skippedChapters);
-  set('stats-skipped-images', stats.skippedImages);
-  set('stats-requests-per-minute', `${stats.requestsPerMinute} (${stats.maxRequestsPerMinute})`);
-}
-
-let downloadPaused = false;
-let downloadResult = null; // результат последней загрузки, для «Скачать файл»
-
-function handleDownloadEvent(event) {
-  const byId = id => document.getElementById(id);
-  switch (event.type) {
-    case 'log':
-      addLogToContainer(event.line, event.isError, event.color);
-      break;
-    case 'progress':
-      byId('progress-bar').style.width = (event.total ? (event.current / event.total) * 100 : 0) + '%';
-      byId('progress-text').textContent = `${event.current} / ${event.total} глав`;
-      break;
-    case 'stats':
-      renderStats(event.stats);
-      break;
-    case 'paused':
-      downloadPaused = event.paused;
-      byId('btn-pause').innerHTML = `<i class="fa-solid fa-${event.paused ? 'play' : 'pause'}"></i>`;
-      byId('btn-pause').title = event.paused ? 'Возобновить' : 'Пауза';
-      break;
-    case 'decision':
-      byId('btn-retry').style.display = '';
-      byId('btn-skip').style.display = '';
-      break;
-    case 'decisionDone':
-      byId('btn-retry').style.display = 'none';
-      byId('btn-skip').style.display = 'none';
-      break;
-  }
-}
-
-function resetDownloadUi() {
-  const byId = id => document.getElementById(id);
-  downloadResult = null;
-  byId('progress-bar').style.width = '0%';
-  byId('progress-text').textContent = '0 / 0 глав';
-  byId('btn-download-file').style.display = 'none';
-  byId('btn-pause').style.display = '';
-  handleDownloadEvent({ type: 'paused', paused: false });
-  byId('log').innerHTML = '';
-}
-
-// Запускает загрузку, сохраняет файл и показывает итог; любую ошибку показывает один раз и возвращает управление
-async function runDownload(snapshot) {
-  const byId = id => document.getElementById(id);
-  setDownloadListener(handleDownloadEvent);
-  resetDownloadUi();
-  try {
-    const result = await startDownload(snapshot);
-    downloadResult = result;
-    saveAs(result.blob, result.filename);
-    byId('progress-bar').style.width = '100%';
-    byId('progress-text').textContent = completionText(result);
-    // После загрузки можно скачать ещё раз в другом формате, не закрывая окно
-    byId('btn-download-file').style.display = 'flex';
-    byId('btn-new-download').style.display = 'flex';
-  } catch (error) {
-    byId('progress-text').textContent = `Ошибка: ${error.message}`;
-    restoreDownloadControls();
-  } finally {
-    for (const id of ['btn-pause', 'btn-retry', 'btn-skip']) byId(id).style.display = 'none';
-  }
-}
-
-function setupDownloadControls() {
-  document.getElementById('btn-pause').addEventListener('click', () => {
-    if (downloadPaused) downloadControl.resume();
-    else downloadControl.pause();
-  });
-  document.getElementById('btn-retry').addEventListener('click', () => downloadControl.retry());
-  document.getElementById('btn-skip').addEventListener('click', () => downloadControl.skip());
-  document.getElementById('btn-download-file').addEventListener('click', () => {
-    if (downloadResult) saveAs(downloadResult.blob, downloadResult.filename);
-  });
-  // Новая загрузка в том же окне: возвращаем выбор формата и глав, состояние сбросит startDownload
-  const btnNewDownload = document.getElementById('btn-new-download');
-  btnNewDownload.addEventListener('click', () => {
-    btnNewDownload.style.display = 'none';
-    document.getElementById('download-toolbar').style.display = 'none';
-    restoreDownloadControls();
-  });
-}
-
-function logDownloadSettings() {
-  const logContainer = document.getElementById('log');
-  if (!logContainer) return;
-
-  // Получаем настройки логирования
-  chrome.storage.local.get(['debugLogging'], (result) => {
-    const debugMode = result.debugLogging || false;
-
-    addLogToContainer('=== НАСТРОЙКИ СКАЧИВАНИЯ ===');
-    addLogToContainer(`Качество картинок: ${downloadData.quality || 'ORIGINAL'}`);
-    addLogToContainer(`Качество обложек: ${downloadData.coverQuality || 'ORIGINAL'}`);
-    if (downloadData.resizeMethod) {
-      addLogToContainer(`Метод сжатия: ${downloadData.resizeMethod}`);
-    }
-    if (debugMode) {
-      const imageFormat = downloadData.imageFormat || 'original';
-      const pdfImageFormat = downloadData.pdfImageFormat || 'original-png';
-      addLogToContainer(`Формат изображений: ${imageFormat}`);
-      addLogToContainer(`Формат изображений в PDF: ${pdfImageFormat}`);
-
-      const jpegQuality = downloadData.jpegQuality !== undefined ? downloadData.jpegQuality : 1.0;
-      const pdfJpegQuality = downloadData.pdfJpegQuality !== undefined ? downloadData.pdfJpegQuality : 1.0;
-      addLogToContainer(`Качество JPEG/WebP: ${jpegQuality}`);
-      addLogToContainer(`Качество JPEG в PDF: ${pdfJpegQuality}`);
-    }
-    addLogToContainer(`Оглавление: ${downloadData.disableToc ? 'Отключено' : 'Включено'}`);
-    addLogToContainer(`Подробное логирование: ${debugMode ? 'Включено' : 'Отключено'}`);
-    addLogToContainer('============================');
-  });
-}
-
-function logDownloadSettingsOnStart(selectedChapterIds) {
-  const logContainer = document.getElementById('log');
-  if (!logContainer) return;
-
-  // Получаем настройки логирования
-  chrome.storage.local.get(['debugLogging'], (result) => {
-    const debugMode = result.debugLogging || false;
-
-    const totalChapters = downloadData.chapters ? downloadData.chapters.length : 0;
-    const selectedChapters = selectedChapterIds ? selectedChapterIds.length : 0;
-
-    addLogToContainer('=== НАСТРОЙКИ СКАЧИВАНИЯ ===');
-    addLogToContainer(`Качество картинок: ${downloadData.quality || 'ORIGINAL'}`);
-    addLogToContainer(`Качество обложек: ${downloadData.coverQuality || 'ORIGINAL'}`);
-    if (downloadData.resizeMethod) {
-      addLogToContainer(`Метод сжатия: ${downloadData.resizeMethod}`);
-    }
-    if (debugMode) {
-      const imageFormat = downloadData.imageFormat || 'original';
-      const pdfImageFormat = downloadData.pdfImageFormat || 'original-png';
-      addLogToContainer(`Формат изображений: ${imageFormat} (PDF: ${pdfImageFormat})`);
-
-      const jpegQuality = downloadData.jpegQuality !== undefined ? downloadData.jpegQuality : 1.0;
-      const pdfJpegQuality = downloadData.pdfJpegQuality !== undefined ? downloadData.pdfJpegQuality : 1.0;
-      addLogToContainer(`Качество JPEG: ${jpegQuality} (PDF: ${pdfJpegQuality})`);
-    }
-    addLogToContainer(`Оглавление: ${downloadData.disableToc ? 'Отключено' : 'Включено'}`);
-    addLogToContainer(`Подробное логирование: ${debugMode ? 'Включено' : 'Отключено'}`);
-    addLogToContainer('============================');
-
-    // Логируем количество глав после группы настроек
-    addLogToContainer(`Всего глав: ${totalChapters}`);
-    addLogToContainer(`Глав выбрано: ${selectedChapters}`);
-
-    // Логируем количество обложек
-    const allCovers = downloadData.allCovers ? downloadData.allCovers : [downloadData.metadata?.cover || downloadData.originalCover || ''];
-    const coverCount = allCovers.filter(c => c).length;
-    addLogToContainer(`Обложек: ${coverCount}`);
-  });
-}
-
-function addLogToContainer(message, isError = false, color = null) {
-  const logContainer = document.getElementById('log');
-  if (!logContainer) return;
-
-  const logEntry = document.createElement('div');
-  logEntry.className = 'log-entry';
-  if (color) {
-    logEntry.style.color = color;
-  } else if (isError) {
-    logEntry.style.color = '#c62828';
-  }
-  logEntry.textContent = message;
-  logContainer.appendChild(logEntry);
-
-  // Автоскролл к низу если включен
-  if (autoScrollLogs) {
-    const logsPanel = document.getElementById('logs-panel');
-    if (logsPanel) {
-      logsPanel.scrollTop = logsPanel.scrollHeight
-    }
-  }
-}
-
 function restoreDownloadControls() {
   enableControls();
   enableVolumeCheckboxes();
@@ -917,92 +670,6 @@ function restoreDownloadControls() {
   const button = document.getElementById('btn-start-download');
   button.disabled = false;
   button.style.display = '';
-}
-
-function setupLogAutoScroll() {
-  const logsPanel = document.getElementById('logs-panel');
-  if (!logsPanel) return;
-  
-  // Отслеживаем скролл для отключения автоскролла
-  logsPanel.addEventListener('scroll', () => {
-    const isAtBottom = logsPanel.scrollHeight - logsPanel.scrollTop <= logsPanel.clientHeight + 50;
-    
-    if (!isAtBottom && autoScrollLogs) {
-      autoScrollLogs = false;
-      showScrollToBottomButton();
-    } else if (isAtBottom && !autoScrollLogs) {
-      autoScrollLogs = true;
-      hideScrollToBottomButton();
-    }
-  });
-  
-  // Создаем кнопку скролла вниз
-  createScrollToBottomButton();
-}
-
-function createScrollToBottomButton() {
-  const logsPanel = document.getElementById('logs-panel');
-  if (!logsPanel) return;
-
-  // Находим zone-content чтобы поместить кнопку туда
-  const zoneContent = logsPanel.closest('.zone-content');
-  if (!zoneContent) return;
-
-  const button = document.createElement('button');
-  button.id = 'scroll-to-bottom-btn';
-  button.innerHTML = '<i class="fa-solid fa-chevron-down"></i>';
-  button.style.cssText = `
-    position: absolute;
-    bottom: 20px;
-    right: 20px;
-    width: 36px;
-    height: 36px;
-    border-radius: var(--border-radius);
-    background-color: var(--bg-tertiary);
-    border: 1px solid var(--border-color);
-    color: var(--text-primary);
-    cursor: pointer;
-    display: none;
-    align-items: center;
-    justify-content: center;
-    font-size: 14px;
-    z-index: 10;
-    transition: border-color 0.15s ease-in-out, background-color 0.15s ease-in-out;
-  `;
-
-  // Помещаем кнопку в zone-content
-  zoneContent.style.position = 'relative';  // Для работы position: absolute
-  zoneContent.appendChild(button);
-  
-  button.addEventListener('mouseenter', () => {
-    button.style.backgroundColor = 'var(--bg-secondary)';
-    button.style.borderColor = 'var(--border-hover)';
-  });
-  
-  button.addEventListener('mouseleave', () => {
-    button.style.backgroundColor = 'var(--bg-tertiary)';
-    button.style.borderColor = 'var(--border-color)';
-  });
-  
-  button.addEventListener('click', () => {
-    autoScrollLogs = true;
-    logsPanel.scrollTop = logsPanel.scrollHeight;
-    hideScrollToBottomButton();
-  });
-}
-
-function showScrollToBottomButton() {
-  const button = document.getElementById('scroll-to-bottom-btn');
-  if (button) {
-    button.style.display = 'flex';
-  }
-}
-
-function hideScrollToBottomButton() {
-  const button = document.getElementById('scroll-to-bottom-btn');
-  if (button) {
-    button.style.display = 'none';
-  }
 }
 
 function disableChapterCheckboxes() {
@@ -1052,12 +719,6 @@ function enableVolumeCheckboxes() {
     }
   });
 }
-
-// Экспортируем функции для использования в download.js
-window.disableControls = disableControls;
-window.enableControls = enableControls;
-window.showScrollToBottomButton = showScrollToBottomButton;
-window.hideScrollToBottomButton = hideScrollToBottomButton;
 
 // Слушаем изменения качества в реальном времени
 chrome.storage.onChanged.addListener((changes, areaName) => {
@@ -1272,6 +933,39 @@ function populateFormatSelector(siteType) {
   return defaultFormat;
 }
 
+// Ставит снимок в очередь движка: ensureEngine -> порт -> enqueue; движок отвечает enqueueResult
+async function enqueueSnapshot(snapshot) {
+  await chrome.runtime.sendMessage({ action: 'ensureEngine' });
+  const port = chrome.runtime.connect({ name: 'libsaver-engine' });
+  try {
+    return await new Promise((resolve, reject) => {
+      port.onMessage.addListener(message => {
+        if (message.type === 'enqueueResult') resolve(message);
+      });
+      port.onDisconnect.addListener(() => reject(new Error('Движок загрузки недоступен')));
+      port.postMessage({ cmd: 'enqueue', snapshot });
+    });
+  } finally {
+    port.disconnect();
+  }
+}
+
+// Раздел «Загрузки» (downloads.html) вместо панели логов: iframe создаётся при первом «Скачать»
+function showDownloadsView() {
+  const frame = document.getElementById('downloads-frame');
+  if (!frame.getAttribute('src')) frame.setAttribute('src', 'downloads.html');
+  const zone = document.getElementById('zone-downloads');
+  zone.style.display = 'flex';
+  zone.classList.remove('collapsed');
+}
+
+async function enqueueAndShow(snapshot) {
+  const result = await enqueueSnapshot(snapshot);
+  if (!result.ok && result.reason !== 'already-queued') throw new Error(result.reason || 'Очередь отклонила тайтл');
+  if (!result.ok) showToast('Этот тайтл уже в очереди', 'info');
+  showDownloadsView();
+}
+
 function setupEventListeners() {
   // Сначала заполняем селектор формата на основе siteType
   chrome.storage.local.get(['siteType'], (result) => {
@@ -1317,8 +1011,6 @@ function setupEventListeners() {
       chrome.storage.local.set({ textOnly: textOnlyCheckbox.checked });
     });
 
-    setupDownloadControls();
-
     const btnDownload = document.getElementById('btn-start-download');
     btnDownload.addEventListener('click', async () => {
       if (selectedChapterIds.size === 0) {
@@ -1330,7 +1022,11 @@ function setupEventListeners() {
       downloadData.selectedFormat = formatSelect.value;
       downloadData.textOnly = textOnlyCheckbox.checked;
       downloadData.imageServer = serverSelect.value;
+      // Пока снимок собирается и уходит в очередь, выбор не меняем
       btnDownload.disabled = true;
+      disableChapterCheckboxes();
+      disableVolumeCheckboxes();
+      disableControls();
       try {
         // downloadData остаётся в storage только для перезагрузки (F5) окна
         await chrome.storage.local.set({ downloadData });
@@ -1345,33 +1041,11 @@ function setupEventListeners() {
           textOnly: downloadData.textOnly,
           speedMode: document.getElementById('speed-mode-checkbox')?.checked
         });
-        // Обновляем логи с актуальными настройками перед началом скачивания
-        logDownloadSettingsOnStart(Array.from(selectedChapterIds));
-        
-        // Отключаем чекбоксы глав
-        disableChapterCheckboxes();
-        disableVolumeCheckboxes();
-
-        // Отключаем кнопки формата, сервера и "Только текст"
-        disableControls();
-
-        // Скрываем кнопку Скачать и показываем прогресс-бар
-        btnDownload.style.display = 'none';
-        const downloadToolbar = document.getElementById('download-toolbar');
-        if (downloadToolbar) {
-          downloadToolbar.style.display = 'flex';
-        }
-        // Разворачиваем зону логов
-        const logsZone = document.querySelector('.zone-logs');
-        if (logsZone) {
-          logsZone.classList.remove('collapsed');
-        }
-
-        // Запускаем загрузку; ошибки самой загрузки runDownload показывает сама
-        await runDownload(snapshot);
+        await enqueueAndShow(snapshot);
       } catch (error) {
-        restoreDownloadControls();
         showToast(`Не удалось начать загрузку: ${error.message}`, 'error');
+      } finally {
+        restoreDownloadControls();
       }
     });
     
@@ -1453,17 +1127,14 @@ function setupEventListeners() {
     const speedModeCheckbox = document.getElementById('speed-mode-checkbox');
     if (speedModeCheckbox) {
       speedModeCheckbox.addEventListener('change', (e) => {
-        const isChecked = e.target.checked;
-        downloadControl.setSpeedMode(isChecked);
-        // Сохраняем состояние в storage
-        chrome.storage.local.set({ speedMode: isChecked });
+        // Идущую загрузку переключает раздел «Загрузки»; здесь значение попадёт в снимок следующего тайтла
+        chrome.storage.local.set({ speedMode: e.target.checked });
       });
       
       // Загружаем сохраненное состояние при загрузке
       chrome.storage.local.get(['speedMode'], (result) => {
         if (result.speedMode) {
           speedModeCheckbox.checked = true;
-          setSpeedMode(true);  // Синхронизируем с protection module
         }
       });
     }

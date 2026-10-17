@@ -10,97 +10,6 @@ body {
 }
 
 
-/* Стили для download-toolbar */
-.download-toolbar {
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-sm);
-  width: 240px;
-}
-
-.progress-bar-wrapper {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  flex: 1;
-}
-
-.progress-bar-container {
-  height: 4px;
-  background-color: var(--bg-tertiary);
-  border-radius: 2px;
-  overflow: hidden;
-}
-
-.progress-bar {
-  height: 100%;
-  background-color: var(--accent-color);
-  width: 0%;
-  transition: width 0.3s ease;
-  animation: pulse 2s ease-in-out infinite;
-}
-
-@keyframes pulse {
-  0%, 100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0.8;
-  }
-}
-
-.progress-counter {
-  font-size: 10px;
-  color: var(--text-secondary);
-  text-align: right;
-}
-
-.btn-control {
-  background-color: var(--bg-tertiary);
-  border: none;
-  color: var(--text-primary);
-  width: 22px;
-  height: 22px;
-  border-radius: var(--border-radius);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 11px;
-  cursor: pointer;
-  flex-shrink: 0;
-}
-
-.btn-control:hover {
-  background-color: var(--bg-secondary);
-}
-
-.btn-control.btn-warning {
-  border-color: var(--accent-color);
-  color: var(--accent-color);
-}
-
-.btn-control.btn-warning:hover {
-  background-color: var(--bg-secondary);
-}
-
-.btn-control.btn-success {
-  border-color: var(--success-color);
-  color: var(--success-color);
-}
-
-.btn-control.btn-success:hover {
-  background-color: var(--bg-secondary);
-}
-
-.btn-control.btn-skip {
-  border-color: var(--text-secondary);
-  color: var(--text-secondary);
-}
-
-.btn-control.btn-skip:hover {
-  background-color: var(--bg-secondary);
-}
-
 .toolbar-right {
   display: flex;
   align-items: center;
@@ -641,76 +550,17 @@ body {
   padding: 2px;
 }
 
-/* Стили для зоны статистики */
-.analysis-info {
-  display: flex;
-  flex-direction: column;
-  gap: var(--spacing-sm);
+/* Зона Загрузки: страница downloads.html в iframe */
+.zone-downloads .zone-content {
+  padding: 0;
 }
 
-.analysis-item {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: var(--spacing-sm);
-  background-color: var(--bg-tertiary);
-  border-radius: var(--border-radius);
-  border: 1px solid var(--border-color);
-}
-
-.analysis-label {
-  font-size: var(--font-size-md);
-  color: var(--text-secondary);
-  font-weight: 500;
-}
-
-.analysis-value {
-  font-size: var(--font-size-md);
-  color: var(--text-primary);
-  font-weight: 600;
-}
-
-.analysis-value.loading {
-  color: var(--text-secondary);
-  font-style: italic;
-}
-
-.analysis-estimated {
-  text-decoration: underline;
-  text-decoration-style: dotted;
-  text-decoration-color: var(--text-secondary);
-  cursor: help;
-  transition: text-decoration-color 0.2s ease;
-}
-
-.analysis-estimated:hover {
-  text-decoration-color: var(--accent-color);
-}
-
-/* Стили для зоны Логи */
-.zone-logs .logs-panel {
-  background-color: var(--bg-tertiary);
-  border-radius: var(--border-radius);
-  padding: var(--spacing-sm);
-  max-height: 400px;
-  overflow: auto;
-  border: 1px solid var(--border-color);
-}
-
-.log {
-  font-family: 'Consolas', 'Monaco', monospace;
-  font-size: 11px;
-  color: var(--text-primary);
-  line-height: 1.4;
-  white-space: nowrap;
-}
-
-.log div {
-  padding: 2px 0;
-}
-
-.log .error {
-  color: var(--danger-color);
+.downloads-frame {
+  display: block;
+  width: 100%;
+  height: 520px;
+  border: 0;
+  background: transparent;
 }
 
 /* Адаптивность */

@@ -42,7 +42,15 @@ function updateCurrent(status, extra) {
   queue.setStatus(current.id, status || item.status, extra);
 }
 
-async function saveFile(url, filename) {
+// chrome.downloads отвергает имена, которые принимал FileSaver: зарезервированные и управляющие символы, точки и пробелы в конце имени
+function safeDownloadFilename(name) {
+  const [, base, extension = ''] = String(name).match(/^([\s\S]*?)(\.[a-z0-9]{1,5})?$/i);
+  const safe = base.replace(/[\\/:*?"<>|\u0000-\u001f]/g, '_').replace(/[. ]+$/, '');
+  return (safe || 'LibSaver') + extension;
+}
+
+async function saveFile(url, name) {
+  const filename = safeDownloadFilename(name);
   if (chrome.downloads) {
     await chrome.downloads.download({ url, filename, saveAs: false });
     return;
