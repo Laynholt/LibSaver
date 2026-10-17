@@ -106,3 +106,57 @@ test('every former executeScript func now lives in PAGE_CALLS and api/base use p
   vm.runInContext(source('src/core/page-calls.js'), ctx);
   assert.deepEqual(Object.keys(vm.runInContext('PAGE_CALLS', ctx)).sort(), ['chapterPages', 'chapters', 'covers', 'mangaChapterPages', 'metadata', 'metadataExtra']);
 });
+
+function functionSource(file, name) {
+  const text = source(file);
+  const match = new RegExp(`(?:async )?function ${name}[(]`).exec(text);
+  assert.ok(match, `Missing function: ${name}`);
+  return text.slice(match.index, text.indexOf('\n}', match.index) + 2);
+}
+
+// snapshot.js in a vm over a fake chrome.storage holding `data` (reads return copies, like the real one)
+function snapshotContext(data) {
+  const chrome = { storage: { local: {
+    get: async keys => structuredClone(Object.fromEntries([].concat(keys).filter(key => key in data).map(key => [key, data[key]]))),
+    set: async values => Object.assign(data, structuredClone(values)),
+    remove: async keys => { for (const key of [].concat(keys)) delete data[key]; }
+  } } };
+  const ctx = vm.createContext({ chrome, URL, console });
+  vm.runInContext(source('src/utils/title-store.js') + source('src/utils/page-call.js') + source('src/core/snapshot.js'), ctx);
+  return ctx;
+}
+
+test('snapshot freezes title data and settings at the moment of the click', async () => {
+  const data = { imageQuality: '1080', tocFormat: 'default', speedMode: true, 'titleData:s': { metadata: { titleRu: 'T' }, chapters: [{ id: 1 }, { id: 2 }], translatorPriority: ['a'] }, 'originalTitleData:s': { metadata: { titleRu: 'T0' } } };
+  const snap = await snapshotContext(data).buildDownloadSnapshot({ slug: 's', tabId: 5, sourceUrl: 'https://mangalib.me/ru/manga/s', selectedChapterIds: [2], format: 'cbz', imageServer: 'normal', textOnly: false, speedMode: true });
+  data.imageQuality = 'ORIGINAL'; data['titleData:s'].metadata.titleRu = 'Changed';
+  assert.equal(snap.downloadData.quality, '1080');
+  assert.equal(snap.title, 'T');
+  assert.equal(snap.siteKey, 'mangalib');
+  assert.deepEqual(snap.downloadData.selectedChapterIds, [2]);
+  assert.deepEqual(snap.titleExtras.translatorPriority, ['a']);
+  assert.equal(snap.stored.speedMode, true);
+});
+
+test('snapshot carries what popup and prepare used to put into downloadData', async () => {
+  const data = { 'titleData:s': { metadata: { titleRu: 'T', cover: 'c0' }, covers: ['c1'], chapters: [{ id: 1 }, { id: 2 }], filteredChapters: [{ id: 2 }] }, 'originalTitleData:s': { metadata: { titleEn: 'E' } }, disableToc: true };
+  const snap = await snapshotContext(data).buildDownloadSnapshot({ slug: 's', tabId: 5, sourceUrl: 'https://ranobelib.me/ru/book/s', selectedChapterIds: [2], format: 'epub', imageServer: 'compressed', textOnly: true });
+  const d = snap.downloadData;
+  assert.deepEqual([d.siteType, d.siteKey, snap.siteType, d.tabId, d.mangaId], ['ranobe', 'ranobelib', 'ranobe', 5, 's']);
+  assert.deepEqual([d.selectedFormat, d.imageServer, d.textOnly], ['epub', 'compressed', true]);
+  assert.deepEqual([d.quality, d.coverQuality, d.resizeMethod, d.adaptiveRatio, d.jpegQuality, d.imageFormat, d.pdfImageFormat, d.pdfJpegQuality], ['ORIGINAL', 'ORIGINAL', 'MIN_SIDE', 3, 1, 'original', 'original-png', 1]);
+  assert.deepEqual([d.disableToc, d.epubTocPage], [true, false]);
+  assert.deepEqual(d.allCovers, ['c1']);
+  assert.equal(d.originalCover, 'c0');
+  assert.deepEqual(d.chapters, [{ id: 2 }]);
+  assert.deepEqual(d.originalMetadata, { titleEn: 'E' });
+  assert.deepEqual(snap.titleExtras.allChapters, [{ id: 1 }, { id: 2 }]);
+  assert.equal(snap.titleExtras.sourceUrl, 'https://ranobelib.me/ru/book/s');
+  assert.equal(JSON.stringify(snap.titleExtras.chapterBranchOverrides), '{}');
+  assert.ok(snap.id && snap.createdAt);
+});
+
+test('startDownload and formatters never read chrome.storage', () => {
+  assert.doesNotMatch(functionSource('src/core/download.js', 'startDownload'), /chrome\.storage|getTitleStore/);
+  assert.doesNotMatch(source('src/formatters/cbz.js'), /getTitleStore|chrome\.storage/);
+});

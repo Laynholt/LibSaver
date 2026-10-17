@@ -1362,7 +1362,19 @@ function setupEventListeners() {
       downloadData.imageServer = serverSelect.value;
       btnDownload.disabled = true;
       try {
+        // downloadData остаётся в storage только для перезагрузки (F5) окна
         await chrome.storage.local.set({ downloadData });
+        const { sourceUrl } = await chrome.storage.local.get('sourceUrl');
+        const snapshot = await buildDownloadSnapshot({
+          slug: downloadData.slug,
+          tabId: downloadData.tabId,
+          sourceUrl,
+          selectedChapterIds: downloadData.selectedChapterIds,
+          format: downloadData.selectedFormat,
+          imageServer: downloadData.imageServer,
+          textOnly: downloadData.textOnly,
+          speedMode: document.getElementById('speed-mode-checkbox')?.checked
+        });
         // Обновляем логи с актуальными настройками перед началом скачивания
         logDownloadSettingsOnStart(Array.from(selectedChapterIds));
         
@@ -1390,7 +1402,7 @@ function setupEventListeners() {
 
         // Запускаем загрузку
         if (typeof startDownload === 'function') {
-          await startDownload();
+          await startDownload(snapshot);
         } else {
           throw new Error('Загрузчик недоступен');
         }

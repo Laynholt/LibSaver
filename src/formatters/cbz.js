@@ -15,32 +15,10 @@ class CbzFormatter extends BaseFormatter {
     const chapterBranchOverrides = this.options.chapterBranchOverrides || {};
     const translatorPriority = this.options.translatorPriority || [];
 
-    // Загружаем originalTitleData, titleData и sourceUrl для ComicInfo.xml
-    const tabId = this.options.tabId;
-    const slug = this.options.slug;
-    let originalMetadata = {}; // Оригинальные метаданные с сайта
-    let allChapters = []; // Все главы с сайта для подсчёта томов
-    let sourceUrl = '';
-
-    if (tabId && slug) {
-      try {
-        const result = await getTitleStore(['originalTitleData', 'titleData', 'sourceUrl'], slug);
-
-        // Загружаем оригинальные метаданные с сайта
-        if (result.originalTitleData && result.originalTitleData[slug]) {
-          originalMetadata = result.originalTitleData[slug].metadata || {};
-        }
-
-        // Загружаем все главы с сайта для подсчёта максимального тома
-        if (result.titleData && result.titleData[slug] && result.titleData[slug].chapters) {
-          allChapters = result.titleData[slug].chapters;
-        }
-
-        sourceUrl = result.sourceUrl || '';
-      } catch (e) {
-        console.error('Ошибка при загрузке originalTitleData, titleData и sourceUrl:', e);
-      }
-    }
+    // Данные для ComicInfo.xml приходят в options из снимка загрузки (в движке нет хранилища)
+    const originalMetadata = this.options.originalMetadata || {}; // Оригинальные метаданные с сайта
+    const allChapters = this.options.allChapters || []; // Все главы с сайта для подсчёта томов
+    const sourceUrl = this.options.sourceUrl || '';
 
     // Группируем главы по томам
     const chaptersByVolume = {};

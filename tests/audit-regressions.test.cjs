@@ -267,25 +267,27 @@ for (const action of ['retry', 'skip']) {
   });
 }
 
-function downloadHarness({ fail = false, partial = false, storageFailure = false } = {}) {
+function downloadHarness({ fail = false, partial = false, noDownloadData = false } = {}) {
   const timers = new Set();
   const elements = {};
   const element = id => elements[id] ||= { style: {}, disabled: true, textContent: '', classList: { remove() {} } };
   const checkboxes = [element('chapter'), element('volume')];
   checkboxes.forEach(box => box.closest = () => null);
-  let pending;
   let stopped = false;
   let restored = false;
   let saved = 0;
   const noop = () => {};
-  const data = { downloadData: { slug: 'test', chapters: [{ id: 1 }, { id: 2 }], metadata: {}, selectedFormat: 'epub' } };
+  // Снимок загрузки; без downloadData startDownload обязан упасть, оставив кнопки восстановленными
+  const snapshot = { stored: {}, titleExtras: {} };
+  if (!noDownloadData) snapshot.downloadData = { slug: 'test', chapters: [{ id: 1 }, { id: 2 }], metadata: {}, selectedFormat: 'epub' };
+  let thrown = null;
   const context = vm.createContext({
     console: { error: noop }, progressText: element('progress-text'), progressBar: element('progress-bar'),
     btnDownloadFile: element('btn-download-file'), btnNewDownload: element('btn-new-download'), btnPauseElement: element('btn-pause'), btnRetryElement: element('btn-retry'), btnSkipElement: element('btn-skip'),
     statsUpdateInterval: null, skippedChapters: [],
     document: { getElementById: element, querySelectorAll: () => checkboxes },
     resetDownloadState: noop, calculateInitialSpeed: () => 60, updateStatisticsDisplay: noop,
-    formatChapterTitle: () => 'Test', trackRequest: noop, updateProgress: noop, getTitleStore: async () => ({ titleData: {} }),
+    formatChapterTitle: () => 'Test', trackRequest: noop, updateProgress: noop,
     handleChapterError: noop, handleImageError: noop, onTranslatorSelected: noop,
     addLog: noop, setExactFileSize: noop, saveAs: () => saved++,
     setInterval: () => { const id = timers.size + 1; timers.add(id); return id; }, clearInterval: id => timers.delete(id),
@@ -294,13 +296,6 @@ function downloadHarness({ fail = false, partial = false, storageFailure = false
       if (partial) context.skippedChapters.push({ number: 1 });
       return { blob: { size: 12 }, filename: 'test.epub' };
     } }),
-    chrome: { storage: { local: {
-      get: (_keys, callback) => {
-        if (storageFailure) throw new Error('Storage unavailable');
-        if (callback) { pending = callback(data); return; }
-        return Promise.resolve(data);
-      }, set: noop
-    } } },
     window: {
       setDownloadStartTime: noop,
       stopStatisticsUpdate: () => stopped = true,
@@ -309,13 +304,14 @@ function downloadHarness({ fail = false, partial = false, storageFailure = false
     }
   });
   vm.runInContext(functionSource('src/core/download.js', 'startDownload'), context);
-  return { context, timers, elements, run: async () => { await context.startDownload(); await pending; }, status: () => ({ stopped, restored, saved }) };
+  return { context, timers, elements, run: async () => { try { await context.startDownload(snapshot); } catch (err) { thrown = err; } }, thrown: () => thrown, status: () => ({ stopped, restored, saved }) };
 }
 
-for (const storageFailure of [false, true]) {
-  test(`failed download cleans up and offers another attempt (${storageFailure ? 'storage' : 'formatter'})`, async () => {
-    const harness = downloadHarness({ fail: true, storageFailure });
+for (const noDownloadData of [false, true]) {
+  test(`failed download cleans up and offers another attempt (${noDownloadData ? 'no snapshot data' : 'formatter'})`, async () => {
+    const harness = downloadHarness({ fail: true, noDownloadData });
     await harness.run();
+    assert.ok(harness.thrown());
     assert.equal(harness.timers.size, 0);
     assert.equal(harness.status().stopped, true);
     assert.equal(harness.status().restored, true);

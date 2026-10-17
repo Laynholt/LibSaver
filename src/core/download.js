@@ -539,11 +539,11 @@ function resetDownloadState() {
     if (logContainer) logContainer.innerHTML = '';
 }
 
-// Функция для запуска загрузки (вызывается из prepare.js)
-async function startDownload() {
+// Функция для запуска загрузки (вызывается из prepare.js). Работает от снимка (см. snapshot.js), storage не читает
+async function startDownload(snapshot) {
     try {
         resetDownloadState();
-        const result = await chrome.storage.local.get(['downloadData', 'rateLimit', 'metadataFieldOrder', 'fieldLabels', 'debugLogging', 'disableToc', 'currentSlug', 'speedMode', 'txtImageMarker', 'pdfFont', 'pdfFontSize', 'pdfPageSize', 'pdfLineSpacing', 'pdfParagraphSpacing', 'tocFormat', 'customTocFormat', 'hideChapterName', 'hideVolumeNumber', 'generateComicInfo', 'sameWidth']);
+        const result = snapshot.stored || {};
         // Устанавливаем режим детального логирования из настроек
         debugMode = result.debugLogging || false;
 
@@ -560,13 +560,13 @@ async function startDownload() {
             window.setSpeedMode(result.speedMode || false);
         }
         
-        if (!result.downloadData) {
+        if (!snapshot.downloadData) {
             throw new Error('Данные для загрузки не найдены');
         }
-        options = result.downloadData;
+        options = { ...snapshot.downloadData };
         chaptersToDownload = options.chapters;
-        
-        // Сохраняем настройку отключения оглавления (всегда берем из storage для актуального значения)
+
+        // Сохраняем настройку отключения оглавления (всегда берем из снимка настроек)
         disableToc = result.disableToc !== undefined ? result.disableToc : false;
         options.disableToc = disableToc;
         options.epubTocPage = !disableToc; // Когда оглавление включено, создаем отдельную страницу
@@ -577,16 +577,8 @@ async function startDownload() {
         // Сохраняем порядок полей
         options.metadataFieldOrder = result.metadataFieldOrder || null;
         
-        // Добавляем настройки выбора перевода из titleData
-        const currentSlug = options.slug;
-        const { titleData } = await getTitleStore(['titleData'], currentSlug);
-        if (titleData[currentSlug]) {
-            options.chapterBranchOverrides = titleData[currentSlug].chapterBranchOverrides || {};
-            options.translatorPriority = titleData[currentSlug].translatorPriority || [];
-        } else {
-            options.chapterBranchOverrides = {};
-            options.translatorPriority = [];
-        }
+        // Выбор перевода, все главы, оригинальные метаданные и sourceUrl из снимка titleData
+        Object.assign(options, snapshot.titleExtras);
 
         // Добавляем настройки из storage
         options.settings = {
@@ -621,12 +613,6 @@ async function startDownload() {
         statsUpdateInterval = setInterval(updateStatisticsDisplay, 1000);
         
         updateStatisticsDisplay();
-        
-        // Сохраняем tabId для использования в background script
-        if (options.tabId) {
-          // Передаем tabId в background script через storage
-          chrome.storage.local.set({ targetTabId: options.tabId });
-        }
         
         // Определяем название для отображения
         const displayTitle = options.metadata?.titleRu || options.originalMetadata?.titleRu || options.originalMetadata?.titleEn || options.originalMetadata?.titleOriginal || 'Без названия';
@@ -694,6 +680,7 @@ async function startDownload() {
             // Передаем параметры для manga
             tabId: options.tabId,
             slug: options.slug,
+            siteKey: options.siteKey, // base.js вызывает страницу сайта по siteKey, без chrome.tabs
             imageServer: options.imageServer || 'normal',
             loadChapterPages: options.loadChapterPages,
             siteType: options.siteType,
@@ -764,11 +751,13 @@ async function startDownload() {
         }
         if (btnNewDownload) btnNewDownload.style.display = 'flex';
 
+        return { blob, filename, downloaded: downloadedCount, total: chaptersToDownload.length, skippedChapters: [...skippedChapters], skippedImages };
     } catch (err) {
         addLog(`Критическая ошибка: ${err.message}`, true);
         console.error(err);
         if (progressText) progressText.textContent = `Ошибка: ${err.message}`;
         window.restoreDownloadControls?.();
+        throw err; // окно уже показало ошибку; вызывающий решает, что делать дальше
     } finally {
         if (statsUpdateInterval) {
             clearInterval(statsUpdateInterval);
