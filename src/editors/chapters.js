@@ -167,7 +167,8 @@ function populateTranslators() {
 // Загружаем и применяем тему
 document.addEventListener('DOMContentLoaded', async () => {
   // Регистрируем окно редактора глав
-  await chrome.storage.local.set({ currentOpenWindow: 'chapters' });
+  // Внутри окна с вкладками (iframe) регистрируется само окно
+  if (window === window.top) await chrome.storage.local.set({ currentOpenWindow: 'chapters' });
 
   // Очищаем регистрацию при закрытии
   window.addEventListener('beforeunload', async () => {
@@ -729,11 +730,7 @@ document.getElementById('btn-save').addEventListener('click', () => {
     setTitleStore({ titleData }).then(() => {
       wasSaved = true;
       chrome.runtime.sendMessage({ action: 'showToast', message: 'Сохранено!', type: 'success' });
-      chrome.windows.getCurrent((window) => {
-        if (window && window.id) {
-          chrome.windows.remove(window.id);
-        }
-      });
+      window.close(); // внутри окна с вкладками (iframe) ничего не делает
     });
   });
 });

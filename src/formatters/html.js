@@ -470,20 +470,13 @@ class HtmlFormatter extends BaseFormatter {
         node = tempDiv.innerHTML;
       }
 
-      if (disableImages) {
-        const parser = new DOMParser();
-        const doc = parser.parseFromString(`<div>${node}</div>`, 'text/html');
-        const images = doc.querySelectorAll('img');
-        for (const img of images) {
-          const alt = img.alt || '';
-          const placeholder = alt ? `<span class="image-placeholder">[Изображение пропущено: ${alt}]</span>` : '<span class="image-placeholder">[Изображение пропущено]</span>';
-          img.outerHTML = placeholder;
-        }
-        return doc.body.innerHTML;
-      }
-
       const parser = new DOMParser();
       const doc = parser.parseFromString(`<div>${node}</div>`, 'text/html');
+      this.sanitizeChapterDom(doc.body);
+      if (disableImages) {
+        this.replaceImagesWithPlaceholders(doc, true);
+        return doc.body.innerHTML;
+      }
 
       const images = doc.querySelectorAll('img');
       for (const img of images) {
@@ -492,15 +485,15 @@ class HtmlFormatter extends BaseFormatter {
           try {
             const getNextImageNumber = context.getNextImageNumber || (() => `img_${Math.random().toString(36).substr(2, 9)}`);
             const imageResult = await this.downloadAndResizeImage(src, this.options.quality, imageFormat, 'картинка');
-            if (imagesFolder && imageResult && imageResult.blob) {
-              const blob = imageResult.blob;
+            const blob = imageResult?.blob;
+            if (!blob) throw new Error('пустой ответ сервера картинок');
+            if (imagesFolder) {
               const imageFormat = this.options.imageFormat || 'original';
               const imgExtension = this.getImageExtension(blob, imageFormat, src);
               const imgId = `${getNextImageNumber()}${imgExtension}`;
               imagesFolder.file(imgId, blob);
               img.setAttribute('src', `images/${imgId}`);
-            } else if (context.addToZip && imageResult && imageResult.blob) {
-              const blob = imageResult.blob;
+            } else if (context.addToZip) {
               const imgExtension = this.getImageExtension(blob, imageFormat, src);
               const zipPath = context.addToZip(blob, imgExtension);
               img.setAttribute('data-zip-path', zipPath);
@@ -571,7 +564,7 @@ class HtmlFormatter extends BaseFormatter {
     }
 
     if (node.type === 'image') {
-      const caption = node.attrs?.description || '';
+      const caption = this.escapeXml(node.attrs?.description);
       const captionHtml = caption ? `<p class="image-caption">${caption}</p>` : '';
 
       if (this.options.quality === 'NONE') {
@@ -579,7 +572,6 @@ class HtmlFormatter extends BaseFormatter {
       }
 
       const imagesData = node.attrs?.images;
-      let captionEscaped = caption.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
       // Проверяем, есть ли массив изображений (группа картинок)
       if (Array.isArray(imagesData) && imagesData.length > 0) {
@@ -614,17 +606,17 @@ class HtmlFormatter extends BaseFormatter {
                 const imgId = `${getNextImageNumber()}${imgExtension}`;
                 if (imagesFolder) {
                   imagesFolder.file(imgId, blob);
-                  imagesHtml += `<img src="images/${imgId}" alt="${captionEscaped || 'Иллюстрация'}" />`;
+                  imagesHtml += `<img src="images/${imgId}" alt="${caption || 'Иллюстрация'}" />`;
                 } else if (context.addToZip) {
                   const zipPath = context.addToZip(blob, imgExtension);
-                  imagesHtml += `<img data-zip-path="${zipPath}" alt="${captionEscaped || 'Иллюстрация'}" />`;
+                  imagesHtml += `<img data-zip-path="${zipPath}" alt="${caption || 'Иллюстрация'}" />`;
                 } else {
                   const reader = new FileReader();
                   const base64 = await new Promise(r => {
                     reader.onloadend = () => r(reader.result);
                     reader.readAsDataURL(blob);
                   });
-                  imagesHtml += `<img src="${base64}" alt="${captionEscaped || 'Иллюстрация'}" />`;
+                  imagesHtml += `<img src="${base64}" alt="${caption || 'Иллюстрация'}" />`;
                 }
                 onImageDownloaded();
               } catch (e) {
@@ -832,7 +824,7 @@ class HtmlFormatter extends BaseFormatter {
     const jsCode = this.generateJavaScript(chapters, imagesZipBase64, metadata, this.options.siteType);
     const cssCode = this.generateCSS();
 
-    return '<!DOCTYPE html>\n<html lang="ru">\n<head>\n  <meta charset="UTF-8">\n  <meta name="viewport" content="width=device-width, initial-scale=1.0">\n  <title>' + (metadata.titleRu || 'Книга') + '</title>\n  <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>\n  <script src="https://cdn.jsdelivr.net/npm/@popperjs/core@2.11.8/dist/umd/popper.min.js"></script>\n  <script src="https://cdn.jsdelivr.net/npm/tippy.js@6.3.7/dist/tippy-bundle.umd.min.js"></script>\n  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">\n  <style>\n' + cssCode + '\n  </style>\n</head>\n<body>\n' + content + '\n  <script>\n' + jsCode + '\n  </script>\n</body>\n</html>';
+    return '<!DOCTYPE html>\n<html lang="ru">\n<head>\n  <meta charset="UTF-8">\n  <meta name="viewport" content="width=device-width, initial-scale=1.0">\n  <title>' + this.escapeXml(metadata.titleRu || 'Книга') + '</title>\n  <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>\n  <script src="https://cdn.jsdelivr.net/npm/@popperjs/core@2.11.8/dist/umd/popper.min.js"></script>\n  <script src="https://cdn.jsdelivr.net/npm/tippy.js@6.3.7/dist/tippy-bundle.umd.min.js"></script>\n  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">\n  <style>\n' + cssCode + '\n  </style>\n</head>\n<body>\n' + content + '\n  <script>\n' + jsCode + '\n  </script>\n</body>\n</html>';
   }
 
   generateToc(chapters) {
@@ -850,7 +842,7 @@ class HtmlFormatter extends BaseFormatter {
     Object.keys(volumes).sort((a, b) => a - b).forEach(vol => {
       toc += '<div class="toc-volume"><div class="toc-volume-title">Том ' + vol + '</div><ul class="toc-chapters">';
       volumes[vol].forEach(ch => {
-        const title = ch.displayTitle || 'Глава ' + ch.number;
+        const title = this.escapeXml(ch.displayTitle || 'Глава ' + ch.number);
         toc += '<li><a href="#ch-' + ch.volume + '-' + ch.number + '" data-chapter="' + ch.volume + '-' + ch.number + '">' + title + '</a></li>';
       });
       toc += '</ul></div>';
@@ -942,8 +934,8 @@ class HtmlFormatter extends BaseFormatter {
     content += '<div class="content-wrapper">';
 
     // Заголовок книги (внутри content-wrapper)
-    const title = metadata.titleRu || metadata.titleEn || metadata.titleOriginal || 'No title';
-    const author = metadata.author || '';
+    const title = this.escapeXml(metadata.titleRu || metadata.titleEn || metadata.titleOriginal || 'No title');
+    const author = this.escapeXml(metadata.author);
 
     content += '<div class="book-header" id="book-header">';
     if (author) {
@@ -954,7 +946,7 @@ class HtmlFormatter extends BaseFormatter {
 
     // Главы (первая глава теперь index 0)
     for (const chapter of chapters) {
-      const title = chapter.displayTitle || 'Глава ' + chapter.number;
+      const title = this.escapeXml(chapter.displayTitle || 'Глава ' + chapter.number);
       const index = chapters.indexOf(chapter);
       const isFirstChapter = index === 0 ? ' first-chapter' : '';
       content += '<div class="chapter' + isFirstChapter + '" id="ch-' + chapter.volume + '-' + chapter.number + '" data-chapter-index="' + index + '">';
@@ -1027,11 +1019,12 @@ class HtmlFormatter extends BaseFormatter {
 
     // Метаданные
     html += '<div class="metadata-table">';
-    fieldOrder.forEach(function(fieldId) {
+    fieldOrder.forEach(fieldId => {
       const field = fieldMapping[fieldId];
       if (field && field.value) {
-        const formattedValue = field.format ? field.format(field.value) : field.value;
-        html += '<div class="metadata-row"><span class="metadata-label"><strong>' + field.label + ':</strong> </span><span class="metadata-value">' + formattedValue + '</span></div>';
+        const value = this.escapeXml(field.value);
+        const formattedValue = field.format ? field.format(value) : value;
+        html += '<div class="metadata-row"><span class="metadata-label"><strong>' + this.escapeXml(field.label) + ':</strong> </span><span class="metadata-value">' + formattedValue + '</span></div>';
       }
     });
     html += '</div>';

@@ -3,7 +3,7 @@ body {
   min-height: 600px;
   background-color: var(--bg-primary);
   color: var(--text-primary);
-  font-family: 'Open Sans', sans-serif;
+  font-family: var(--font-family);
   margin: 0;
   padding: 0;
   min-height: 100vh;
@@ -113,10 +113,17 @@ body {
 }
 
 .format-selector .format-select {
-  font-size: 11px;
-  color: var(--text-secondary);
-  background: var(--bg-tertiary);
-  padding: var(--spacing-xs) var(--spacing-sm);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 30px;
+  color: var(--text-primary);
+  /* только цвет: стрелку-шеврон даёт общий стиль select, иначе это не похоже на выпадающий список */
+  background-color: var(--background-elevated-2);
+  background-position: right 10px center;
+  border: 1px solid var(--border-color);
+  height: 32px;
+  box-sizing: border-box;
+  padding: 0 30px 0 12px;
   border-radius: var(--border-radius);
   cursor: pointer;
   white-space: nowrap;
@@ -126,91 +133,68 @@ body {
 }
 
 .format-selector .format-select:hover {
-  background: var(--bg-secondary);
+  border-color: var(--border-hover);
   color: var(--text-primary);
 }
 
 .speed-mode-toggle {
   display: flex;
   align-items: center;
-  gap: var(--spacing-xs);
-  padding: var(--spacing-xs) var(--spacing-sm);
-  background: var(--bg-tertiary);
+  gap: 8px;
+  height: 32px;
+  box-sizing: border-box;
+  padding: 0 12px;
+  background: var(--background-elevated-2);
+  border: 1px solid var(--border-color);
   border-radius: var(--border-radius);
+  font-size: 12px;
+  font-weight: 600;
   cursor: pointer;
 }
 
 .speed-mode-toggle:hover {
-  background: var(--bg-secondary);
+  border-color: var(--border-hover);
 }
 
 .text-only-toggle {
   display: flex;
   align-items: center;
-  gap: var(--spacing-xs);
-  padding: var(--spacing-xs) var(--spacing-sm);
-  background: var(--bg-tertiary);
+  gap: 8px;
+  height: 32px;
+  box-sizing: border-box;
+  padding: 0 12px;
+  background: var(--background-elevated-2);
+  border: 1px solid var(--border-color);
   border-radius: var(--border-radius);
+  font-size: 12px;
+  font-weight: 600;
   cursor: pointer;
 }
 
 .text-only-toggle:hover {
-  background: var(--bg-secondary);
+  border-color: var(--border-hover);
 }
 
-.format-dropdown {
-  position: absolute;
-  background: var(--bg-secondary);
-  border: 1px solid var(--border-color);
-  border-radius: 4px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
-  z-index: 1000;
-  min-width: 80px;
-  top: 100%;
-  left: 0;
-  margin-top: 4px;
-  overflow: hidden;
-}
 
-.format-dropdown-option {
-  padding: 6px var(--spacing-md);
-  cursor: pointer;
-  font-size: 11px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
 
-.format-dropdown-option:hover {
-  background: rgba(255, 255, 255, 0.1);
-}
 
-.format-dropdown-option.selected {
-  background: var(--accent-soft);
-  color: var(--text-primary);
-}
-
-.format-dropdown-option:focus-visible,
-.server-option:focus-visible {
-  outline: 1px solid var(--text-primary);
-  outline-offset: -1px;
-}
-
-.format-select:focus-visible,
-.server-select:focus-visible {
-  outline: 1px solid var(--text-primary);
-  outline-offset: 1px;
-}
 
 .image-server-selector {
   position: relative;
 }
 
 .image-server-selector .server-select {
-  font-size: 11px;
-  color: var(--text-secondary);
-  background: var(--bg-tertiary);
-  padding: var(--spacing-xs) var(--spacing-sm);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 30px;
+  color: var(--text-primary);
+  /* только цвет: стрелку-шеврон даёт общий стиль select, иначе это не похоже на выпадающий список */
+  background-color: var(--background-elevated-2);
+  background-position: right 10px center;
+  border: 1px solid var(--border-color);
+  height: 32px;
+  box-sizing: border-box;
+  padding: 0 30px 0 12px;
   border-radius: var(--border-radius);
   cursor: pointer;
   white-space: nowrap;
@@ -220,41 +204,13 @@ body {
 }
 
 .image-server-selector .server-select:hover {
-  background: var(--bg-secondary);
+  border-color: var(--border-hover);
   color: var(--text-primary);
 }
 
-.server-dropdown {
-  position: absolute;
-  background: var(--bg-secondary);
-  border: 1px solid var(--border-color);
-  border-radius: 4px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
-  z-index: 1000;
-  min-width: 80px;
-  top: 100%;
-  left: 0;
-  margin-top: 4px;
-  overflow: hidden;
-}
 
-.server-option {
-  padding: 6px var(--spacing-md);
-  cursor: pointer;
-  font-size: 11px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
 
-.server-option:hover {
-  background: rgba(255, 255, 255, 0.1);
-}
 
-.server-option.selected {
-  background: var(--accent-soft);
-  color: var(--text-primary);
-}
 
 .quality-info {
   display: flex;
@@ -289,31 +245,37 @@ body {
 
 /* Зоны */
 .zone {
-  background-color: var(--bg-secondary);
-  border-radius: var(--border-radius);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  transition: border-color 0.15s ease;
   overflow: hidden;
   display: flex;
   flex-direction: column;
+}
+
+.zone:hover {
+  border-color: var(--border-hover);
 }
 
 .zone-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: var(--spacing-md) var(--spacing-lg);
-  background-color: var(--bg-tertiary);
+  padding: 10px var(--spacing-md);
   border-bottom: 1px solid var(--border-color);
   cursor: pointer;
 }
 
-.zone-header:hover {
-  background-color: var(--bg-secondary);
+.zone.collapsed .zone-header {
+  border-bottom-color: transparent;
 }
 
 .zone-header h2 {
   margin: 0;
-  font-size: 16px;
-  font-weight: 600;
+  font-size: 14px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
   color: var(--text-primary);
   word-wrap: break-word;
   overflow-wrap: break-word;
@@ -323,9 +285,18 @@ body {
   gap: var(--spacing-sm);
 }
 
+/* Иконка секции в акцентной плашке */
 .zone-header h2 i {
-  color: var(--text-secondary);
-  font-size: 18px;
+  width: 30px;
+  height: 30px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--border-radius);
+  color: var(--accent-color);
+  background: color-mix(in srgb, var(--accent-color) 14%, transparent);
+  font-size: 13px;
 }
 
 .zone-header-right {
@@ -346,8 +317,12 @@ body {
   justify-content: center;
 }
 
+.zone-toggle i {
+  transition: transform 0.2s ease;
+}
+
 .zone-toggle:hover {
-  background-color: var(--bg-secondary);
+  background-color: var(--background-elevated-2);
   color: var(--text-primary);
 }
 
@@ -409,7 +384,7 @@ body {
   width: 48px;
   height: 72px;
   background-color: var(--bg-secondary);
-  border-radius: 3px;
+  border-radius: 6px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -449,7 +424,7 @@ body {
   display: inline-block;
   max-width: 48px;
   max-height: 72px;
-  border-radius: 3px;
+  border-radius: 6px;
   overflow: hidden;
   background-color: var(--bg-tertiary);
 }
@@ -457,7 +432,7 @@ body {
 .cover-thumbnail .img-wrapper .img-container img {
   max-width: 100%;
   max-height: 100%;
-  border-radius: 3px;
+  border-radius: 6px;
   object-fit: contain;
   display: none;
 }
@@ -473,7 +448,7 @@ body {
   left: 0;
   right: 0;
   bottom: 0;
-  border-radius: 3px;
+  border-radius: 6px;
   background-color: rgba(0, 0, 0, 0.4);
   opacity: 0;
   pointer-events: none;
@@ -593,7 +568,7 @@ body {
 /* Стили Tippy для соответствия дизайну */
 .tippy-box[data-theme='dark'] {
   background-color: rgba(10, 10, 10, 0.95);
-  border: 1px solid #3b3d45;
+  border: 1px solid var(--border-color);
   border-radius: 6px;
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
 }
@@ -618,7 +593,7 @@ body {
   color: var(--text-primary);
   padding: 12px 20px;
   border-radius: var(--border-radius);
-  border-left: 2px solid #f44336;
+  border-left: 2px solid var(--danger-color);
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
   position: fixed;
   bottom: 20px;
@@ -630,6 +605,8 @@ body {
   z-index: 10000;
   display: inline-block;
   max-width: 400px;
+  /* В common.css тосты в одну строку; здесь длинный текст переносится, \n в сообщении — новая строка */
+  white-space: pre-line;
 }
 
 .toast.show {
@@ -643,12 +620,12 @@ body {
 }
 
 .toast.error {
-  border-left-color: #f44336;
-  background-color: rgba(244, 67, 54, 0.1);
+  border-left-color: var(--danger-color);
+  background-color: color-mix(in srgb, var(--danger-color) 10%, transparent);
 }
 
 .tippy-box[data-theme='dark'] > .tippy-arrow::before {
-  border-top-color: #3b3d45;
+  border-top-color: var(--border-color);
 }
 .tippy-box[data-theme='dark'] > .tippy-arrow::after {
   border-top-color: rgba(10, 10, 10, 0.95);
@@ -733,7 +710,7 @@ body {
 }
 
 .log .error {
-  color: #f44336;
+  color: var(--danger-color);
 }
 
 /* Адаптивность */
@@ -759,4 +736,19 @@ body {
   .zone-content {
     padding: 15px;
   }
+}
+
+.format-select, .server-select {
+  border: 1px solid var(--border-color);
+  font-family: inherit;
+}
+
+.format-select:focus-visible, .server-select:focus-visible {
+  outline: 2px solid var(--text-primary);
+  outline-offset: 2px;
+}
+
+.format-select:disabled, .server-select:disabled {
+  opacity: 0.5;
+  cursor: default;
 }

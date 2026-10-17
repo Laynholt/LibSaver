@@ -18,6 +18,14 @@ function applyTheme(theme) {
     document.documentElement.removeAttribute('data-theme');
   }
 
+  // Chromium не всегда перекрашивает текст <select> при смене CSS-переменных: пересоздаём их отрисовку
+  document.querySelectorAll('select').forEach(select => {
+    const display = select.style.display;
+    select.style.display = 'none';
+    void select.offsetWidth;
+    select.style.display = display;
+  });
+
   // Включаем анимации после смены темы
   setTimeout(() => {
     document.body.classList.remove('no-transition');

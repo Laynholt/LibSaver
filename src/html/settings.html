@@ -2,6 +2,7 @@
 <html lang="ru">
 <head>
   <meta charset="UTF-8">
+  <link rel="icon" href="../assets/icons/icon32.png">
   <title>LibSaver - Настройки</title>
   <style>body { opacity: 0; }</style>
   <script src="../core/theme-init.js"></script>
@@ -11,7 +12,7 @@
   <link rel="stylesheet" href="../css/loading.css">
   <script src="../utils/window-loader.js"></script>
   <script src="../utils/header.js"></script>
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <link rel="stylesheet" href="../libs/fontawesome/css/all.min.css">
   <link rel="stylesheet" href="../css/settings.css">
 </head>
 <body>
@@ -57,406 +58,422 @@
         Может потребоваться перезагрузка страницы
       </span>
       <span class="storage-size-display" id="storage-size-display" title="Нажмите для очистки старых данных">Загрузка...</span>
-      <button class="btn-help-toolbar" data-tooltip="Подробнее о настройках — на GitHub.<br>Нашли ошибку? Есть идеи? Сообщите!<br>Буду рад любым замечаниям! <3<div class='github-buttons'><a href='https://github.com/dfy-dpg/LibSaver' target='_blank' class='github-btn'><i class='fa-brands fa-github'></i></a><a href='https://github.com/dfy-dpg/LibSaver/blob/main/SETTINGS.md' target='_blank' class='github-btn'><i class='fa-solid fa-book'></i></a><a href='mailto:dpg.vault@gmail.com' target='_blank' class='github-btn email-btn'><i class='fa-regular fa-at'></i></a></div>">
+      <button class="btn-help-toolbar" data-tooltip="Подробнее о настройках — на GitHub.<br>Нашли ошибку? Есть идеи? Сообщите!<br>Буду рад любым замечаниям! <3<div class='github-buttons'><a href='https://github.com/dfy-dpg/LibSaver' target='_blank' class='github-btn' title='Репозиторий'><i class='fa-brands fa-github'></i></a><a href='https://github.com/dfy-dpg/LibSaver/blob/main/SETTINGS.md' target='_blank' class='github-btn' title='Описание настроек'><i class='fa-solid fa-book'></i></a><a href='#' class='github-btn issue-btn' title='Сообщить о проблеме'><i class='fa-solid fa-bug'></i></a><a href='mailto:dpg.vault@gmail.com' target='_blank' class='github-btn email-btn' title='Написать автору'><i class='fa-regular fa-at'></i></a></div>">
         <i class="fa-solid fa-question"></i>
       </button>
     </div>
   </div>
   
   <div class="container">
-    <div class="panel">
-      <div class="section-title">
-        <span>Общие</span>
-        <button class="btn-reset-group" data-group="general"><i class="fa-solid fa-rotate-left"></i></button>
-      </div>
+    <!-- Группы закреплены за колонками: при раскрытии пагинации или ползунка качества они не перескакивают -->
+    <div class="settings-column">
+      <div class="panel">
+        <div class="section-title">
+          <span>Общие</span>
+          <button class="btn-reset-group" data-group="general"><i class="fa-solid fa-rotate-left"></i></button>
+        </div>
 
-      <div class="field">
-        <label class="checkbox-group">
-          <input type="checkbox" id="enable-site-menu">
-          <span class="control__indicator" data-type="checkbox">
-            <svg class="svg-inline--fa fa-square-check fa-fw" aria-hidden="true" focusable="false" data-prefix="fas" data-icon="square-check" role="img" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512" data-state="checked"><path fill="currentColor" d="M64 32C28.7 32 0 60.7 0 96L0 416c0 35.3 28.7 64 64 64l320 0c35.3 0 64-28.7 64-64l0-320c0-35.3-28.7-64-64-64L64 32zM337 209L209 337c-9.4 9.4-24.6 9.4-33.9 0l-64-64c-9.4-9.4-9.4-24.6 0-33.9s24.6-9.4 33.9 0l47 47L303 175c9.4-9.4 24.6-9.4 33.9 0s9.4 24.6 0 33.9z"></path></svg>
-            <svg class="svg-inline--fa fa-square fa-fw" aria-hidden="true" focusable="false" data-prefix="far" data-icon="square" role="img" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512" data-state="default"><path fill="currentColor" d="M384 80c8.8 0 16 7.2 16 16l0 320c0 8.8-7.2 16-16 16L64 432c-8.8 0-16-7.2-16-16L48 96c0-8.8 7.2-16 16-16l320 0zM64 32C28.7 32 0 60.7 0 96L0 416c0 35.3 28.7 64 64 64l320 0c35.3 0 64-28.7 64-64l0-320c0-35.3-28.7-64-64-64L64 32z"></path></svg>
-          </span>
-          <span>Улучшенное меню сайтов</span>
-        </label>
-      </div>
+        <div class="field">
+          <label class="checkbox-group">
+            <input type="checkbox" id="enable-site-menu">
+            <span class="control__indicator" data-type="checkbox">
+              <svg class="svg-inline--fa fa-square-check fa-fw" aria-hidden="true" focusable="false" data-prefix="fas" data-icon="square-check" role="img" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512" data-state="checked"><path fill="currentColor" d="M64 32C28.7 32 0 60.7 0 96L0 416c0 35.3 28.7 64 64 64l320 0c35.3 0 64-28.7 64-64l0-320c0-35.3-28.7-64-64-64L64 32zM337 209L209 337c-9.4 9.4-24.6 9.4-33.9 0l-64-64c-9.4-9.4-9.4-24.6 0-33.9s24.6-9.4 33.9 0l47 47L303 175c9.4-9.4 24.6-9.4 33.9 0s9.4 24.6 0 33.9z"></path></svg>
+              <svg class="svg-inline--fa fa-square fa-fw" aria-hidden="true" focusable="false" data-prefix="far" data-icon="square" role="img" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512" data-state="default"><path fill="currentColor" d="M384 80c8.8 0 16 7.2 16 16l0 320c0 8.8-7.2 16-16 16L64 432c-8.8 0-16-7.2-16-16L48 96c0-8.8 7.2-16 16-16l320 0zM64 32C28.7 32 0 60.7 0 96L0 416c0 35.3 28.7 64 64 64l320 0c35.3 0 64-28.7 64-64l0-320c0-35.3-28.7-64-64-64L64 32z"></path></svg>
+            </span>
+            <span>Улучшенное меню сайтов</span>
+          </label>
+        </div>
 
-      <div class="site-menu-links hidden">
-        <div class="site-menu-field">
-          <div class="site-menu-logo" data-svg="assets/svg/MangaLIB.svg" data-site-color="1"></div>
-          <div class="site-menu-input-wrapper">
-            <input type="text" id="site-mangalib" placeholder="https://mangalib.me" data-site-color="manga">
-            <button class="site-menu-toggle" data-site="mangalib">
-              <i class="fa-solid fa-power-off"></i>
-            </button>
+        <div class="site-menu-links hidden">
+          <div class="site-menu-field">
+            <div class="site-menu-logo" data-svg="assets/svg/MangaLIB.svg" data-site-color="1"></div>
+            <div class="site-menu-input-wrapper">
+              <input type="text" id="site-mangalib" placeholder="https://mangalib.me" data-site-color="manga">
+              <button class="site-menu-toggle" data-site="mangalib">
+                <i class="fa-solid fa-power-off"></i>
+              </button>
+            </div>
+          </div>
+          <div class="site-menu-field">
+            <div class="site-menu-logo" data-svg="assets/svg/HentaiLIB.svg" data-site-color="4"></div>
+            <div class="site-menu-input-wrapper">
+              <input type="text" id="site-hentailib" placeholder="https://hentailib.me" data-site-color="hentai">
+              <button class="site-menu-toggle" data-site="hentailib">
+                <i class="fa-solid fa-power-off"></i>
+              </button>
+            </div>
+          </div>
+          <div class="site-menu-field">
+            <div class="site-menu-logo" data-svg="assets/svg/SlashLIB.svg" data-site-color="2"></div>
+            <div class="site-menu-input-wrapper">
+              <input type="text" id="site-shlib" placeholder="https://v2.shlib.life" data-site-color="slash">
+              <button class="site-menu-toggle" data-site="shlib">
+                <i class="fa-solid fa-power-off"></i>
+              </button>
+            </div>
+          </div>
+          <div class="site-menu-field">
+            <div class="site-menu-logo" data-svg="assets/svg/RanobeLIB.svg" data-site-color="3"></div>
+            <div class="site-menu-input-wrapper">
+              <input type="text" id="site-ranobelib" placeholder="https://ranobelib.me" data-site-color="ranobe">
+              <button class="site-menu-toggle" data-site="ranobelib">
+                <i class="fa-solid fa-power-off"></i>
+              </button>
+            </div>
+          </div>
+          <div class="site-menu-field">
+            <div class="site-menu-logo" data-svg="assets/svg/AnimeLIB.svg" data-site-color="5"></div>
+            <div class="site-menu-input-wrapper">
+              <input type="text" id="site-animelib" placeholder="https://animelib.org" data-site-color="anime">
+              <button class="site-menu-toggle" data-site="animelib">
+                <i class="fa-solid fa-power-off"></i>
+              </button>
+            </div>
           </div>
         </div>
-        <div class="site-menu-field">
-          <div class="site-menu-logo" data-svg="assets/svg/HentaiLIB.svg" data-site-color="4"></div>
-          <div class="site-menu-input-wrapper">
-            <input type="text" id="site-hentailib" placeholder="https://hentailib.me" data-site-color="hentai">
-            <button class="site-menu-toggle" data-site="hentailib">
-              <i class="fa-solid fa-power-off"></i>
-            </button>
+
+        <div class="field">
+          <label class="checkbox-group">
+            <input type="checkbox" id="debug-logging">
+            <span class="control__indicator" data-type="checkbox">
+              <svg class="svg-inline--fa fa-square-check fa-fw" aria-hidden="true" focusable="false" data-prefix="fas" data-icon="square-check" role="img" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512" data-state="checked"><path fill="currentColor" d="M64 32C28.7 32 0 60.7 0 96L0 416c0 35.3 28.7 64 64 64l320 0c35.3 0 64-28.7 64-64l0-320c0-35.3-28.7-64-64-64L64 32zM337 209L209 337c-9.4 9.4-24.6 9.4-33.9 0l-64-64c-9.4-9.4-9.4-24.6 0-33.9s24.6-9.4 33.9 0l47 47L303 175c9.4-9.4 24.6-9.4 33.9 0s9.4 24.6 0 33.9z"></path></svg>
+              <svg class="svg-inline--fa fa-square fa-fw" aria-hidden="true" focusable="false" data-prefix="far" data-icon="square" role="img" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512" data-state="default"><path fill="currentColor" d="M384 80c8.8 0 16 7.2 16 16l0 320c0 8.8-7.2 16-16 16L64 432c-8.8 0-16-7.2-16-16L48 96c0-8.8 7.2-16 16-16l320 0zM64 32C28.7 32 0 60.7 0 96L0 416c0 35.3 28.7 64 64 64l320 0c35.3 0 64-28.7 64-64l0-320c0-35.3-28.7-64-64-64L64 32z"></path></svg>
+            </span>
+            <span>Подробное логирование</span>
+          </label>
+        </div>
+
+        <div class="field">
+          <label class="checkbox-group">
+            <input type="checkbox" id="enable-pagination">
+            <span class="control__indicator" data-type="checkbox">
+              <svg class="svg-inline--fa fa-square-check fa-fw" aria-hidden="true" focusable="false" data-prefix="fas" data-icon="square-check" role="img" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512" data-state="checked"><path fill="currentColor" d="M64 32C28.7 32 0 60.7 0 96L0 416c0 35.3 28.7 64 64 64l320 0c35.3 0 64-28.7 64-64l0-320c0-35.3-28.7-64-64-64L64 32zM337 209L209 337c-9.4-9.4-24.6-9.4-33.9 0l-64-64c-9.4-9.4-9.4-24.6 0-33.9s24.6-9.4 33.9 0l47 47L303 175c9.4-9.4 24.6-9.4-33.9 0s9.4 24.6 0 33.9z"></path></svg>
+              <svg class="svg-inline--fa fa-square fa-fw" aria-hidden="true" focusable="false" data-prefix="far" data-icon="square" role="img" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512" data-state="default"><path fill="currentColor" d="M384 80c8.8 0 16 7.2 16 16l0 320c0 8.8-7.2 16-16 16L64 432c-8.8 0-16-7.2-16-16L48 96c0-8.8 7.2-16 16-16l320 0zM64 32C28.7 32 0 60.7 0 96L0 416c0 35.3 28.7 64 64 64l320 0c35.3 0 64-28.7 64-64l0-320c0-35.3-28.7-64-64-64L64 32z"></path></svg>
+            </span>
+            <span>Пагинация</span>
+          </label>
+        </div>
+
+        <div class="field" id="initial-chapters-field" style="gap: 0">
+          <label for="initial-chapters">Количество глав при открытии редактора</label>
+          <div class="range-slider">
+            <input type="range" id="initial-chapters" min="100" max="1000" step="50" value="500">
+            <div class="range-value" id="initial-chapters-value">500</div>
           </div>
         </div>
-        <div class="site-menu-field">
-          <div class="site-menu-logo" data-svg="assets/svg/SlashLIB.svg" data-site-color="2"></div>
-          <div class="site-menu-input-wrapper">
-            <input type="text" id="site-shlib" placeholder="https://v2.shlib.life" data-site-color="slash">
-            <button class="site-menu-toggle" data-site="shlib">
-              <i class="fa-solid fa-power-off"></i>
-            </button>
+
+        <div class="field" id="load-more-chapters-field" style="gap: 0">
+          <label for="load-more-chapters">Количество глав при нажатии "Показать ещё"</label>
+          <div class="range-slider">
+            <input type="range" id="load-more-chapters" min="100" max="1000" step="50" value="500">
+            <div class="range-value" id="load-more-chapters-value">500</div>
           </div>
         </div>
-        <div class="site-menu-field">
-          <div class="site-menu-logo" data-svg="assets/svg/RanobeLIB.svg" data-site-color="3"></div>
-          <div class="site-menu-input-wrapper">
-            <input type="text" id="site-ranobelib" placeholder="https://ranobelib.me" data-site-color="ranobe">
-            <button class="site-menu-toggle" data-site="ranobelib">
-              <i class="fa-solid fa-power-off"></i>
-            </button>
+
+        <div class="field">
+          <label class="checkbox-group">
+            <input type="checkbox" id="update-notifications">
+            <span class="control__indicator" data-type="checkbox">
+              <svg class="svg-inline--fa fa-square-check fa-fw" aria-hidden="true" focusable="false" data-prefix="fas" data-icon="square-check" role="img" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512" data-state="checked"><path fill="currentColor" d="M64 32C28.7 32 0 60.7 0 96L0 416c0 35.3 28.7 64 64 64l320 0c35.3 0 64-28.7 64-64l0-320c0-35.3-28.7-64-64-64L64 32zM337 209L209 337c-9.4 9.4-24.6 9.4-33.9 0l-64-64c-9.4-9.4-9.4-24.6 0-33.9s24.6-9.4 33.9 0l47 47L303 175c9.4-9.4 24.6-9.4 33.9 0s9.4 24.6 0 33.9z"></path></svg>
+              <svg class="svg-inline--fa fa-square fa-fw" aria-hidden="true" focusable="false" data-prefix="far" data-icon="square" role="img" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512" data-state="default"><path fill="currentColor" d="M384 80c8.8 0 16 7.2 16 16l0 320c0 8.8-7.2 16-16 16L64 432c-8.8 0-16-7.2-16-16L48 96c0-8.8 7.2-16 16-16l320 0zM64 32C28.7 32 0 60.7 0 96L0 416c0 35.3 28.7 64 64 64l320 0c35.3 0 64-28.7 64-64l0-320c0-35.3-28.7-64-64-64L64 32z"></path></svg>
+            </span>
+            <span>Уведомлять о наличии обновлений</span>
+          </label>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="section-title">
+          <span>Обработка изображений</span>
+          <button class="btn-reset-group" data-group="images"><i class="fa-solid fa-rotate-left"></i></button>
+        </div>
+
+        <div class="field">
+          <label for="cover-quality">Качество обложек</label>
+          <select id="cover-quality">
+            <option value="NONE">Без обложек</option>
+            <option value="ORIGINAL" selected>Без сжатия</option>
+            <option value="2K">1600px</option>
+            <option value="QHD">1440px</option>
+            <option value="FHD">1080px</option>
+            <option value="HD">720px</option>
+            <option value="qHD">540px</option>
+            <option value="SD">480px</option>
+          </select>
+        </div>
+
+        <div class="field">
+          <label for="image-quality">Качество картинок</label>
+          <select id="image-quality">
+            <option value="NONE">Без картинок</option>
+            <option value="ORIGINAL" selected>Без сжатия</option>
+            <option value="2K">1600px</option>
+            <option value="QHD">1440px</option>
+            <option value="FHD">1080px</option>
+            <option value="HD">720px</option>
+            <option value="qHD">540px</option>
+            <option value="SD">480px</option>
+          </select>
+        </div>
+
+        <div class="field">
+          <label for="resize-method">Метод сжатия</label>
+          <select id="resize-method">
+            <option value="MIN_SIDE" selected>По меньшей стороне</option>
+            <option value="MAX_SIDE">По большей стороне</option>
+            <option value="ADAPTIVE">Адаптивный</option>
+          </select>
+        </div>
+
+        <div class="field" id="adaptive-ratio-field" style="display: none;">
+          <label for="adaptive-ratio">Порог соотношения сторон</label>
+          <div class="range-slider">
+            <input type="range" id="adaptive-ratio" min="2" max="5" step="0.5" value="3">
+            <div class="range-value" id="adaptive-ratio-value">3:1</div>
           </div>
         </div>
-        <div class="site-menu-field">
-          <div class="site-menu-logo" data-svg="assets/svg/AnimeLIB.svg" data-site-color="5"></div>
-          <div class="site-menu-input-wrapper">
-            <input type="text" id="site-animelib" placeholder="https://animelib.org" data-site-color="anime">
-            <button class="site-menu-toggle" data-site="animelib">
-              <i class="fa-solid fa-power-off"></i>
-            </button>
+
+        <div class="field">
+          <label for="image-format">Формат изображений</label>
+          <select id="image-format">
+            <option value="original" selected>Исходный</option>
+            <option value="jpeg">JPEG</option>
+            <option value="png">PNG</option>
+            <option value="webp">WebP</option>
+          </select>
+        </div>
+
+        <div class="field" id="jpeg-quality-field">
+          <label for="jpeg-quality" id="jpeg-quality-label">Качество JPEG</label>
+          <div class="range-slider">
+            <input type="range" id="jpeg-quality" min="0.1" max="1.0" step="0.1" value="1.0">
+            <div class="range-value" id="jpeg-quality-value">1.0</div>
+          </div>
+        </div>
+
+        <div class="field">
+          <label class="checkbox-group" title="Манга: все страницы приводятся к самой частой ширине — широкие ужимаются, узкие растягиваются">
+            <input type="checkbox" id="same-width">
+            <span class="control__indicator" data-type="checkbox">
+              <svg class="svg-inline--fa fa-square-check fa-fw" aria-hidden="true" focusable="false" data-prefix="fas" data-icon="square-check" role="img" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512" data-state="checked"><path fill="currentColor" d="M64 32C28.7 32 0 60.7 0 96L0 416c0 35.3 28.7 64 64 64l320 0c35.3 0 64-28.7 64-64l0-320c0-35.3-28.7-64-64-64L64 32zM337 209L209 337c-9.4 9.4-24.6 9.4-33.9 0l-64-64c-9.4-9.4-9.4-24.6 0-33.9s24.6-9.4 33.9 0l47 47L303 175c9.4-9.4 24.6-9.4 33.9 0s9.4 24.6 0 33.9z"></path></svg>
+              <svg class="svg-inline--fa fa-square fa-fw" aria-hidden="true" focusable="false" data-prefix="far" data-icon="square" role="img" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512" data-state="default"><path fill="currentColor" d="M384 80c8.8 0 16 7.2 16 16l0 320c0 8.8-7.2 16-16 16L64 432c-8.8 0-16-7.2-16-16L48 96c0-8.8 7.2-16 16-16l320 0zM64 32C28.7 32 0 60.7 0 96L0 416c0 35.3 28.7 64 64 64l320 0c35.3 0 64-28.7 64-64l0-320c0-35.3-28.7-64-64-64L64 32z"></path></svg>
+            </span>
+            <span>Одинаковая ширина страниц</span>
+          </label>
+        </div>
+      </div>
+
+
+      <div class="panel">
+        <div class="section-title">
+          <span>Оглавление</span>
+          <button class="btn-reset-group" data-group="toc"><i class="fa-solid fa-rotate-left"></i></button>
+        </div>
+
+        <div class="field">
+          <label for="toc-format">Формат заголовков</label>
+          <select id="toc-format">
+            <option value="format1">Том X Глава Y Название</option>
+            <option value="format2">Том X Глава Y - Название</option>
+            <option value="format3">Том X - Глава Y - Название</option>
+            <option value="format4">Том X / Глава Y / Название</option>
+            <option value="default" selected>Том X. Глава Y. Название</option>
+            <option value="no_headers">Без заголовков</option>
+            <option value="custom">Пользовательский формат</option>
+          </select>
+        </div>
+
+        <div class="field" id="custom-toc-format-field" style="display: none;">
+          <label for="custom-toc-format">Пользовательский формат</label>
+          <input type="text" id="custom-toc-format" placeholder="[Том {vol}]. [Глава {num}]. [{name}]">
+          <div class="field-example" id="custom-toc-format-example-with-name"></div>
+          <div class="field-example" id="custom-toc-format-example-without-name"></div>
+        </div>
+
+        <div class="field">
+          <label class="checkbox-group">
+            <input type="checkbox" id="hide-volume-number">
+            <span class="control__indicator" data-type="checkbox">
+              <svg class="svg-inline--fa fa-square-check fa-fw" aria-hidden="true" focusable="false" data-prefix="fas" data-icon="square-check" role="img" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512" data-state="checked"><path fill="currentColor" d="M64 32C28.7 32 0 60.7 0 96L0 416c0 35.3 28.7 64 64 64l320 0c35.3 0 64-28.7 64-64l0-320c0-35.3-28.7-64-64-64L64 32zM337 209L209 337c-9.4 9.4-24.6 9.4-33.9 0l-64-64c-9.4-9.4-9.4-24.6 0-33.9s24.6-9.4 33.9 0l47 47L303 175c9.4-9.4 24.6-9.4 33.9 0s9.4 24.6 0 33.9z"></path></svg>
+              <svg class="svg-inline--fa fa-square fa-fw" aria-hidden="true" focusable="false" data-prefix="far" data-icon="square" role="img" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512" data-state="default"><path fill="currentColor" d="M384 80c8.8 0 16 7.2 16 16l0 320c0 8.8-7.2 16-16 16L64 432c-8.8 0-16-7.2-16-16L48 96c0-8.8 7.2-16 16-16l320 0zM64 32C28.7 32 0 60.7 0 96L0 416c0 35.3 28.7 64 64 64l320 0c35.3 0 64-28.7 64-64l0-320c0-35.3-28.7-64-64-64L64 32z"></path></svg>
+            </span>
+            <span>Скрыть номера томов</span>
+          </label>
+        </div>
+
+        <div class="field">
+          <label class="checkbox-group">
+            <input type="checkbox" id="hide-chapter-name">
+            <span class="control__indicator" data-type="checkbox">
+              <svg class="svg-inline--fa fa-square-check fa-fw" aria-hidden="true" focusable="false" data-prefix="fas" data-icon="square-check" role="img" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512" data-state="checked"><path fill="currentColor" d="M64 32C28.7 32 0 60.7 0 96L0 416c0 35.3 28.7 64 64 64l320 0c35.3 0 64-28.7 64-64l0-320c0-35.3-28.7-64-64-64L64 32zM337 209L209 337c-9.4 9.4-24.6 9.4-33.9 0l-64-64c-9.4-9.4-9.4-24.6 0-33.9s24.6-9.4 33.9 0l47 47L303 175c9.4-9.4 24.6-9.4 33.9 0s9.4 24.6 0 33.9z"></path></svg>
+              <svg class="svg-inline--fa fa-square fa-fw" aria-hidden="true" focusable="false" data-prefix="far" data-icon="square" role="img" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512" data-state="default"><path fill="currentColor" d="M384 80c8.8 0 16 7.2 16 16l0 320c0 8.8-7.2 16-16 16L64 432c-8.8 0-16-7.2-16-16L48 96c0-8.8 7.2-16 16-16l320 0zM64 32C28.7 32 0 60.7 0 96L0 416c0 35.3 28.7 64 64 64l320 0c35.3 0 64-28.7 64-64l0-320c0-35.3-28.7-64-64-64L64 32z"></path></svg>
+            </span>
+            <span>Скрыть названия глав</span>
+          </label>
+        </div>
+
+        <div class="field">
+          <label class="checkbox-group">
+            <input type="checkbox" id="disable-toc">
+            <span class="control__indicator" data-type="checkbox">
+              <svg class="svg-inline--fa fa-square-check fa-fw" aria-hidden="true" focusable="false" data-prefix="fas" data-icon="square-check" role="img" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512" data-state="checked"><path fill="currentColor" d="M64 32C28.7 32 0 60.7 0 96L0 416c0 35.3 28.7 64 64 64l320 0c35.3 0 64-28.7 64-64l0-320c0-35.3-28.7-64-64-64L64 32zM337 209L209 337c-9.4 9.4-24.6 9.4-33.9 0l-64-64c-9.4-9.4-9.4-24.6 0-33.9s24.6-9.4 33.9 0l47 47L303 175c9.4-9.4 24.6-9.4 33.9 0s9.4 24.6 0 33.9z"></path></svg>
+              <svg class="svg-inline--fa fa-square fa-fw" aria-hidden="true" focusable="false" data-prefix="far" data-icon="square" role="img" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512" data-state="default"><path fill="currentColor" d="M384 80c8.8 0 16 7.2 16 16l0 320c0 8.8-7.2 16-16 16L64 432c-8.8 0-16-7.2-16-16L48 96c0-8.8 7.2-16 16-16l320 0zM64 32C28.7 32 0 60.7 0 96L0 416c0 35.3 28.7 64 64 64l320 0c35.3 0 64-28.7 64-64l0-320c0-35.3-28.7-64-64-64L64 32z"></path></svg>
+            </span>
+            <span>Отключить оглавление</span>
+          </label>
+        </div>
+      </div>
+    </div>
+
+    <div class="settings-column">
+      <div class="panel">
+        <div class="section-title">
+          <span>CBZ/ZIP</span>
+          <button class="btn-reset-group" data-group="cbz"><i class="fa-solid fa-rotate-left"></i></button>
+        </div>
+
+        <div class="field">
+          <label class="checkbox-group">
+            <input type="checkbox" id="generate-comicinfo" checked>
+            <span class="control__indicator" data-type="checkbox">
+              <svg class="svg-inline--fa fa-square-check fa-fw" aria-hidden="true" focusable="false" data-prefix="fas" data-icon="square-check" role="img" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512" data-state="checked"><path fill="currentColor" d="M64 32C28.7 32 0 60.7 0 96L0 416c0 35.3 28.7 64 64 64l320 0c35.3 0 64-28.7 64-64l0-320c0-35.3-28.7-64-64-64L64 32zM337 209L209 337c-9.4 9.4-24.6 9.4-33.9 0l-64-64c-9.4-9.4-9.4-24.6 0-33.9s24.6-9.4 33.9 0l47 47L303 175c9.4-9.4 24.6-9.4 33.9 0s9.4 24.6 0 33.9z"></path></svg>
+              <svg class="svg-inline--fa fa-square fa-fw" aria-hidden="true" focusable="false" data-prefix="far" data-icon="square" role="img" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512" data-state="default"><path fill="currentColor" d="M384 80c8.8 0 16 7.2 16 16l0 320c0 8.8-7.2 16-16 16L64 432c-8.8 0-16-7.2-16-16L48 96c0-8.8 7.2-16 16-16l320 0zM64 32C28.7 32 0 60.7 0 96L0 416c0 35.3 28.7 64 64 64l320 0c35.3 0 64-28.7 64-64l0-320c0-35.3-28.7-64-64-64L64 32z"></path></svg>
+            </span>
+            <span>ComicInfo.xml</span>
+          </label>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="section-title">
+          <span>PDF</span>
+          <button class="btn-reset-group" data-group="pdf"><i class="fa-solid fa-rotate-left"></i></button>
+        </div>
+
+        <div class="field">
+          <label for="pdf-font">Шрифт</label>
+          <select id="pdf-font" style="height: 32px;">
+            <option value="dejavu-sans" style="font-family: 'DejaVu Sans';">DejaVu Sans</option>
+            <option value="inter" style="font-family: 'Inter';">Inter</option>
+            <option value="merriweather" selected style="font-family: 'Merriweather';">Merriweather</option>
+            <option value="montserrat" style="font-family: 'Montserrat';">Montserrat</option>
+            <option value="open-sans" style="font-family: 'Open Sans';">Open Sans</option>
+            <option value="roboto" style="font-family: 'Roboto';">Roboto</option>
+            <option value="playfair-display" style="font-family: 'Playfair Display';">Playfair Display</option>
+            <option value="noto-serif" style="font-family: 'Noto Serif';">Noto Serif</option>
+            <option value="lora" style="font-family: 'Lora';">Lora</option>
+            <option value="crimson-text" style="font-family: 'Crimson Text';">Crimson Text</option>
+          </select>
+        </div>
+
+        <div class="field">
+          <label for="pdf-font-size">Размер шрифта</label>
+          <select id="pdf-font-size">
+            <option value="6">6 pt</option>
+            <option value="8">8 pt</option>
+            <option value="10">10 pt</option>
+            <option value="12" selected>12 pt</option>
+            <option value="14">14 pt</option>
+            <option value="16">16 pt</option>
+            <option value="18">18 pt</option>
+            <option value="20">20 pt</option>
+          </select>
+        </div>
+
+        <div class="field">
+          <label for="pdf-page-size">Размер страницы</label>
+          <select id="pdf-page-size">
+            <option value="A6">A6 (105 × 148 мм)</option>
+            <option value="A5" selected>A5 (148 × 210 мм)</option>
+            <option value="A4">A4 (210 × 297 мм)</option>
+            <option value="Letter">Letter (216 × 279 мм)</option>
+            <option value="B5">B5 (176 × 250 мм)</option>
+            <option value="B4">B4 (250 × 353 мм)</option>
+          </select>
+        </div>
+
+        <div class="field">
+          <label for="pdf-line-spacing">Межстрочный интервал</label>
+          <select id="pdf-line-spacing">
+            <option value="0">0 px (плотно)</option>
+            <option value="1">1 px</option>
+            <option value="2" selected>2 px (нормально)</option>
+            <option value="3">3 px</option>
+            <option value="4">4 px (воздушно)</option>
+            <option value="5">5 px</option>
+          </select>
+        </div>
+
+        <div class="field">
+          <label for="pdf-paragraph-spacing">Отступ между абзацами</label>
+          <select id="pdf-paragraph-spacing">
+            <option value="0.5">0.5 × размер шрифта (компактно)</option>
+            <option value="1" selected>1.0 × размер шрифта (нормально)</option>
+            <option value="1.5">1.5 × размер шрифта (воздушно)</option>
+            <option value="2">2.0 × размер шрифта (много места)</option>
+          </select>
+        </div>
+
+        <div class="field">
+          <label for="pdf-image-format">Формат изображений</label>
+          <select id="pdf-image-format">
+            <option value="original-jpeg">Исходный, иначе JPEG</option>
+            <option value="original-png" selected>Исходный, иначе PNG</option>
+          </select>
+        </div>
+
+        <div class="field" id="pdf-jpeg-quality-field">
+          <label for="pdf-jpeg-quality">Качество JPEG</label>
+          <div class="range-slider">
+            <input type="range" id="pdf-jpeg-quality" min="0.1" max="1.0" step="0.1" value="1.0">
+            <div class="range-value" id="pdf-jpeg-quality-value">1.0</div>
           </div>
         </div>
       </div>
 
-      <div class="field">
-        <label class="checkbox-group">
-          <input type="checkbox" id="debug-logging">
-          <span class="control__indicator" data-type="checkbox">
-            <svg class="svg-inline--fa fa-square-check fa-fw" aria-hidden="true" focusable="false" data-prefix="fas" data-icon="square-check" role="img" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512" data-state="checked"><path fill="currentColor" d="M64 32C28.7 32 0 60.7 0 96L0 416c0 35.3 28.7 64 64 64l320 0c35.3 0 64-28.7 64-64l0-320c0-35.3-28.7-64-64-64L64 32zM337 209L209 337c-9.4 9.4-24.6 9.4-33.9 0l-64-64c-9.4-9.4-9.4-24.6 0-33.9s24.6-9.4 33.9 0l47 47L303 175c9.4-9.4 24.6-9.4 33.9 0s9.4 24.6 0 33.9z"></path></svg>
-            <svg class="svg-inline--fa fa-square fa-fw" aria-hidden="true" focusable="false" data-prefix="far" data-icon="square" role="img" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512" data-state="default"><path fill="currentColor" d="M384 80c8.8 0 16 7.2 16 16l0 320c0 8.8-7.2 16-16 16L64 432c-8.8 0-16-7.2-16-16L48 96c0-8.8 7.2-16 16-16l320 0zM64 32C28.7 32 0 60.7 0 96L0 416c0 35.3 28.7 64 64 64l320 0c35.3 0 64-28.7 64-64l0-320c0-35.3-28.7-64-64-64L64 32z"></path></svg>
-          </span>
-          <span>Подробное логирование</span>
-        </label>
-      </div>
+      <div class="panel">
+        <div class="section-title">
+          <span>TXT</span>
+          <button class="btn-reset-group" data-group="txt"><i class="fa-solid fa-rotate-left"></i></button>
+        </div>
 
-      <div class="field">
-        <label class="checkbox-group">
-          <input type="checkbox" id="enable-pagination">
-          <span class="control__indicator" data-type="checkbox">
-            <svg class="svg-inline--fa fa-square-check fa-fw" aria-hidden="true" focusable="false" data-prefix="fas" data-icon="square-check" role="img" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512" data-state="checked"><path fill="currentColor" d="M64 32C28.7 32 0 60.7 0 96L0 416c0 35.3 28.7 64 64 64l320 0c35.3 0 64-28.7 64-64l0-320c0-35.3-28.7-64-64-64L64 32zM337 209L209 337c-9.4-9.4-24.6-9.4-33.9 0l-64-64c-9.4-9.4-9.4-24.6 0-33.9s24.6-9.4 33.9 0l47 47L303 175c9.4-9.4 24.6-9.4-33.9 0s9.4 24.6 0 33.9z"></path></svg>
-            <svg class="svg-inline--fa fa-square fa-fw" aria-hidden="true" focusable="false" data-prefix="far" data-icon="square" role="img" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512" data-state="default"><path fill="currentColor" d="M384 80c8.8 0 16 7.2 16 16l0 320c0 8.8-7.2 16-16 16L64 432c-8.8 0-16-7.2-16-16L48 96c0-8.8 7.2-16 16-16l320 0zM64 32C28.7 32 0 60.7 0 96L0 416c0 35.3 28.7 64 64 64l320 0c35.3 0 64-28.7 64-64l0-320c0-35.3-28.7-64-64-64L64 32z"></path></svg>
-          </span>
-          <span>Пагинация</span>
-        </label>
-      </div>
-
-      <div class="field" id="initial-chapters-field" style="gap: 0">
-        <label for="initial-chapters">Количество глав при открытии редактора</label>
-        <div class="range-slider">
-          <input type="range" id="initial-chapters" min="100" max="1000" step="50" value="500">
-          <div class="range-value" id="initial-chapters-value">500</div>
+        <div class="field">
+          <label for="txt-image-marker">Маркер картинок</label>
+          <select id="txt-image-marker">
+            <option value="numbered" selected>Картинка N</option>
+            <option value="simple">Картинка</option>
+            <option value="none">Без маркера</option>
+          </select>
         </div>
       </div>
 
-      <div class="field" id="load-more-chapters-field" style="gap: 0">
-        <label for="load-more-chapters">Количество глав при нажатии "Показать ещё"</label>
-        <div class="range-slider">
-          <input type="range" id="load-more-chapters" min="100" max="1000" step="50" value="500">
-          <div class="range-value" id="load-more-chapters-value">500</div>
+      <div class="panel">
+        <div class="section-title">
+          <span>Хранилище</span>
+          <button class="btn-reset-group" data-group="storage"><i class="fa-solid fa-rotate-left"></i></button>
         </div>
-      </div>
 
-      <div class="field">
-        <label class="checkbox-group">
-          <input type="checkbox" id="update-notifications">
-          <span class="control__indicator" data-type="checkbox">
-            <svg class="svg-inline--fa fa-square-check fa-fw" aria-hidden="true" focusable="false" data-prefix="fas" data-icon="square-check" role="img" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512" data-state="checked"><path fill="currentColor" d="M64 32C28.7 32 0 60.7 0 96L0 416c0 35.3 28.7 64 64 64l320 0c35.3 0 64-28.7 64-64l0-320c0-35.3-28.7-64-64-64L64 32zM337 209L209 337c-9.4 9.4-24.6 9.4-33.9 0l-64-64c-9.4-9.4-9.4-24.6 0-33.9s24.6-9.4 33.9 0l47 47L303 175c9.4-9.4 24.6-9.4 33.9 0s9.4 24.6 0 33.9z"></path></svg>
-            <svg class="svg-inline--fa fa-square fa-fw" aria-hidden="true" focusable="false" data-prefix="far" data-icon="square" role="img" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512" data-state="default"><path fill="currentColor" d="M384 80c8.8 0 16 7.2 16 16l0 320c0 8.8-7.2 16-16 16L64 432c-8.8 0-16-7.2-16-16L48 96c0-8.8 7.2-16 16-16l320 0zM64 32C28.7 32 0 60.7 0 96L0 416c0 35.3 28.7 64 64 64l320 0c35.3 0 64-28.7 64-64l0-320c0-35.3-28.7-64-64-64L64 32z"></path></svg>
-          </span>
-          <span>Уведомлять о наличии обновлений</span>
-        </label>
-      </div>
-    </div>
-
-    <div class="panel">
-      <div class="section-title">
-        <span>Обработка изображений</span>
-        <button class="btn-reset-group" data-group="images"><i class="fa-solid fa-rotate-left"></i></button>
-      </div>
-
-      <div class="field">
-        <label for="cover-quality">Качество обложек</label>
-        <select id="cover-quality">
-          <option value="NONE">Без обложек</option>
-          <option value="ORIGINAL" selected>Без сжатия</option>
-          <option value="2K">1600px</option>
-          <option value="QHD">1440px</option>
-          <option value="FHD">1080px</option>
-          <option value="HD">720px</option>
-          <option value="qHD">540px</option>
-          <option value="SD">480px</option>
-        </select>
-      </div>
-
-      <div class="field">
-        <label for="image-quality">Качество картинок</label>
-        <select id="image-quality">
-          <option value="NONE">Без картинок</option>
-          <option value="ORIGINAL" selected>Без сжатия</option>
-          <option value="2K">1600px</option>
-          <option value="QHD">1440px</option>
-          <option value="FHD">1080px</option>
-          <option value="HD">720px</option>
-          <option value="qHD">540px</option>
-          <option value="SD">480px</option>
-        </select>
-      </div>
-
-      <div class="field">
-        <label for="resize-method">Метод сжатия</label>
-        <select id="resize-method">
-          <option value="MIN_SIDE" selected>По меньшей стороне</option>
-          <option value="MAX_SIDE">По большей стороне</option>
-          <option value="ADAPTIVE">Адаптивный</option>
-        </select>
-      </div>
-
-      <div class="field" id="adaptive-ratio-field" style="display: none;">
-        <label for="adaptive-ratio">Порог соотношения сторон</label>
-        <div class="range-slider">
-          <input type="range" id="adaptive-ratio" min="2" max="5" step="0.5" value="3">
-          <div class="range-value" id="adaptive-ratio-value">3:1</div>
+        <div class="field">
+          <label class="checkbox-group">
+            <input type="checkbox" id="cleanup-on-title-change" checked>
+            <span class="control__indicator" data-type="checkbox">
+              <svg class="svg-inline--fa fa-square-check fa-fw" aria-hidden="true" focusable="false" data-prefix="fas" data-icon="square-check" role="img" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512" data-state="checked"><path fill="currentColor" d="M64 32C28.7 32 0 60.7 0 96L0 416c0 35.3 28.7 64 64 64l320 0c35.3 0 64-28.7 64-64l0-320c0-35.3-28.7-64-64-64L64 32zM337 209L209 337c-9.4 9.4-24.6 9.4-33.9 0l-64-64c-9.4-9.4-9.4-24.6 0-33.9s24.6-9.4 33.9 0l47 47L303 175c9.4-9.4 24.6-9.4 33.9 0s9.4 24.6 0 33.9z"></path></svg>
+              <svg class="svg-inline--fa fa-square fa-fw" aria-hidden="true" focusable="false" data-prefix="far" data-icon="square" role="img" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512" data-state="default"><path fill="currentColor" d="M384 80c8.8 0 16 7.2 16 16l0 320c0 8.8-7.2 16-16 16L64 432c-8.8 0-16-7.2-16-16L48 96c0-8.8 7.2-16 16-16l320 0zM64 32C28.7 32 0 60.7 0 96L0 416c0 35.3 28.7 64 64 64l320 0c35.3 0 64-28.7 64-64l0-320c0-35.3-28.7-64-64-64L64 32z"></path></svg>
+            </span>
+            <span>Очищать данные при смене тайтла</span>
+          </label>
         </div>
-      </div>
 
-      <div class="field">
-        <label for="image-format">Формат изображений</label>
-        <select id="image-format">
-          <option value="original" selected>Исходный</option>
-          <option value="jpeg">JPEG</option>
-          <option value="png">PNG</option>
-          <option value="webp">WebP</option>
-        </select>
-      </div>
-
-      <div class="field" id="jpeg-quality-field">
-        <label for="jpeg-quality" id="jpeg-quality-label">Качество JPEG</label>
-        <div class="range-slider">
-          <input type="range" id="jpeg-quality" min="0.1" max="1.0" step="0.1" value="1.0">
-          <div class="range-value" id="jpeg-quality-value">1.0</div>
+        <div class="field">
+          <label class="checkbox-group">
+            <input type="checkbox" id="cleanup-old-titles" checked>
+            <span class="control__indicator" data-type="checkbox">
+              <svg class="svg-inline--fa fa-square-check fa-fw" aria-hidden="true" focusable="false" data-prefix="fas" data-icon="square-check" role="img" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512" data-state="checked"><path fill="currentColor" d="M64 32C28.7 32 0 60.7 0 96L0 416c0 35.3 28.7 64 64 64l320 0c35.3 0 64-28.7 64-64l0-320c0-35.3-28.7-64-64-64L64 32zM337 209L209 337c-9.4 9.4-24.6 9.4-33.9 0l-64-64c-9.4-9.4-9.4-24.6 0-33.9s24.6-9.4 33.9 0l47 47L303 175c9.4-9.4 24.6-9.4 33.9 0s9.4 24.6 0 33.9z"></path></svg>
+              <svg class="svg-inline--fa fa-square fa-fw" aria-hidden="true" focusable="false" data-prefix="far" data-icon="square" role="img" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512" data-state="default"><path fill="currentColor" d="M384 80c8.8 0 16 7.2 16 16l0 320c0 8.8-7.2 16-16 16L64 432c-8.8 0-16-7.2-16-16L48 96c0-8.8 7.2-16 16-16l320 0zM64 32C28.7 32 0 60.7 0 96L0 416c0 35.3 28.7 64 64 64l320 0c35.3 0 64-28.7 64-64l0-320c0-35.3-28.7-64-64-64L64 32z"></path></svg>
+            </span>
+            <span>Очищать данные старше 7 дней</span>
+          </label>
         </div>
-      </div>
-    </div>
-
-
-    <div class="panel">
-      <div class="section-title">
-        <span>Оглавление</span>
-        <button class="btn-reset-group" data-group="toc"><i class="fa-solid fa-rotate-left"></i></button>
-      </div>
-
-      <div class="field">
-        <label for="toc-format">Формат заголовков</label>
-        <select id="toc-format">
-          <option value="format1">Том X Глава Y Название</option>
-          <option value="format2">Том X Глава Y - Название</option>
-          <option value="format3">Том X - Глава Y - Название</option>
-          <option value="format4">Том X / Глава Y / Название</option>
-          <option value="default" selected>Том X. Глава Y. Название</option>
-          <option value="no_headers">Без заголовков</option>
-          <option value="custom">Пользовательский формат</option>
-        </select>
-      </div>
-
-      <div class="field" id="custom-toc-format-field" style="display: none;">
-        <label for="custom-toc-format">Пользовательский формат</label>
-        <input type="text" id="custom-toc-format" placeholder="[Том {vol}]. [Глава {num}]. [{name}]">
-        <div class="field-example" id="custom-toc-format-example-with-name"></div>
-        <div class="field-example" id="custom-toc-format-example-without-name"></div>
-      </div>
-
-      <div class="field">
-        <label class="checkbox-group">
-          <input type="checkbox" id="hide-volume-number">
-          <span class="control__indicator" data-type="checkbox">
-            <svg class="svg-inline--fa fa-square-check fa-fw" aria-hidden="true" focusable="false" data-prefix="fas" data-icon="square-check" role="img" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512" data-state="checked"><path fill="currentColor" d="M64 32C28.7 32 0 60.7 0 96L0 416c0 35.3 28.7 64 64 64l320 0c35.3 0 64-28.7 64-64l0-320c0-35.3-28.7-64-64-64L64 32zM337 209L209 337c-9.4 9.4-24.6 9.4-33.9 0l-64-64c-9.4-9.4-9.4-24.6 0-33.9s24.6-9.4 33.9 0l47 47L303 175c9.4-9.4 24.6-9.4 33.9 0s9.4 24.6 0 33.9z"></path></svg>
-            <svg class="svg-inline--fa fa-square fa-fw" aria-hidden="true" focusable="false" data-prefix="far" data-icon="square" role="img" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512" data-state="default"><path fill="currentColor" d="M384 80c8.8 0 16 7.2 16 16l0 320c0 8.8-7.2 16-16 16L64 432c-8.8 0-16-7.2-16-16L48 96c0-8.8 7.2-16 16-16l320 0zM64 32C28.7 32 0 60.7 0 96L0 416c0 35.3 28.7 64 64 64l320 0c35.3 0 64-28.7 64-64l0-320c0-35.3-28.7-64-64-64L64 32z"></path></svg>
-          </span>
-          <span>Скрыть номера томов</span>
-        </label>
-      </div>
-
-      <div class="field">
-        <label class="checkbox-group">
-          <input type="checkbox" id="hide-chapter-name">
-          <span class="control__indicator" data-type="checkbox">
-            <svg class="svg-inline--fa fa-square-check fa-fw" aria-hidden="true" focusable="false" data-prefix="fas" data-icon="square-check" role="img" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512" data-state="checked"><path fill="currentColor" d="M64 32C28.7 32 0 60.7 0 96L0 416c0 35.3 28.7 64 64 64l320 0c35.3 0 64-28.7 64-64l0-320c0-35.3-28.7-64-64-64L64 32zM337 209L209 337c-9.4 9.4-24.6 9.4-33.9 0l-64-64c-9.4-9.4-9.4-24.6 0-33.9s24.6-9.4 33.9 0l47 47L303 175c9.4-9.4 24.6-9.4 33.9 0s9.4 24.6 0 33.9z"></path></svg>
-            <svg class="svg-inline--fa fa-square fa-fw" aria-hidden="true" focusable="false" data-prefix="far" data-icon="square" role="img" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512" data-state="default"><path fill="currentColor" d="M384 80c8.8 0 16 7.2 16 16l0 320c0 8.8-7.2 16-16 16L64 432c-8.8 0-16-7.2-16-16L48 96c0-8.8 7.2-16 16-16l320 0zM64 32C28.7 32 0 60.7 0 96L0 416c0 35.3 28.7 64 64 64l320 0c35.3 0 64-28.7 64-64l0-320c0-35.3-28.7-64-64-64L64 32z"></path></svg>
-          </span>
-          <span>Скрыть названия глав</span>
-        </label>
-      </div>
-
-      <div class="field">
-        <label class="checkbox-group">
-          <input type="checkbox" id="disable-toc">
-          <span class="control__indicator" data-type="checkbox">
-            <svg class="svg-inline--fa fa-square-check fa-fw" aria-hidden="true" focusable="false" data-prefix="fas" data-icon="square-check" role="img" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512" data-state="checked"><path fill="currentColor" d="M64 32C28.7 32 0 60.7 0 96L0 416c0 35.3 28.7 64 64 64l320 0c35.3 0 64-28.7 64-64l0-320c0-35.3-28.7-64-64-64L64 32zM337 209L209 337c-9.4 9.4-24.6 9.4-33.9 0l-64-64c-9.4-9.4-9.4-24.6 0-33.9s24.6-9.4 33.9 0l47 47L303 175c9.4-9.4 24.6-9.4 33.9 0s9.4 24.6 0 33.9z"></path></svg>
-            <svg class="svg-inline--fa fa-square fa-fw" aria-hidden="true" focusable="false" data-prefix="far" data-icon="square" role="img" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512" data-state="default"><path fill="currentColor" d="M384 80c8.8 0 16 7.2 16 16l0 320c0 8.8-7.2 16-16 16L64 432c-8.8 0-16-7.2-16-16L48 96c0-8.8 7.2-16 16-16l320 0zM64 32C28.7 32 0 60.7 0 96L0 416c0 35.3 28.7 64 64 64l320 0c35.3 0 64-28.7 64-64l0-320c0-35.3-28.7-64-64-64L64 32z"></path></svg>
-          </span>
-          <span>Отключить оглавление</span>
-        </label>
-      </div>
-    </div>
-
-    <div class="panel">
-      <div class="section-title">
-        <span>CBZ/ZIP</span>
-        <button class="btn-reset-group" data-group="cbz"><i class="fa-solid fa-rotate-left"></i></button>
-      </div>
-
-      <div class="field">
-        <label class="checkbox-group">
-          <input type="checkbox" id="generate-comicinfo" checked>
-          <span class="control__indicator" data-type="checkbox">
-            <svg class="svg-inline--fa fa-square-check fa-fw" aria-hidden="true" focusable="false" data-prefix="fas" data-icon="square-check" role="img" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512" data-state="checked"><path fill="currentColor" d="M64 32C28.7 32 0 60.7 0 96L0 416c0 35.3 28.7 64 64 64l320 0c35.3 0 64-28.7 64-64l0-320c0-35.3-28.7-64-64-64L64 32zM337 209L209 337c-9.4 9.4-24.6 9.4-33.9 0l-64-64c-9.4-9.4-9.4-24.6 0-33.9s24.6-9.4 33.9 0l47 47L303 175c9.4-9.4 24.6-9.4 33.9 0s9.4 24.6 0 33.9z"></path></svg>
-            <svg class="svg-inline--fa fa-square fa-fw" aria-hidden="true" focusable="false" data-prefix="far" data-icon="square" role="img" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512" data-state="default"><path fill="currentColor" d="M384 80c8.8 0 16 7.2 16 16l0 320c0 8.8-7.2 16-16 16L64 432c-8.8 0-16-7.2-16-16L48 96c0-8.8 7.2-16 16-16l320 0zM64 32C28.7 32 0 60.7 0 96L0 416c0 35.3 28.7 64 64 64l320 0c35.3 0 64-28.7 64-64l0-320c0-35.3-28.7-64-64-64L64 32z"></path></svg>
-          </span>
-          <span>ComicInfo.xml</span>
-        </label>
-      </div>
-    </div>
-
-    <div class="panel">
-      <div class="section-title">
-        <span>PDF</span>
-        <button class="btn-reset-group" data-group="pdf"><i class="fa-solid fa-rotate-left"></i></button>
-      </div>
-
-      <div class="field">
-        <label for="pdf-font">Шрифт</label>
-        <select id="pdf-font" style="height: 32px;">
-          <option value="dejavu-sans" style="font-family: 'DejaVu Sans';">DejaVu Sans</option>
-          <option value="inter" style="font-family: 'Inter';">Inter</option>
-          <option value="merriweather" selected style="font-family: 'Merriweather';">Merriweather</option>
-          <option value="montserrat" style="font-family: 'Montserrat';">Montserrat</option>
-          <option value="open-sans" style="font-family: 'Open Sans';">Open Sans</option>
-          <option value="roboto" style="font-family: 'Roboto';">Roboto</option>
-          <option value="playfair-display" style="font-family: 'Playfair Display';">Playfair Display</option>
-          <option value="noto-serif" style="font-family: 'Noto Serif';">Noto Serif</option>
-          <option value="lora" style="font-family: 'Lora';">Lora</option>
-          <option value="crimson-text" style="font-family: 'Crimson Text';">Crimson Text</option>
-        </select>
-      </div>
-
-      <div class="field">
-        <label for="pdf-font-size">Размер шрифта</label>
-        <select id="pdf-font-size">
-          <option value="6">6 pt</option>
-          <option value="8">8 pt</option>
-          <option value="10">10 pt</option>
-          <option value="12" selected>12 pt</option>
-          <option value="14">14 pt</option>
-          <option value="16">16 pt</option>
-          <option value="18">18 pt</option>
-          <option value="20">20 pt</option>
-        </select>
-      </div>
-
-      <div class="field">
-        <label for="pdf-page-size">Размер страницы</label>
-        <select id="pdf-page-size">
-          <option value="A6">A6 (105 × 148 мм)</option>
-          <option value="A5" selected>A5 (148 × 210 мм)</option>
-          <option value="A4">A4 (210 × 297 мм)</option>
-          <option value="Letter">Letter (216 × 279 мм)</option>
-          <option value="B5">B5 (176 × 250 мм)</option>
-          <option value="B4">B4 (250 × 353 мм)</option>
-        </select>
-      </div>
-
-      <div class="field">
-        <label for="pdf-line-spacing">Межстрочный интервал</label>
-        <select id="pdf-line-spacing">
-          <option value="0">0 px (плотно)</option>
-          <option value="1">1 px</option>
-          <option value="2" selected>2 px (нормально)</option>
-          <option value="3">3 px</option>
-          <option value="4">4 px (воздушно)</option>
-          <option value="5">5 px</option>
-        </select>
-      </div>
-
-      <div class="field">
-        <label for="pdf-paragraph-spacing">Отступ между абзацами</label>
-        <select id="pdf-paragraph-spacing">
-          <option value="0.5">0.5 × размер шрифта (компактно)</option>
-          <option value="1" selected>1.0 × размер шрифта (нормально)</option>
-          <option value="1.5">1.5 × размер шрифта (воздушно)</option>
-          <option value="2">2.0 × размер шрифта (много места)</option>
-        </select>
-      </div>
-
-      <div class="field">
-        <label for="pdf-image-format">Формат изображений</label>
-        <select id="pdf-image-format">
-          <option value="original-jpeg">Исходный, иначе JPEG</option>
-          <option value="original-png" selected>Исходный, иначе PNG</option>
-        </select>
-      </div>
-
-      <div class="field" id="pdf-jpeg-quality-field">
-        <label for="pdf-jpeg-quality">Качество JPEG</label>
-        <div class="range-slider">
-          <input type="range" id="pdf-jpeg-quality" min="0.1" max="1.0" step="0.1" value="1.0">
-          <div class="range-value" id="pdf-jpeg-quality-value">1.0</div>
-        </div>
-      </div>
-    </div>
-
-    <div class="panel">
-      <div class="section-title">
-        <span>TXT</span>
-        <button class="btn-reset-group" data-group="txt"><i class="fa-solid fa-rotate-left"></i></button>
-      </div>
-
-      <div class="field">
-        <label for="txt-image-marker">Маркер картинок</label>
-        <select id="txt-image-marker">
-          <option value="numbered" selected>Картинка N</option>
-          <option value="simple">Картинка</option>
-          <option value="none">Без маркера</option>
-        </select>
-      </div>
-    </div>
-
-    <div class="panel">
-      <div class="section-title">
-        <span>Хранилище</span>
-        <button class="btn-reset-group" data-group="storage"><i class="fa-solid fa-rotate-left"></i></button>
-      </div>
-
-      <div class="field">
-        <label class="checkbox-group">
-          <input type="checkbox" id="cleanup-on-title-change" checked>
-          <span class="control__indicator" data-type="checkbox">
-            <svg class="svg-inline--fa fa-square-check fa-fw" aria-hidden="true" focusable="false" data-prefix="fas" data-icon="square-check" role="img" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512" data-state="checked"><path fill="currentColor" d="M64 32C28.7 32 0 60.7 0 96L0 416c0 35.3 28.7 64 64 64l320 0c35.3 0 64-28.7 64-64l0-320c0-35.3-28.7-64-64-64L64 32zM337 209L209 337c-9.4 9.4-24.6 9.4-33.9 0l-64-64c-9.4-9.4-9.4-24.6 0-33.9s24.6-9.4 33.9 0l47 47L303 175c9.4-9.4 24.6-9.4 33.9 0s9.4 24.6 0 33.9z"></path></svg>
-            <svg class="svg-inline--fa fa-square fa-fw" aria-hidden="true" focusable="false" data-prefix="far" data-icon="square" role="img" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512" data-state="default"><path fill="currentColor" d="M384 80c8.8 0 16 7.2 16 16l0 320c0 8.8-7.2 16-16 16L64 432c-8.8 0-16-7.2-16-16L48 96c0-8.8 7.2-16 16-16l320 0zM64 32C28.7 32 0 60.7 0 96L0 416c0 35.3 28.7 64 64 64l320 0c35.3 0 64-28.7 64-64l0-320c0-35.3-28.7-64-64-64L64 32z"></path></svg>
-          </span>
-          <span>Очищать данные при смене тайтла</span>
-        </label>
-      </div>
-
-      <div class="field">
-        <label class="checkbox-group">
-          <input type="checkbox" id="cleanup-old-titles" checked>
-          <span class="control__indicator" data-type="checkbox">
-            <svg class="svg-inline--fa fa-square-check fa-fw" aria-hidden="true" focusable="false" data-prefix="fas" data-icon="square-check" role="img" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512" data-state="checked"><path fill="currentColor" d="M64 32C28.7 32 0 60.7 0 96L0 416c0 35.3 28.7 64 64 64l320 0c35.3 0 64-28.7 64-64l0-320c0-35.3-28.7-64-64-64L64 32zM337 209L209 337c-9.4 9.4-24.6 9.4-33.9 0l-64-64c-9.4-9.4-9.4-24.6 0-33.9s24.6-9.4 33.9 0l47 47L303 175c9.4-9.4 24.6-9.4 33.9 0s9.4 24.6 0 33.9z"></path></svg>
-            <svg class="svg-inline--fa fa-square fa-fw" aria-hidden="true" focusable="false" data-prefix="far" data-icon="square" role="img" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512" data-state="default"><path fill="currentColor" d="M384 80c8.8 0 16 7.2 16 16l0 320c0 8.8-7.2 16-16 16L64 432c-8.8 0-16-7.2-16-16L48 96c0-8.8 7.2-16 16-16l320 0zM64 32C28.7 32 0 60.7 0 96L0 416c0 35.3 28.7 64 64 64l320 0c35.3 0 64-28.7 64-64l0-320c0-35.3-28.7-64-64-64L64 32z"></path></svg>
-          </span>
-          <span>Очищать данные старше 7 дней</span>
-        </label>
       </div>
     </div>
 

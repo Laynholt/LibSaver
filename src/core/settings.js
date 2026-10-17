@@ -253,6 +253,7 @@ function applySettingsToUI(settings) {
   document.getElementById('debug-logging').checked = settings.debugLogging || false;
   document.getElementById('update-notifications').checked = settings.updateNotifications ?? true;
   document.getElementById('generate-comicinfo').checked = settings.generateComicInfo !== false;
+  document.getElementById('same-width').checked = settings.sameWidth === true;
 
   // Chapters pagination settings
   document.getElementById('enable-pagination').checked = settings.enablePagination === true;
@@ -420,7 +421,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('storage-size-display').addEventListener('click', cleanupOldTitles);
 
   // Регистрируем окно настроек
-  await chrome.storage.local.set({ currentOpenWindow: 'settings' });
+  // Внутри окна с вкладками (iframe) регистрируется само окно
+  if (window === window.top) await chrome.storage.local.set({ currentOpenWindow: 'settings' });
 
   // Очищаем регистрацию при закрытии
   window.addEventListener('beforeunload', async () => {
@@ -585,6 +587,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     'debugLogging',
     'updateNotifications',
     'generateComicInfo',
+    'sameWidth',
     'tocFormat',
     'customTocFormat',
     'hideChapterName',
@@ -813,6 +816,7 @@ document.getElementById('btn-save').addEventListener('click', async () => {
     debugLogging: document.getElementById('debug-logging').checked,
     updateNotifications: document.getElementById('update-notifications').checked,
     generateComicInfo: document.getElementById('generate-comicinfo').checked,
+    sameWidth: document.getElementById('same-width').checked,
     tocFormat: document.getElementById('toc-format').value,
     customTocFormat: document.getElementById('custom-toc-format').value,
     hideChapterName: document.getElementById('hide-chapter-name').checked,
@@ -886,7 +890,8 @@ const DEFAULT_SETTINGS_BY_GROUP = {
     'resize-method': 'MIN_SIDE',
     'adaptive-ratio': 3,
     'jpeg-quality': 1.0,
-    'image-format': 'original'
+    'image-format': 'original',
+    'same-width': false
   },
   toc: {
     'disable-toc': false,
@@ -1420,6 +1425,40 @@ function initToolbarTippy() {
 // Инициализируем после загрузки DOM
 document.addEventListener('DOMContentLoaded', () => {
   initToolbarTippy();
+});
+
+// Ссылка на новый issue в репозитории автора с заранее заполненным шаблоном
+async function buildIssueUrl() {
+  const { sourceUrl } = await chrome.storage.local.get(['sourceUrl']);
+  const body = [
+    '### Что произошло',
+    '<!-- Кратко опишите проблему -->',
+    '',
+    '### Как повторить',
+    '1. ',
+    '2. ',
+    '3. ',
+    '',
+    '### Что ожидалось',
+    '',
+    '',
+    '### Скриншоты и логи',
+    '<!-- Перетащите сюда скриншоты. Логи можно скопировать из раздела «Логи» в окне загрузки -->',
+    '',
+    '### Окружение',
+    `- Версия LibSaver: ${chrome.runtime.getManifest().version}`,
+    `- Страница тайтла: ${sourceUrl || ''}`,
+    '- Формат файла: ',
+    `- Браузер: ${navigator.userAgent}`
+  ].join('\n');
+  return `https://github.com/dfy-dpg/LibSaver/issues/new?title=${encodeURIComponent('[Баг] ')}&body=${encodeURIComponent(body)}`;
+}
+
+// Подсказка tippy вставляется в body, поэтому клик ловим делегированием
+document.addEventListener('click', async (event) => {
+  if (!event.target.closest('.issue-btn')) return;
+  event.preventDefault();
+  chrome.tabs.create({ url: await buildIssueUrl() });
 });
 
 // Отправляем toast при закрытии без сохранения

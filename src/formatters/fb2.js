@@ -30,7 +30,26 @@ class Fb2Formatter extends BaseFormatter {
       switch (tagName) {
         case 'p':
         case 'div':
-          const align = node.getAttribute('text-align') || node.getAttribute('align') || node.style?.textAlign || '';
+          // Обёртка с абзацами внутри (глава старого формата целиком в <div>): FB2 не допускает <p> в <p>,
+          // поэтому блоки выводим как есть, а голый текст между ними собираем в отдельные <p>
+          if ([...node.children].some(child => ['P', 'DIV'].includes(child.tagName.toUpperCase()))) {
+            let inline = '';
+            const flush = () => {
+              if (inline.trim()) result += `<p>${inline}</p>`;
+              inline = '';
+            };
+            for (const child of node.childNodes) {
+              if (child.nodeType === Node.ELEMENT_NODE && ['P', 'DIV'].includes(child.tagName.toUpperCase())) {
+                flush();
+                result += this.htmlToFb2(child);
+              } else {
+                inline += this.htmlToFb2(child);
+              }
+            }
+            flush();
+            break;
+          }
+          const align =node.getAttribute('text-align') || node.getAttribute('align') || node.style?.textAlign || '';
           const alignAttr = align ? ` text-align="${align}"` : '';
           let content = '';
           for (const child of node.childNodes) {

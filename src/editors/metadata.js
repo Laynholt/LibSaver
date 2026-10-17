@@ -14,7 +14,8 @@ setupThemeMessageListener();
 // Загрузка метаданных при открытии страницы
 document.addEventListener('DOMContentLoaded', async () => {
   // Регистрируем окно редактора метаданных
-  await chrome.storage.local.set({ currentOpenWindow: 'metadata' });
+  // Внутри окна с вкладками (iframe) регистрируется само окно
+  if (window === window.top) await chrome.storage.local.set({ currentOpenWindow: 'metadata' });
 
   // Очищаем регистрацию при закрытии
   window.addEventListener('beforeunload', async () => {
@@ -324,11 +325,7 @@ document.getElementById('btn-save').addEventListener('click', () => {
       
       wasSaved = true;
       // Закрываем окно после сохранения
-      chrome.windows.getCurrent((window) => {
-        if (window && window.id) {
-          chrome.windows.remove(window.id);
-        }
-      });
+      window.close(); // внутри окна с вкладками (iframe) ничего не делает
     });
   });
 });

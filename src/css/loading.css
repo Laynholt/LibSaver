@@ -12,6 +12,6 @@
 .skeleton-toolbar {
   background-color: var(--bg-secondary);
   border-bottom: 1px solid var(--border-color);
-  height: 40px;
+  height: 52px;
   box-sizing: border-box;
 }

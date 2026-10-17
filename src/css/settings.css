@@ -48,12 +48,38 @@ body {
   gap: 12px;
 }
 
+.settings-column {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+}
+
+/* На широком окне две колонки вместо узкой полосы посередине. Не CSS columns: те перебалансируют группы при смене высоты */
+@media (min-width: 1000px) {
+  .container {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: start;
+    max-width: 1200px;
+    gap: var(--spacing-sm);
+  }
+
+  .settings-column {
+    gap: var(--spacing-sm);
+  }
+
+  .container > .version-info {
+    grid-column: 1 / -1;
+  }
+}
+
 .section-title {
-  font-size: 13px;
-  font-weight: bold;
+  font-size: 14px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
   color: var(--text-primary);
-  margin-bottom: 5px;
-  padding-bottom: 8px;
+  margin-bottom: 4px;
+  padding-bottom: 10px;
   border-bottom: 1px solid var(--border-color);
   display: flex;
   justify-content: space-between;
@@ -63,6 +89,18 @@ body {
 
 .section-title > span {
   flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+/* Акцентная метка у заголовка секции */
+.section-title > span::before {
+  content: '';
+  width: 3px;
+  height: 14px;
+  border-radius: 2px;
+  background: var(--accent-color);
 }
 
 .section-title button {
@@ -118,8 +156,8 @@ body {
 .toolbar-tooltip-wrapper {
   padding: 8px 12px;
   max-width: max-content;
-  background: #0a0a0a;
-  border: 1px solid #414143;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
   border-radius: var(--border-radius);
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
   font-size: 12px;
@@ -265,12 +303,18 @@ body {
   position: relative;
 }
 
-.theme-select {
-  font-size: 11px;
+.theme-select,
+.accent-select {
+  font-size: 12px;
+  font-weight: 500;
   color: var(--text-secondary);
-  background: var(--bg-tertiary);
-  padding: var(--spacing-xs) var(--spacing-sm);
+  background: var(--background-elevated-2) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='%238a8f9c' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E") no-repeat right 10px center;
+  border: 1px solid var(--border-color);
+  height: 32px;
+  line-height: 30px;
+  padding: 0 28px 0 12px;
   border-radius: var(--border-radius);
+  transition: border-color 0.15s ease, color 0.15s ease;
   cursor: pointer;
   white-space: nowrap;
   overflow: hidden;
@@ -278,8 +322,9 @@ body {
   min-width: 80px;
 }
 
-.theme-select:hover {
-  background: var(--bg-secondary);
+.theme-select:hover,
+.accent-select:hover {
+  border-color: var(--border-hover);
   color: var(--text-primary);
 }
 
@@ -287,8 +332,9 @@ body {
   position: absolute;
   background: var(--bg-secondary);
   border: 1px solid var(--border-color);
-  border-radius: 4px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  border-radius: var(--border-radius);
+  box-shadow: 0 12px 32px -8px rgba(0, 0, 0, 0.45);
+  padding: 4px;
   z-index: 1000;
   min-width: 80px;
   top: 100%;
@@ -298,16 +344,17 @@ body {
 }
 
 .theme-dropdown-option {
-  padding: 6px var(--spacing-md);
+  padding: 7px 10px;
+  border-radius: 6px;
   cursor: pointer;
-  font-size: 11px;
+  font-size: 12px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
 .theme-dropdown-option:hover {
-  background: rgba(255, 255, 255, 0.1);
+  background: var(--background-elevated-2);
 }
 
 .theme-dropdown-option.selected {
@@ -321,11 +368,6 @@ body {
 }
 
 .accent-select {
-  font-size: 11px;
-  color: var(--text-secondary);
-  background: var(--bg-tertiary);
-  padding: var(--spacing-xs) var(--spacing-sm);
-  border-radius: var(--border-radius);
   cursor: pointer;
   white-space: nowrap;
   overflow: hidden;
@@ -333,17 +375,14 @@ body {
   min-width: 80px;
 }
 
-.accent-select:hover {
-  background: var(--bg-secondary);
-  color: var(--text-primary);
-}
 
 .accent-dropdown {
   position: absolute;
   background: var(--bg-secondary);
   border: 1px solid var(--border-color);
-  border-radius: 4px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  border-radius: var(--border-radius);
+  box-shadow: 0 12px 32px -8px rgba(0, 0, 0, 0.45);
+  padding: 4px;
   z-index: 1000;
   min-width: 100px;
   top: 100%;
@@ -353,16 +392,17 @@ body {
 }
 
 .accent-dropdown-option {
-  padding: 6px var(--spacing-md);
+  padding: 7px 10px;
+  border-radius: 6px;
   cursor: pointer;
-  font-size: 11px;
+  font-size: 12px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
 .accent-dropdown-option:hover {
-  background: rgba(255, 255, 255, 0.1);
+  background: var(--background-elevated-2);
 }
 
 .accent-dropdown-option.selected {

@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <link rel="icon" href="../assets/icons/icon32.png">
+  <title>LibSaver</title>
+  <script src="../core/theme-init.js"></script>
+  <link rel="stylesheet" href="../css/common.css">
+  <link rel="stylesheet" href="../libs/fontawesome/css/all.min.css">
+  <style>
+    html, body {
+      height: 100%;
+      overflow: hidden;
+    }
+    body {
+      display: flex;
+      flex-direction: column;
+    }
+    .ws-header {
+      display: flex;
+      align-items: center;
+      gap: 24px;
+      height: 48px;
+      padding: 0 16px;
+      flex-shrink: 0;
+      background: var(--bg-secondary);
+      border-bottom: 1px solid var(--border-color);
+    }
+    .ws-brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 14px;
+      font-weight: 700;
+      letter-spacing: -0.01em;
+      color: var(--text-primary);
+      white-space: nowrap;
+    }
+    .ws-brand img {
+      width: 24px;
+      height: 24px;
+    }
+    .ws-tabs {
+      display: flex;
+      align-self: stretch;
+      gap: 4px;
+    }
+    .ws-tab {
+      position: relative;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 0 14px;
+      background: none;
+      border: none;
+      border-radius: 0;
+      color: var(--text-secondary);
+      font-size: 13px;
+      font-weight: 600;
+    }
+    .ws-tab:hover {
+      background: none;
+      color: var(--text-primary);
+    }
+    .ws-tab.active {
+      color: var(--text-primary);
+    }
+    .ws-tab.active i {
+      color: var(--accent-color);
+    }
+    .ws-tab::after {
+      content: '';
+      position: absolute;
+      left: 10px;
+      right: 10px;
+      bottom: -1px;
+      height: 2px;
+      border-radius: 2px 2px 0 0;
+      background: var(--accent-color);
+      opacity: 0;
+      transition: opacity 0.15s ease;
+    }
+    .ws-tab.active::after {
+      opacity: 1;
+    }
+    .ws-frames {
+      flex: 1;
+      position: relative;
+    }
+    .ws-frames iframe {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      border: 0;
+      display: none;
+    }
+    .ws-frames iframe.active {
+      display: block;
+    }
+  </style>
+</head>
+<body>
+  <header class="ws-header">
+    <div class="ws-brand"><img src="../assets/icons/icon48.png" alt="">LibSaver</div>
+    <nav class="ws-tabs" role="tablist">
+      <button class="ws-tab" role="tab" data-tab="metadata"><i class="fa-solid fa-circle-info"></i>Метаданные</button>
+      <button class="ws-tab" role="tab" data-tab="covers"><i class="fa-solid fa-images"></i>Обложки</button>
+      <button class="ws-tab" role="tab" data-tab="chapters"><i class="fa-solid fa-list-ul"></i>Оглавление</button>
+      <button class="ws-tab" role="tab" data-tab="settings"><i class="fa-solid fa-gear"></i>Настройки</button>
+    </nav>
+  </header>
+  <main class="ws-frames" id="frames"></main>
+  <div id="toast-container"></div>
+
+  <script src="../core/theme.js"></script>
+  <script src="../utils/toast.js"></script>
+  <script src="../core/workspace.js"></script>
+</body>
+</html>

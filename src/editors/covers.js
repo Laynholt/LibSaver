@@ -80,7 +80,7 @@ function setupTippyPreview(preview, imageUrl) {
     tooltipImg.style.maxHeight = '476px';
     tooltipImg.style.objectFit = 'contain';
     tooltipImg.style.display = 'none';
-    tooltipImg.style.borderRadius = '3px';
+    tooltipImg.style.borderRadius = '8px';
     tooltipImg.src = imageUrl;
     tooltipImg.onload = () => {
       const loadingIcon = tooltipContent.querySelector('.tooltip-loading-icon');
@@ -96,7 +96,7 @@ function setupTippyPreview(preview, imageUrl) {
         tooltipImg.style.maxHeight = '476px';
         tooltipImg.style.objectFit = 'contain';
         tooltipImg.style.display = 'none';
-        tooltipImg.style.borderRadius = '3px';
+        tooltipImg.style.borderRadius = '8px';
         tooltipImg.src = dataUrl;
         tooltipImg.onload = () => {
           const loadingIcon = tooltipContent.querySelector('.tooltip-loading-icon');
@@ -171,7 +171,8 @@ let disableDragAnimations = false;
 
 document.addEventListener('DOMContentLoaded', async () => {
   // Регистрируем окно редактора обложек
-  await chrome.storage.local.set({ currentOpenWindow: 'covers' });
+  // Внутри окна с вкладками (iframe) регистрируется само окно
+  if (window === window.top) await chrome.storage.local.set({ currentOpenWindow: 'covers' });
 
   // Очищаем регистрацию при закрытии
   window.addEventListener('beforeunload', async () => {
@@ -264,7 +265,7 @@ function createLoadingIcon() {
   loadingIcon.style.justifyContent = 'center';
   loadingIcon.style.width = '100%';
   loadingIcon.style.height = '100%';
-  loadingIcon.style.borderRadius = '3px';
+  loadingIcon.style.borderRadius = '8px';
   loadingIcon.style.backgroundColor = 'var(--bg-tertiary)';
   return loadingIcon;
 }
@@ -278,7 +279,7 @@ function createErrorIcon() {
   errorIcon.style.justifyContent = 'center';
   errorIcon.style.width = '100%';
   errorIcon.style.height = '100%';
-  errorIcon.style.borderRadius = '3px';
+  errorIcon.style.borderRadius = '8px';
   errorIcon.style.backgroundColor = 'var(--bg-tertiary)';
   return errorIcon;
 }
@@ -302,7 +303,7 @@ function preventDrag(element) {
 // Вспомогательная функция для настройки фона превью
 function setPreviewBackground(preview, isLoaded) {
   preview.style.backgroundColor = 'var(--bg-tertiary)';
-  preview.style.borderRadius = '3px';
+  preview.style.borderRadius = '8px';
 }
 
 // Создание одного элемента обложки
@@ -321,12 +322,6 @@ function createCoverItem(cover, index) {
   // Внутренний контейнер для отступов
   const innerContainer = document.createElement('div');
   innerContainer.className = 'cover-item-inner';
-  innerContainer.style.padding = '4px';
-  innerContainer.style.display = 'flex';
-  innerContainer.style.gap = '10px';
-  innerContainer.style.alignItems = 'center';
-  innerContainer.style.width = '100%';
-  
   
   const preview = document.createElement('div');
   preview.className = 'cover-preview';
@@ -343,7 +338,7 @@ function createCoverItem(cover, index) {
     imgWrapper.appendChild(loadingIcon);
     
     const img = document.createElement('img');
-    img.style.borderRadius = '3px';
+    img.style.borderRadius = '8px';
     
     fetchImageWithBypass(cover.url).then(dataUrl => {
       if (dataUrl) {
@@ -400,12 +395,9 @@ function createCoverItem(cover, index) {
   
   const inputs = document.createElement('div');
   inputs.className = 'cover-inputs';
-  inputs.style.alignSelf = 'stretch';
   
   const inputGroup = document.createElement('div');
   inputGroup.className = 'input-group';
-  inputGroup.style.flexDirection = 'column';
-  inputGroup.style.alignItems = 'flex-start';
   
   inputGroup.appendChild(imageInfo);
   
@@ -423,15 +415,13 @@ function createCoverItem(cover, index) {
   
   const fileBtn = document.createElement('button');
   fileBtn.className = 'btn-file';
-  fileBtn.textContent = 'Выбрать файл';
+  fileBtn.innerHTML = '<i class="fa-solid fa-folder-open"></i>';
+  fileBtn.title = 'Выбрать файл';
   preventDrag(fileBtn);
   fileBtn.onclick = () => handleFileUpload(index);
   
   const urlGroup = document.createElement('div');
-  urlGroup.style.display = 'flex';
-  urlGroup.style.gap = '6px';
-  urlGroup.style.alignItems = 'center';
-  urlGroup.style.width = '100%';
+  urlGroup.className = 'url-group';
   
   urlGroup.appendChild(urlInput);
   urlGroup.appendChild(fileBtn);
@@ -488,7 +478,7 @@ function updateCoverItemHandlers(item, index) {
 
 // Вспомогательная функция для настройки изображения
 function setupImage(img, dataUrl, preview, imgWrapper, imageInfo) {
-  img.style.borderRadius = '3px';
+  img.style.borderRadius = '8px';
   img.src = dataUrl;
   
   const handleLoad = () => {

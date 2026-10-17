@@ -1,3 +1,15 @@
+// Самое частое значение массива (при равенстве — встреченное первым); пустой массив → undefined
+function mostCommonValue(values) {
+  const counts = new Map();
+  let best, top = 0;
+  for (const value of values) {
+    const count = (counts.get(value) || 0) + 1;
+    counts.set(value, count);
+    if (count > top) { top = count; best = value; }
+  }
+  return best;
+}
+
 class BaseFormatter {
   constructor(options) {
     this.options = options;
@@ -17,6 +29,16 @@ class BaseFormatter {
       totalOriginalSize: 0,
       totalFinalSize: 0
     };
+  }
+
+  // Текст в архиве сжимаем, а картинки уже сжаты: DEFLATE для них только тратит время. mimetype в EPUB обязан быть несжатым
+  generateZip(zip) {
+    zip.forEach((path, file) => {
+      if (path !== 'mimetype' && !/\.(jpe?g|png|webp|gif|avif)$/i.test(path)) {
+        file.options.compression = 'DEFLATE';
+      }
+    });
+    return zip.generateAsync({ type: 'blob' });
   }
 
   // Обновить статистику по картинке
@@ -292,11 +314,23 @@ class BaseFormatter {
       }
       
       // Always use content script through tab context (like RanobeLIB)
-      const response = await new Promise((resolve) => {
-        chrome.runtime.sendMessage({ action: 'fetchImage', url: url }, (res) => {
-          resolve(res);
-        });
-      });
+      const fetchImage = imageUrl => new Promise(resolve => chrome.runtime.sendMessage({ action: 'fetchImage', url: imageUrl }, resolve));
+      let response = await fetchImage(url);
+
+      // Сервер оригиналов бывает закрыт целиком (403 на любой файл или нет ответа) — тот же файл в полном размере,
+      // но в JPEG, лежит на сервере «Сжатия»/«Скачивание» (с него же качает NekoShelf)
+      const fallbackUrl = !response?.success ? this.compressedImageUrl(url) : null;
+      if (fallbackUrl) {
+        if (!this.compressedFallbackLogged && this.options.addLog) {
+          this.options.addLog(`Сервер оригиналов ${new URL(url).hostname} недоступен (${response?.error || 'нет ответа'}) — картинки берутся с ${new URL(fallbackUrl).hostname}`, true);
+        }
+        // Пользователь должен увидеть смену формата и без открытых логов (showToast есть на странице подготовки)
+        if (!this.compressedFallbackLogged && typeof showToast === 'function') {
+          showToast('Сервер оригиналов недоступен.\nКартинки скачиваются в JPEG того же размера');
+        }
+        this.compressedFallbackLogged = true;
+        response = await fetchImage(fallbackUrl);
+      }
 
       if (!response || !response.success) {
         throw new Error(response?.error || 'Failed to fetch image through content script');
@@ -317,8 +351,13 @@ class BaseFormatter {
       const originalFormat = originalType.replace('image/', '').toUpperCase();
       const originalKB = (originalSize / 1024).toFixed(1);
 
-      let targetWidth = img.width;
-      let targetHeight = img.height;
+      // «Одинаковая ширина страниц»: широкие ужимаем, узкие растягиваем; дальше сжатие по качеству считается от этого размера
+      // shortcut: полосу выше 32000px не трогаем — такой canvas Chrome не создаст
+      const commonWidth = imageType === 'картинка' ? this.commonPageWidth : null;
+      const sourceWidth = commonWidth && Math.round(img.height * commonWidth / img.width) <= 32000 ? commonWidth : img.width;
+      const sourceHeight = Math.round(img.height * sourceWidth / img.width);
+      let targetWidth = sourceWidth;
+      let targetHeight = sourceHeight;
 
       // Get target size from quality
       let targetSize = 0;
@@ -344,8 +383,8 @@ class BaseFormatter {
 
       if (targetSize > 0) {
         // Calculate larger and smaller sides (orientation-independent)
-        const largerSide = Math.max(img.width, img.height);
-        const smallerSide = Math.min(img.width, img.height);
+        const largerSide = Math.max(sourceWidth, sourceHeight);
+        const smallerSide = Math.min(sourceWidth, sourceHeight);
         const aspectRatio = largerSide / smallerSide; // Always >= 1
 
         // ADAPTIVE method: check aspect ratio first
@@ -353,14 +392,14 @@ class BaseFormatter {
           // If aspect ratio is greater than threshold, don't resize
           if (aspectRatio >= adaptiveRatio) {
             // Don't resize - image is too stretched
-            targetWidth = img.width;
-            targetHeight = img.height;
+            targetWidth = sourceWidth;
+            targetHeight = sourceHeight;
           } else {
             // Use MIN_SIDE logic for normal aspect ratios
             if (smallerSide > targetSize) {
               const ratio = targetSize / smallerSide;
-              targetWidth = Math.round(img.width * ratio);
-              targetHeight = Math.round(img.height * ratio);
+              targetWidth = Math.round(sourceWidth * ratio);
+              targetHeight = Math.round(sourceHeight * ratio);
             }
           }
         }
@@ -368,16 +407,16 @@ class BaseFormatter {
         else if (resizeMethod === 'MIN_SIDE') {
           if (smallerSide > targetSize) {
             const ratio = targetSize / smallerSide;
-            targetWidth = Math.round(img.width * ratio);
-            targetHeight = Math.round(img.height * ratio);
+            targetWidth = Math.round(sourceWidth * ratio);
+            targetHeight = Math.round(sourceHeight * ratio);
           }
         }
         // MAX_SIDE method: resize based on larger side
         else if (resizeMethod === 'MAX_SIDE') {
           if (largerSide > targetSize) {
             const ratio = targetSize / largerSide;
-            targetWidth = Math.round(img.width * ratio);
-            targetHeight = Math.round(img.height * ratio);
+            targetWidth = Math.round(sourceWidth * ratio);
+            targetHeight = Math.round(sourceHeight * ratio);
           }
         }
       }
@@ -1066,9 +1105,9 @@ class BaseFormatter {
           // Формируем полные URL для изображений
           const formattedPages = pages.map(page => {
             let fullUrl = page.url;
-            // Если URL начинается с //, добавляем домен
+            // API отдаёт путь вида //manga/..., добавляем домен и схлопываем двойной слэш
             if (fullUrl && fullUrl.startsWith('//')) {
-              fullUrl = `https://${cdnDomain}${fullUrl}`;
+              fullUrl = `https://${cdnDomain}${fullUrl.replace(/^\/+/, '/')}`;
             }
             return {
               ...page,
@@ -1089,7 +1128,13 @@ class BaseFormatter {
       });
 
       if (result && result[0] && result[0].result) {
-        return result[0].result;
+        const loaded = result[0].result;
+        // «Одинаковая ширина страниц»: ширину берём из API первой главы, где она есть, и держим до конца загрузки
+        if (this.options.sameWidth && !this.commonPageWidth && loaded.success) {
+          this.commonPageWidth = mostCommonValue((loaded.pages || []).map(page => page.width).filter(width => width > 0));
+          if (this.commonPageWidth && this.options.addLog) this.options.addLog(`Страницы приводятся к ширине ${this.commonPageWidth}px`);
+        }
+        return loaded;
       }
 
       return { success: false, error: 'Не удалось загрузить страницы главы' };
@@ -1273,6 +1318,24 @@ class BaseFormatter {
     xml += '</ComicInfo>';
 
     return xml;
+  }
+
+  // Тот же файл на сервере сжатых картинок (пары из /api/constants?fields[]=imageServers); null, если пары нет
+  compressedImageUrl(url) {
+    const hosts = {
+      'img2.imglib.info': 'img3.cdnlibs.org',
+      'img2h.hentaicdn.org': 'img3h.hentaicdn.org',
+      'img2.hentaicdn.org': 'img3.hentaicdn.org',
+      'img2.animelib.org': 'img3.animelib.org'
+    };
+    try {
+      const parsed = new URL(url);
+      if (!hosts[parsed.hostname]) return null;
+      parsed.hostname = hosts[parsed.hostname];
+      return parsed.href;
+    } catch {
+      return null;
+    }
   }
 
   // Экранирование XML специальных символов

@@ -2,6 +2,7 @@
 <html lang="ru">
 <head>
   <meta charset="UTF-8">
+  <link rel="icon" href="../assets/icons/icon32.png">
   <title>LibSaver - Редактор оглавления</title>
   <style>body { opacity: 0; }</style>
   <script src="../core/theme-init.js"></script>
@@ -9,10 +10,7 @@
   <link rel="stylesheet" href="../css/common.css">
   <link rel="stylesheet" href="../css/loading.css">
   <script src="../utils/window-loader.js"></script>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@400;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <link rel="stylesheet" href="../libs/fontawesome/css/all.min.css">
   <link rel="stylesheet" href="../css/editor.css">
   <style>
     .chapters-list {
@@ -34,7 +32,6 @@
       align-items: center;
       gap: var(--spacing-sm);
       z-index: 100;
-      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
       margin-bottom: var(--spacing-md);
       width: 100%;
       box-sizing: border-box;
@@ -94,14 +91,30 @@
       display: flex;
       align-items: center;
     }
+    /* Текущий переводчик: такая же «пилюля», как кнопки тулбара */
     #translator-select {
-      background: var(--bg-tertiary);
-      padding: var(--spacing-xs) var(--spacing-sm);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      height: 32px;
+      box-sizing: border-box;
+      padding: 0 12px;
+      background: var(--background-elevated-2);
+      border: 1px solid var(--border-color);
       border-radius: var(--border-radius);
+      font-size: 12px;
+      font-weight: 600;
       cursor: default;
+      transition: border-color 0.15s ease;
+    }
+    #translator-select::before {
+      content: '\f0c0';
+      font-family: 'Font Awesome 6 Free';
+      font-weight: 900;
+      color: var(--accent-color);
     }
     #translator-select:hover {
-      background: rgba(255, 255, 255, 0.1);
+      border-color: var(--border-hover);
     }
     .counter {
       font-size: 12px;
@@ -135,7 +148,7 @@
       transform: translateY(-50%);
       font-size: 11px;
       color: var(--text-secondary);
-      background: var(--bg-tertiary);
+      background: var(--background-elevated-2);
       padding: var(--spacing-xs) var(--spacing-sm);
       border-radius: var(--border-radius);
       cursor: pointer;
@@ -145,15 +158,16 @@
       max-width: 120px;
     }
     .chapter-input-wrapper .chapter-translator:hover {
-      background: rgba(255, 255, 255, 0.1);
+      background: var(--border-color);
       color: var(--text-primary);
     }
     .chapter-translator-dropdown {
       position: absolute;
       background: var(--bg-secondary);
       border: 1px solid var(--border-color);
-      border-radius: 4px;
-      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+      border-radius: var(--border-radius);
+      padding: 4px;
+      box-shadow: var(--card-shadow);
       z-index: 1000;
       min-width: 120px;
       max-height: 200px;
@@ -166,9 +180,10 @@
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
+      border-radius: 6px;
     }
     .chapter-translator-option:hover {
-      background: rgba(255, 255, 255, 0.1);
+      background: var(--background-elevated-2);
     }
     .chapter-translator-option.selected {
       background: var(--accent-soft);
@@ -178,10 +193,10 @@
       padding: 16px;
       min-width: 360px;
       max-width: 420px;
-      background: #0a0a0a;
-      border: 1px solid #3b3d45;
-      border-radius: var(--border-radius);
-      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+      background: var(--bg-secondary);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-lg);
+      box-shadow: var(--card-shadow);
     }
     [data-theme="light"] .translator-priority-popup {
       background: var(--bg-secondary);

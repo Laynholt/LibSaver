@@ -252,7 +252,8 @@ async function loadDownloadData() {
   // Загружаем пользовательские данные для получения изменённых обложек, метаданных и переводчиков
   const slug = downloadData.slug;
   if (slug) {
-    const { titleData } = await getTitleStore(['titleData'], slug);
+    const titleDataResult = await getTitleStore(['titleData'], slug);
+    const titleData = titleDataResult.titleData || {};
     
     // Если есть пользовательские обложки, используем их (даже если пустые)
     if (titleData[slug] && titleData[slug].covers !== undefined) {
@@ -934,6 +935,19 @@ function addLogToContainer(message, isError = false, color = null) {
   }
 }
 
+function restoreDownloadControls() {
+  enableControls();
+  enableVolumeCheckboxes();
+  document.querySelectorAll('.chapter-checkbox').forEach(checkbox => {
+    checkbox.disabled = false;
+  });
+  const button = document.getElementById('btn-start-download');
+  button.disabled = false;
+  button.style.display = '';
+}
+
+window.restoreDownloadControls = restoreDownloadControls;
+
 // Экспортируем функции для использования в download.js
 window.addLogToContainer = addLogToContainer;
 
@@ -1045,72 +1059,16 @@ function disableVolumeCheckboxes() {
 }
 
 function disableControls() {
-  // Отключаем селектор формата
-  const formatSelect = document.getElementById('format-select');
-  const formatDropdown = document.getElementById('format-dropdown');
-  if (formatSelect) {
-    formatSelect.style.pointerEvents = 'none';
-    formatSelect.style.opacity = '0.5';
-    formatSelect.style.cursor = 'default';
-  }
-  if (formatDropdown) {
-    formatDropdown.style.pointerEvents = 'none';
-    formatDropdown.style.cursor = 'default';
-  }
-
-  // Отключаем селектор сервера
-  const serverSelect = document.getElementById('server-select');
-  const serverDropdown = document.getElementById('server-dropdown');
-  if (serverSelect) {
-    serverSelect.style.pointerEvents = 'none';
-    serverSelect.style.opacity = '0.5';
-    serverSelect.style.cursor = 'default';
-  }
-  if (serverDropdown) {
-    serverDropdown.style.pointerEvents = 'none';
-    serverDropdown.style.cursor = 'default';
-  }
-
-  // Отключаем чекбокс "Только текст"
-  const textOnlyCheckbox = document.getElementById('text-only-checkbox');
-  if (textOnlyCheckbox) {
-    textOnlyCheckbox.disabled = true;
-    textOnlyCheckbox.style.cursor = 'default';
+  for (const id of ['format-select', 'server-select', 'text-only-checkbox']) {
+    const control = document.getElementById(id);
+    if (control) control.disabled = true;
   }
 }
 
 function enableControls() {
-  // Включаем селектор формата
-  const formatSelect = document.getElementById('format-select');
-  const formatDropdown = document.getElementById('format-dropdown');
-  if (formatSelect) {
-    formatSelect.style.pointerEvents = 'auto';
-    formatSelect.style.opacity = '1';
-    formatSelect.style.cursor = 'pointer';
-  }
-  if (formatDropdown) {
-    formatDropdown.style.pointerEvents = 'auto';
-    formatDropdown.style.cursor = 'pointer';
-  }
-
-  // Включаем селектор сервера
-  const serverSelect = document.getElementById('server-select');
-  const serverDropdown = document.getElementById('server-dropdown');
-  if (serverSelect) {
-    serverSelect.style.pointerEvents = 'auto';
-    serverSelect.style.opacity = '1';
-    serverSelect.style.cursor = 'pointer';
-  }
-  if (serverDropdown) {
-    serverDropdown.style.pointerEvents = 'auto';
-    serverDropdown.style.cursor = 'pointer';
-  }
-
-  // Включаем чекбокс "Только текст"
-  const textOnlyCheckbox = document.getElementById('text-only-checkbox');
-  if (textOnlyCheckbox) {
-    textOnlyCheckbox.disabled = false;
-    textOnlyCheckbox.style.cursor = 'pointer';
+  for (const id of ['format-select', 'server-select', 'text-only-checkbox']) {
+    const control = document.getElementById(id);
+    if (control) control.disabled = false;
   }
 }
 
@@ -1126,18 +1084,6 @@ function enableVolumeCheckboxes() {
     }
   });
 }
-
-function restoreDownloadControls() {
-  enableControls();
-  enableVolumeCheckboxes();
-  document.querySelectorAll('.chapter-checkbox').forEach(checkbox => {
-    checkbox.disabled = false;
-  });
-  const button = document.getElementById('btn-start-download');
-  if (button) button.style.display = 'inline-flex';
-}
-
-window.restoreDownloadControls = restoreDownloadControls;
 
 // Экспортируем функции для использования в download.js
 window.disableControls = disableControls;
@@ -1316,10 +1262,9 @@ function loadSavedCheckboxes() {
 }
 
 function populateFormatSelector(siteType) {
-  const formatDropdown = document.getElementById('format-dropdown');
   const formatSelect = document.getElementById('format-select');
   
-  if (!formatDropdown || !formatSelect) return;
+  if (!formatSelect) return;
   
   // Опции по типу сайта
   const formatOptions = {
@@ -1346,23 +1291,16 @@ function populateFormatSelector(siteType) {
   const defaultFormat = siteType === 'manga' ? 'cbz' : (siteType === 'anime' ? 'mkv' : 'epub');
   
   // Очищаем dropdown
-  formatDropdown.innerHTML = '';
+  formatSelect.innerHTML = '';
   
-  // Добавляем опции
-  options.forEach((opt, index) => {
-    const optionDiv = document.createElement('div');
-    optionDiv.className = 'format-dropdown-option';
-    optionDiv.dataset.value = opt.value;
-    optionDiv.textContent = opt.label;
-    
-    if (opt.value === defaultFormat) {
-      optionDiv.classList.add('selected');
-      formatSelect.textContent = opt.label;
-    }
-    
-    formatDropdown.appendChild(optionDiv);
+  options.forEach(opt => {
+    const option = document.createElement('option');
+    option.value = opt.value;
+    option.textContent = opt.label;
+    formatSelect.appendChild(option);
   });
-  
+  formatSelect.value = defaultFormat;
+
   return defaultFormat;
 }
 
@@ -1378,259 +1316,59 @@ function setupEventListeners() {
       imageServerSelector.style.display = (siteType === 'manga') ? 'block' : 'none';
     }
     
-    // Логика для dropdown выбора формата
     const formatSelect = document.getElementById('format-select');
-    const formatDropdown = document.getElementById('format-dropdown');
+    const serverSelect = document.getElementById('server-select');
     const textOnlyToggle = document.getElementById('text-only-toggle');
     const textOnlyCheckbox = document.getElementById('text-only-checkbox');
-    const formatOptions = document.querySelectorAll('.format-dropdown-option');
-    
-    let selectedFormat = defaultFormat;
-    
-    // Определяем ключ для хранения формата по типу сайта
     const formatKey = siteType === 'manga' ? 'selectedFormat_manga' : 'selectedFormat_ranobe';
-    
-    // Загружаем сохраненный формат для текущего типа сайта
-    chrome.storage.local.get([formatKey], (result) => {
-      if (result[formatKey]) {
-        selectedFormat = result[formatKey];
-        const option = document.querySelector(`.format-dropdown-option[data-value="${selectedFormat}"]`);
-        if (option) {
-          formatSelect.textContent = option.textContent;
-          document.querySelectorAll('.format-dropdown-option').forEach(opt => opt.classList.remove('selected'));
-          option.classList.add('selected');
-        }
-        updateTextOnlyVisibility();
-      }
-    });
-    
-    // Логика для селектора сервера изображений
-    const serverSelect = document.getElementById('server-select');
-    const serverDropdown = document.getElementById('server-dropdown');
-    const serverOptions = document.querySelectorAll('.server-option');
-    
-    let selectedServer = 'compressed'; // default
-    
-    // Загружаем сохраненный сервер
-    chrome.storage.local.get(['imageServer'], (result) => {
-      if (result.imageServer) {
-        selectedServer = result.imageServer;
-      }
-      const option = document.querySelector(`.server-option[data-value="${selectedServer}"]`);
-      if (option) {
-        serverSelect.textContent = option.textContent;
-        document.querySelectorAll('.server-option').forEach(opt => opt.classList.remove('selected'));
-        option.classList.add('selected');
-      }
-    });
-    
-    if (serverSelect && serverDropdown) {
-      // Добавляем tabindex для клавиатурной навигации
-      serverSelect.setAttribute('tabindex', '0');
-      
-      serverSelect.addEventListener('click', (e) => {
-        e.stopPropagation();
-        // Закрываем другие dropdown при открытии этого
-        if (formatDropdown) {
-          formatDropdown.style.display = 'none';
-        }
-        serverDropdown.style.display = serverDropdown.style.display === 'none' ? 'block' : 'none';
-      });
-      
-      // Поддержка клавиатуры
-      serverSelect.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter' || e.key === ' ') {
-          e.preventDefault();
-          e.stopPropagation();
-          if (formatDropdown) {
-            formatDropdown.style.display = 'none';
-          }
-          serverDropdown.style.display = serverDropdown.style.display === 'none' ? 'block' : 'none';
-        } else if (e.key === 'Escape') {
-          serverDropdown.style.display = 'none';
-        }
-      });
-      
-      serverOptions.forEach((option, index) => {
-        option.setAttribute('tabindex', '-1');
-        
-        option.addEventListener('click', (e) => {
-          e.stopPropagation();
-          selectedServer = option.dataset.value;
-          serverSelect.textContent = option.textContent;
-          
-          // Обновляем визуальное состояние
-          serverOptions.forEach(opt => opt.classList.remove('selected'));
-          option.classList.add('selected');
-          
-          // Сохраняем выбранный сервер
-          chrome.storage.local.set({ imageServer: selectedServer });
-          
-          serverDropdown.style.display = 'none';
-          serverSelect.focus();
-        });
-        
-        option.addEventListener('keydown', (e) => {
-          if (e.key === 'Enter' || e.key === ' ') {
-            e.preventDefault();
-            option.click();
-          } else if (e.key === 'ArrowDown') {
-            e.preventDefault();
-            const nextIndex = (index + 1) % serverOptions.length;
-            serverOptions[nextIndex].focus();
-          } else if (e.key === 'ArrowUp') {
-            e.preventDefault();
-            const prevIndex = (index - 1 + serverOptions.length) % serverOptions.length;
-            serverOptions[prevIndex].focus();
-          } else if (e.key === 'Escape') {
-            e.preventDefault();
-            serverDropdown.style.display = 'none';
-            serverSelect.focus();
-          }
-        });
-      });
-      
-      // Навигация стрелками когда dropdown открыт
-      serverSelect.addEventListener('keydown', (e) => {
-        if (serverDropdown.style.display === 'block') {
-          if (e.key === 'ArrowDown') {
-            e.preventDefault();
-            serverOptions[0].focus();
-          }
-        }
-      });
-      
-      // Закрытие dropdown при клике вне
-      document.addEventListener('click', () => {
-        serverDropdown.style.display = 'none';
-      });
-    }
-  
-    // Загружаем сохраненное состояние textOnly
-    chrome.storage.local.get(['textOnly'], (result) => {
-      if (result.textOnly !== undefined) {
-        textOnlyCheckbox.checked = result.textOnly;
-      }
-    });
-    
-    if (formatSelect && formatDropdown) {
-      // Добавляем tabindex для клавиатурной навигации
-      formatSelect.setAttribute('tabindex', '0');
-      
-      formatSelect.addEventListener('click', (e) => {
-        e.stopPropagation();
-        // Закрываем другие dropdown при открытии этого
-        if (serverDropdown) {
-          serverDropdown.style.display = 'none';
-        }
-        formatDropdown.style.display = formatDropdown.style.display === 'none' ? 'block' : 'none';
-      });
-      
-      // Поддержка клавиатуры
-      formatSelect.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter' || e.key === ' ') {
-          e.preventDefault();
-          e.stopPropagation();
-          if (serverDropdown) {
-            serverDropdown.style.display = 'none';
-          }
-          formatDropdown.style.display = formatDropdown.style.display === 'none' ? 'block' : 'none';
-        } else if (e.key === 'Escape') {
-          formatDropdown.style.display = 'none';
-        }
-      });
-      
-      let focusedOptionIndex = -1;
-      
-      formatOptions.forEach((option, index) => {
-        option.setAttribute('tabindex', '-1');
-        
-        option.addEventListener('click', (e) => {
-          e.stopPropagation();
-          selectedFormat = option.dataset.value;
-          formatSelect.textContent = option.textContent;
-          
-          // Обновляем визуальное состояние
-          formatOptions.forEach(opt => opt.classList.remove('selected'));
-          option.classList.add('selected');
-          
-          // Сохраняем выбранный формат по типу сайта
-          const formatKey = siteType === 'manga' ? 'selectedFormat_manga' : 'selectedFormat_ranobe';
-          chrome.storage.local.set({ [formatKey]: selectedFormat });
-          
-          // Обновляем видимость галочки "Только текст"
-          updateTextOnlyVisibility();
-          
-          formatDropdown.style.display = 'none';
-          formatSelect.focus();
-        });
-        
-        option.addEventListener('keydown', (e) => {
-          if (e.key === 'Enter' || e.key === ' ') {
-            e.preventDefault();
-            option.click();
-          } else if (e.key === 'ArrowDown') {
-            e.preventDefault();
-            const nextIndex = (index + 1) % formatOptions.length;
-            formatOptions[nextIndex].focus();
-          } else if (e.key === 'ArrowUp') {
-            e.preventDefault();
-            const prevIndex = (index - 1 + formatOptions.length) % formatOptions.length;
-            formatOptions[prevIndex].focus();
-          } else if (e.key === 'Escape') {
-            e.preventDefault();
-            formatDropdown.style.display = 'none';
-            formatSelect.focus();
-          }
-        });
-      });
-      
-      // Навигация стрелками когда dropdown открыт
-      formatSelect.addEventListener('keydown', (e) => {
-        if (formatDropdown.style.display === 'block') {
-          if (e.key === 'ArrowDown') {
-            e.preventDefault();
-            formatOptions[0].focus();
-          }
-        }
-      });
-      
-      // Закрытие dropdown при клике вне
-      document.addEventListener('click', () => {
-        formatDropdown.style.display = 'none';
-      });
-    }
-    
-    // Логика для галочки "Только текст"
-    if (textOnlyCheckbox) {
-      textOnlyCheckbox.addEventListener('change', () => {
-        chrome.storage.local.set({ textOnly: textOnlyCheckbox.checked });
-      });
-    }
-    
+
     function updateTextOnlyVisibility() {
-      if (textOnlyToggle) {
-        textOnlyToggle.style.display = selectedFormat === 'txt' ? 'block' : 'none';
-      }
+      textOnlyToggle.style.display = formatSelect.value === 'txt' ? 'block' : 'none';
     }
-    
+
+    chrome.storage.local.get([formatKey, 'imageServer', 'textOnly'], result => {
+      if (Array.from(formatSelect.options).some(option => option.value === result[formatKey])) {
+        formatSelect.value = result[formatKey];
+      }
+      if (['normal', 'compressed'].includes(result.imageServer)) {
+        serverSelect.value = result.imageServer;
+      }
+      textOnlyCheckbox.checked = result.textOnly === true;
+      updateTextOnlyVisibility();
+    });
+    updateTextOnlyVisibility();
+
+    formatSelect.addEventListener('change', () => {
+      chrome.storage.local.set({ [formatKey]: formatSelect.value });
+      updateTextOnlyVisibility();
+    });
+    serverSelect.addEventListener('change', () => {
+      chrome.storage.local.set({ imageServer: serverSelect.value });
+    });
+    textOnlyCheckbox.addEventListener('change', () => {
+      chrome.storage.local.set({ textOnly: textOnlyCheckbox.checked });
+    });
+
     const btnDownload = document.getElementById('btn-start-download');
-    btnDownload.addEventListener('click', () => {
+    btnDownload.addEventListener('click', async () => {
       if (selectedChapterIds.size === 0) {
         showToast('Выберите хотя бы одну главу', 'error');
         return;
       }
       
       downloadData.selectedChapterIds = Array.from(selectedChapterIds);
-      downloadData.selectedFormat = selectedFormat;
+      downloadData.selectedFormat = formatSelect.value;
       downloadData.textOnly = textOnlyCheckbox.checked;
-      downloadData.imageServer = selectedServer || 'normal';
-      chrome.storage.local.set({ downloadData }, () => {
+      downloadData.imageServer = serverSelect.value;
+      btnDownload.disabled = true;
+      try {
+        await chrome.storage.local.set({ downloadData });
         // Обновляем логи с актуальными настройками перед началом скачивания
         logDownloadSettingsOnStart(Array.from(selectedChapterIds));
         
         // Отключаем чекбоксы глав
         disableChapterCheckboxes();
+        disableVolumeCheckboxes();
 
         // Отключаем кнопки формата, сервера и "Только текст"
         disableControls();
@@ -1651,18 +1389,16 @@ function setupEventListeners() {
         startStatisticsUpdate();
 
         // Запускаем загрузку
-        try {
-          if (typeof startDownload === 'function') {
-            startDownload();
-          } else {
-            throw new Error('Загрузчик недоступен');
-          }
-        } catch (error) {
-          stopStatisticsUpdate();
-          restoreDownloadControls();
-          showToast(`Не удалось начать загрузку: ${error.message}`, 'error');
+        if (typeof startDownload === 'function') {
+          await startDownload();
+        } else {
+          throw new Error('Загрузчик недоступен');
         }
-      });
+      } catch (error) {
+        stopStatisticsUpdate();
+        restoreDownloadControls();
+        showToast(`Не удалось начать загрузку: ${error.message}`, 'error');
+      }
     });
     
     document.querySelectorAll('.volume-header').forEach(header => {
