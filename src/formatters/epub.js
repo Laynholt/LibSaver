@@ -83,7 +83,7 @@ class EpubFormatter extends BaseFormatter {
     // Валидация структуры EPUB перед генерацией
     this.validateEpubStructure();
 
-    const content = await this.zip.generateAsync({ type: "blob" });
+    const content = await this.generateZip(this.zip);
     const fileName = this.generateFileName(metadata) + '.epub';
 
     return { blob: content, filename: fileName };

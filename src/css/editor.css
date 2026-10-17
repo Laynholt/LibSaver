@@ -14,16 +14,25 @@ body {
 }
 
 .field {
-  background-color: var(--bg-secondary);
-  border-radius: var(--border-radius);
-  padding: var(--spacing-sm);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  transition: border-color 0.15s ease;
+  padding: 10px var(--spacing-md) var(--spacing-md);
+}
+
+.field:hover,
+.chapter-item:hover {
+  border-color: var(--border-hover);
 }
 
 /* Стили для карточек глав (chapters.html) */
 .chapter-item {
-  background-color: var(--bg-secondary);
-  border-radius: var(--border-radius);
-  padding: var(--spacing-sm);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  transition: border-color 0.15s ease;
+  padding: var(--spacing-sm) var(--spacing-md);
   display: flex;
   flex-direction: column;
   gap: var(--spacing-xs);
@@ -31,11 +40,10 @@ body {
 }
 
 .chapter-title {
-  font-size: 11px;
+  font-size: 12px;
+  font-weight: 500;
   color: var(--text-secondary);
   width: fit-content;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
   cursor: default;
   user-select: none;
   word-wrap: break-word;
@@ -80,15 +88,17 @@ body {
   color: var(--text-primary);
   border: 1px solid var(--border-color);
   border-radius: var(--border-radius);
-  padding: 6px var(--spacing-md);
+  padding: 8px var(--spacing-md);
   font-size: var(--font-size-md);
   outline: none;
   width: 100%;
   box-sizing: border-box;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 
 .chapter-input:focus {
   border-color: var(--accent-color);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent-color) 22%, transparent);
 }
 
 .field-header {
@@ -205,19 +215,74 @@ label.editing {
   border: none !important;
   color: var(--text-secondary);
   cursor: pointer;
-  font-size: var(--font-size-md);
-  padding: 0 var(--spacing-xs);
-  opacity: 0.5;
+  font-size: 12px;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border-radius: 6px;
+  opacity: 0.35;
   user-select: none;
+  transition: opacity 0.15s ease, color 0.15s ease, background-color 0.15s ease;
+}
+
+.field:hover .field-reset-btn,
+.field:hover .field-rename-btn,
+.field:hover .field-visibility-btn {
+  opacity: 0.7;
 }
 
 .field-reset-btn:hover,
 .field-rename-btn:hover,
 .field-visibility-btn:hover {
-  opacity: 1;
-  background: none !important;
+  opacity: 1 !important;
+  color: var(--text-primary);
+  background: var(--background-elevated-2) !important;
   border: none !important;
 }
 
 /* Специфичные стили для редакторов (переопределяют common.css) */
 
+
+/* Метаданные на широком окне: короткие поля по два в ряд, названия и длинные поля во всю ширину */
+@media (min-width: 900px) {
+  #fields-container {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    max-width: 960px;
+  }
+
+  #fields-container > .field:is([data-field^="title"], [data-field="description"], [data-field="genres"], [data-field="tags"]) {
+    grid-column: 1 / -1;
+  }
+}
+
+/* Оглавление на широком окне: исходное название слева, поле справа, одна строка на главу */
+@media (min-width: 900px) {
+  .container:has(> .chapters-list) {
+    max-width: 960px;
+  }
+
+  .chapter-item {
+    display: grid;
+    grid-template-columns: minmax(0, 2fr) minmax(0, 3fr) auto;
+    grid-template-areas: "title input reset";
+    align-items: center;
+    column-gap: var(--spacing-sm);
+  }
+
+  .chapter-header {
+    display: contents;
+  }
+
+  .chapter-title {
+    grid-area: title;
+  }
+
+  .chapter-input-wrapper {
+    grid-area: input;
+  }
+
+  .chapter-reset-btn {
+    grid-area: reset;
+  }
+}

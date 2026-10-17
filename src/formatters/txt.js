@@ -150,7 +150,7 @@ class TxtFormatter extends BaseFormatter {
       // Создаем ZIP архив с умным названием файла
       const fileName = this.generateFileName(metadata);
       this.zip.file(`${fileName}.txt`, txtContent);
-      const content = await this.zip.generateAsync({ type: "blob" });
+      const content = await this.generateZip(this.zip);
 
       return { blob: content, filename: fileName + '.zip' };
     } else {
@@ -258,7 +258,7 @@ class TxtFormatter extends BaseFormatter {
     if (chapterContent.content) {
       // Если content - это HTML строка, парсим её
       if (typeof chapterContent.content === 'string') {
-        text += this.htmlToText(chapterContent.content);
+        text += await this.htmlToText(chapterContent.content, context);
       } else {
         // Если content - это JSON структура, обрабатываем через processNode
         text += await this.processNode(chapterContent.content, context);
@@ -646,10 +646,12 @@ class TxtFormatter extends BaseFormatter {
       }
     }
 
-    let text = '';
+    // textContent склеивает соседние абзацы (<p>…</p><p>…</p> без переносов): разделяем блоки пустой строкой, <br> — переносом
+    doc.querySelectorAll('br').forEach(br => br.replaceWith('\n'));
+    doc.querySelectorAll('p, div, h1, h2, h3, h4, h5, h6, li, blockquote').forEach(block => block.append('\n\n'));
 
     // Используем textContent чтобы захватить весь текст включая маркеры между параграфами
-    text = doc.body.textContent;
+    let text = doc.body.textContent;
 
     // Очистка текста
     text = text

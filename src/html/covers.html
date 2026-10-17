@@ -2,6 +2,7 @@
 <html lang="ru">
 <head>
   <meta charset="UTF-8">
+  <link rel="icon" href="../assets/icons/icon32.png">
   <title>LibSaver - Редактор обложек</title>
   <style>body { opacity: 0; }</style>
   <script src="../core/theme-init.js"></script>
@@ -9,10 +10,7 @@
   <link rel="stylesheet" href="../css/common.css">
   <link rel="stylesheet" href="../css/loading.css">
   <script src="../utils/window-loader.js"></script>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@400;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <link rel="stylesheet" href="../libs/fontawesome/css/all.min.css">
   <script src="../libs/Sortable.min.js"></script>
   <link rel="stylesheet" href="../css/scale-subtle.css">
   <link rel="stylesheet" href="../css/editor.css">
@@ -24,29 +22,47 @@
     .container {
       height: 100%;
     }
+    .container {
+      max-width: 960px;
+    }
+    /* Обложки сеткой карточек с крупным превью */
     .covers-list {
       flex: 1;
       overflow-y: hidden;
       overflow-x: hidden;
-      display: flex;
-      flex-direction: column;
-      gap: var(--spacing-xs);
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 230px));
+      justify-content: center;
+      gap: var(--spacing-sm);
+    }
+    .covers-list > .empty-state {
+      grid-column: 1 / -1;
     }
     .cover-item {
-      background-color: var(--bg-secondary);
-      border-radius: var(--border-radius);
+      background: var(--bg-secondary);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-lg);
       padding: var(--spacing-xs);
       display: flex;
-      gap: 10px;
-      align-items: flex-end;
-      min-height: 60px;
       position: relative;
+      transition: border-color 0.15s ease, transform 0.15s ease;
+    }
+    .cover-item:hover {
+      border-color: var(--border-hover);
+      transform: translateY(-2px);
+    }
+    .cover-item-inner {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      padding: 4px;
+      width: 100%;
     }
     .cover-preview {
-      width: 40px;
-      height: 60px;
-      background-color: var(--bg-secondary);
-      border-radius: 3px;
+      width: 100%;
+      aspect-ratio: 2 / 3;
+      background-color: var(--bg-tertiary);
+      border-radius: 8px;
       display: flex;
       align-items: center;
       justify-content: center;
@@ -78,16 +94,16 @@
     .cover-preview .img-wrapper .img-container {
       position: relative;
       display: inline-block;
-      max-width: 40px;
-      max-height: 60px;
-      border-radius: 3px;
+      max-width: 100%;
+      max-height: 100%;
+      border-radius: 8px;
       overflow: hidden;
       background-color: var(--bg-tertiary);
     }
     .cover-preview .img-wrapper .img-container img {
       max-width: 100%;
       max-height: 100%;
-      border-radius: 3px;
+      border-radius: 8px;
       object-fit: contain;
       display: none;
     }
@@ -101,7 +117,7 @@
       left: 0;
       right: 0;
       bottom: 0;
-      border-radius: 3px;
+      border-radius: 8px;
       background-color: rgba(0, 0, 0, 0.4);
       opacity: 0;
       pointer-events: none;
@@ -112,12 +128,12 @@
     /* Стили Tippy для соответствия дизайну */
     .tippy-box[data-theme='dark'] {
       background-color: rgba(10, 10, 10, 0.95);
-      border: 1px solid #3b3d45;
+      border: 1px solid var(--border-color);
       border-radius: 6px;
       box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
     }
     .tippy-box[data-theme='dark'] > .tippy-arrow::before {
-      border-top-color: #3b3d45;
+      border-top-color: var(--border-color);
     }
     .tippy-box[data-theme='dark'] > .tippy-arrow::after {
       border-top-color: rgba(10, 10, 10, 0.95);
@@ -179,64 +195,66 @@
       background-color: var(--text-primary);
     }
     .cover-inputs {
-      flex: 1;
       display: flex;
       flex-direction: column;
-      justify-content: flex-end;
-      height: 60px;
-      gap: 0;
     }
     .image-info {
       font-size: 10px;
       color: var(--text-secondary);
-      margin-bottom: 4px;
-      min-height: 2px;
-      line-height: 2px;
+      min-height: 14px;
     }
     .input-group {
       display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .url-group {
+      display: flex;
       gap: 6px;
-      align-items: center;
     }
     input[type="text"] {
       flex: 1;
       background-color: var(--bg-tertiary);
       color: var(--text-primary);
       border: 1px solid var(--border-color);
-      border-radius: 3px;
-      padding: 0 8px;
+      border-radius: 8px;
+      padding: 0 10px;
       font-size: 12px;
       outline: none;
-      height: 30px;
+      height: 32px;
       box-sizing: border-box;
     }
     input[type="text"]:focus {
       border-color: var(--accent-color);
+      box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent-color) 22%, transparent);
     }
     .btn-file {
-      background-color: var(--border-color);
-      color: var(--text-primary);
-      border: none;
-      border-radius: 3px;
+      background-color: var(--background-elevated-2);
+      color: var(--text-secondary);
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
       padding: 0;
       font-size: 12px;
       cursor: pointer;
-      height: 30px;
-      white-space: nowrap;
-      width: 100px;
-      max-width: 100px;
+      height: 32px;
+      width: 32px;
+      flex-shrink: 0;
       align-items: center;
       justify-content: center;
       box-sizing: border-box;
     }
     .btn-file:hover {
-      background-color: var(--border-hover);
+      color: var(--text-primary);
+      border-color: var(--border-hover);
     }
     .btn-delete {
-      background-color: var(--danger-color);
-      color: var(--accent-text-color);
-      border: none;
-      border-radius: 3px;
+      background-color: rgba(10, 11, 14, 0.6);
+      backdrop-filter: blur(6px);
+      color: #fff;
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 50%;
+      opacity: 0;
+      transition: opacity 0.15s ease, background-color 0.15s ease;
       padding: 0;
       font-size: 12px;
       cursor: pointer;
@@ -251,10 +269,49 @@
       justify-content: center;
       flex-shrink: 0;
       box-sizing: border-box;
-      margin-top: auto;
+      position: absolute;
+      top: 14px;
+      right: 14px;
+      z-index: 1;
+    }
+    .cover-item:hover .btn-delete,
+    .btn-delete:focus-visible {
+      opacity: 1;
     }
     .btn-delete:hover {
-      background-color: var(--danger-hover);
+      background-color: var(--danger-color);
+      border-color: var(--danger-color);
+    }
+    /* Номер обложки: первая попадает в файл как основная */
+    .covers-list {
+      counter-reset: cover;
+    }
+    .cover-item {
+      counter-increment: cover;
+    }
+    .cover-item::after {
+      content: counter(cover);
+      position: absolute;
+      top: 14px;
+      left: 14px;
+      min-width: 22px;
+      height: 22px;
+      padding: 0 6px;
+      border-radius: 11px;
+      background: rgba(10, 11, 14, 0.6);
+      backdrop-filter: blur(6px);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      color: #fff;
+      font-size: 11px;
+      font-weight: 600;
+      line-height: 20px;
+      text-align: center;
+      pointer-events: none;
+    }
+    .cover-item:first-child::after {
+      content: 'Основная';
+      background: var(--accent-color);
+      border-color: transparent;
     }
     .btn-group {
       display: flex;

@@ -1,5 +1,22 @@
 /* Общие стили для всех страниц расширения */
 
+/* Inter лежит в расширении: окна не ждут Google Fonts при открытии (вариативный шрифт, веса 100-900) */
+@font-face {
+  font-family: 'Inter';
+  font-weight: 100 900;
+  font-display: swap;
+  src: url('../assets/fonts/ui/Inter-cyrillic.woff2') format('woff2');
+  unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116;
+}
+
+@font-face {
+  font-family: 'Inter';
+  font-weight: 100 900;
+  font-display: swap;
+  src: url('../assets/fonts/ui/Inter-latin.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
 .no-transition,
 .no-transition * {
   transition: none !important;
@@ -7,17 +24,21 @@
 
 :root {
   /* Тёмная тема (по умолчанию) */
-  --bg-primary: #0a0a0a;
-  --bg-secondary: #1c1c1c;
-  --bg-tertiary: #1a1a1a;
-  --background-elevated-2: #252525;
-  --border-color: #414143;
-  --border-base: #414143;
-  --border-hover: #4b4d55;
-  --input-border: #414143;
-  --text-primary: #bfbfbf;
-  --text-secondary: rgba(235, 235, 245, 0.5);
+  color-scheme: dark;
+  /* Уровни идут только вверх: страница → карточка → поля и элементы на карточке → пилюли/наведение */
+  --bg-primary: #18191e;
+  --bg-secondary: #212228;
+  --bg-tertiary: #2a2c33;
+  --background-elevated-2: #33353d;
+  --border-color: #393b45;
+  --border-base: #393b45;
+  --border-hover: #50535f;
+  --input-border: #393b45;
+  --text-primary: #eceef2;
+  --text-secondary: #9da2ae;
   --accent-text-color: #ffffff;
+  --card-shadow: 0 1px 2px rgba(0, 0, 0, 0.25), 0 8px 24px -12px rgba(0, 0, 0, 0.45);
+  --toolbar-bg: var(--bg-primary);
   
   /* Акцентные цвета по сайтам (тёмная тема) */
   --manga-accent: #ef6c00;
@@ -55,17 +76,18 @@
   
   --accent-color: #1565c0;
   --accent-hover: #145cae;
-  --danger-color: #c62828;
-  --danger-hover: #b71c1c;
+  --danger-color: #e5484d;
+  --danger-hover: #d93d42;
   --success-color: #3cce7b;
   --primary: #2196f3;
-  --border-radius: 4px;
+  --border-radius: 8px;
+  --radius-lg: 12px;
   --spacing-xs: 4px;
   --spacing-sm: 8px;
   --spacing-md: 12px;
   --spacing-lg: 16px;
   --spacing-xl: 20px;
-  --font-family: 'Open Sans', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   --font-size-sm: 12px;
   --font-size-md: 13px;
   --font-size-lg: 14px;
@@ -73,19 +95,19 @@
 
 /* Глобальный кастомный скроллбар */
 ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 10px;
+  height: 10px;
 }
 
 ::-webkit-scrollbar-track {
-  background: var(--bg-secondary);
-  border-radius: 3px;
+  background: transparent;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: var(--border-color);
-  border-radius: 3px;
-  border: 1px solid var(--bg-secondary);
+  background: var(--border-hover);
+  background-clip: padding-box;
+  border-radius: 10px;
+  border: 3px solid transparent;
 }
 
 ::-webkit-scrollbar-thumb:hover {
@@ -139,18 +161,21 @@ label.checkbox-group:has(input[type="checkbox"]:disabled) * {
 }
 
 [data-theme="light"] {
+  color-scheme: light;
   /* Светлая тема */
-  --bg-primary: #f2f2f3;
+  --bg-primary: #f3f4f7;
   --bg-secondary: #ffffff;
-  --bg-tertiary: #ffffff;
-  --background-elevated-2: #f5f5f5;
-  --border-color: #e5e5e5;
-  --border-base: #e5e5e5;
-  --border-hover: #d0d0d0;
-  --input-border: #e5e5e5;
-  --text-primary: #212529;
-  --text-secondary: rgba(33, 37, 41, 0.6);
+  --bg-tertiary: #f8f9fb;
+  --background-elevated-2: #eef0f4;
+  --border-color: #e1e4eb;
+  --border-base: #e1e4eb;
+  --border-hover: #c9ced9;
+  --input-border: #e1e4eb;
+  --text-primary: #1b1e25;
+  --text-secondary: #6b7180;
   --accent-text-color: #ffffff;
+  --card-shadow: 0 1px 2px rgba(16, 24, 40, 0.04), 0 8px 24px -14px rgba(16, 24, 40, 0.18);
+  --toolbar-bg: rgba(255, 255, 255, 0.78);
   
   /* Акцентные цвета по сайтам (светлая тема) */
   --manga-accent: #ff9100;
@@ -201,8 +226,8 @@ label.checkbox-group:has(input[type="checkbox"]:disabled) * {
   
   --accent-color: #2196f3;
   --accent-hover: #369ff3;
-  --danger-color: #f44336;
-  --danger-hover: #f45449;
+  --danger-color: #e5484d;
+  --danger-hover: #d93d42;
   --success-color: #4caf50;
 }
 
@@ -210,31 +235,43 @@ label.checkbox-group:has(input[type="checkbox"]:disabled) * {
   box-sizing: border-box;
 }
 
+/* Кнопки и поля по умолчанию не наследуют шрифт страницы и рисуются системным Arial */
+button,
+input,
+select,
+textarea {
+  font-family: inherit;
+}
+
 body {
-  background-color: var(--bg-primary);
+  background: var(--bg-primary);
   color: var(--text-primary);
   font-family: var(--font-family);
+  -webkit-font-smoothing: antialiased;
   margin: 0;
   padding: 0;
-  letter-spacing: 0.01em;
+  letter-spacing: -0.003em;
   transition: none;
+}
+
+::selection {
+  background: color-mix(in srgb, var(--accent-color) 35%, transparent);
 }
 
 /* Общие стили для toolbar */
 .toolbar {
   position: sticky;
   top: 0;
-  height: 40px;
-  background-color: var(--bg-secondary);
+  height: 52px;
+  background-color: var(--toolbar-bg);
   border-bottom: 1px solid var(--border-color);
-  padding: var(--spacing-sm) var(--spacing-md);
+  padding: var(--spacing-sm) var(--spacing-lg);
   display: flex;
   justify-content: space-between;
   align-items: center;
   gap: var(--spacing-sm);
   z-index: 100;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
-  margin-bottom: var(--spacing-md);
+  margin-bottom: var(--spacing-lg);
   width: 100%;
   box-sizing: border-box;
 }
@@ -252,44 +289,62 @@ body {
 }
 
 .toolbar button {
-  padding: var(--spacing-xs) var(--spacing-md);
+  height: 32px;
+  padding: 0 14px;
   font-size: var(--font-size-sm);
   border-radius: var(--border-radius);
-  border: none;
+  border: 1px solid transparent;
   cursor: pointer;
   display: flex;
   align-items: center;
-  gap: var(--spacing-xs);
+  gap: 7px;
   font-weight: 600;
   flex: none;
   white-space: nowrap;
+  transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
+}
+
+.toolbar button:active {
+  transform: translateY(1px);
+}
+
+.toolbar button i {
+  font-size: 12px;
+  opacity: 0.9;
 }
 
 .toolbar .btn-save {
-  background-color: var(--accent-color);
+  background: var(--accent-color);
+  border-color: transparent;
   color: var(--accent-text-color);
 }
 
 .toolbar .btn-save:hover {
-  background-color: var(--accent-hover);
+  background: var(--accent-hover);
 }
 
 .toolbar .btn-secondary {
-  background-color: var(--border-color);
+  background-color: var(--background-elevated-2);
+  border-color: var(--border-color);
   color: var(--text-primary);
 }
 
 .toolbar .btn-secondary:hover {
-  background-color: var(--border-hover);
+  background-color: var(--background-elevated-2);
+  border-color: var(--border-hover);
 }
 
+/* Опасные действия не кричат красным постоянно: тонированная кнопка, заливка только при наведении */
 .toolbar .btn-danger {
-  background-color: var(--danger-color);
-  color: var(--accent-text-color);
+  background-color: color-mix(in srgb, var(--danger-color) 12%, transparent);
+  border-color: color-mix(in srgb, var(--danger-color) 35%, transparent);
+  color: color-mix(in srgb, var(--danger-color) 75%, var(--text-primary));
 }
 
 .toolbar .btn-danger:hover {
-  background-color: var(--danger-hover);
+  background-color: var(--danger-color);
+  border-color: var(--danger-color);
+  color: var(--accent-text-color);
 }
 
 .container {
@@ -299,9 +354,10 @@ body {
 }
 
 .panel {
-  background-color: var(--bg-secondary);
-  border-radius: var(--border-radius);
-  padding: var(--spacing-md);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  padding: var(--spacing-lg);
   display: flex;
   flex-direction: column;
   gap: var(--spacing-sm);
@@ -314,26 +370,40 @@ body {
 }
 
 label {
-  font-size: 11px;
+  font-size: 10.5px;
+  font-weight: 600;
   color: var(--text-secondary);
   text-transform: uppercase;
-  letter-spacing: 0.5px;
+  letter-spacing: 0.07em;
 }
 
 select {
-  background-color: var(--bg-tertiary);
+  -webkit-appearance: none;
+  appearance: none;
+  background: var(--bg-tertiary) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%238a8f9c' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E") no-repeat right 12px center;
   color: var(--text-primary);
   border: 1px solid var(--border-color);
   border-radius: var(--border-radius);
-  padding: 6px var(--spacing-md);
+  padding: 8px 34px 8px var(--spacing-md);
   font-size: var(--font-size-md);
   outline: none;
   cursor: pointer;
   width: 100%;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+select:hover {
+  border-color: var(--border-hover);
 }
 
 select:focus {
-  border-color: var(--border-hover);
+  border-color: var(--accent-color);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent-color) 22%, transparent);
+}
+
+select option {
+  background-color: var(--bg-secondary);
+  color: var(--text-primary);
 }
 
 /* Единый стиль для всех input и textarea во всём расширении */
@@ -347,13 +417,14 @@ textarea {
   color: var(--text-primary);
   border: 1px solid var(--border-color);
   border-radius: var(--border-radius);
-  padding: 6px var(--spacing-md);
+  padding: 8px var(--spacing-md);
   font-family: var(--font-family);
   font-size: var(--font-size-md);
   line-height: 1.4;
   outline: none;
   width: 100%;
   box-sizing: border-box;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, background-color 0.15s ease;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
@@ -366,6 +437,16 @@ input[type="url"]:focus,
 input[type="search"]:focus,
 textarea:focus {
   border-color: var(--accent-color);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent-color) 22%, transparent);
+}
+
+input[type="text"]:hover:not(:focus),
+input[type="number"]:hover:not(:focus),
+input[type="email"]:hover:not(:focus),
+input[type="url"]:hover:not(:focus),
+input[type="search"]:hover:not(:focus),
+textarea:hover:not(:focus) {
+  border-color: var(--border-hover);
 }
 
 /* Placeholder стили */
@@ -392,10 +473,11 @@ button {
   border-radius: var(--border-radius);
   padding: var(--spacing-sm) var(--spacing-lg);
   font-size: var(--font-size-md);
-  font-weight: bold;
+  font-weight: 600;
   cursor: pointer;
   -webkit-user-select: none;
   user-select: none;
+  transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease, opacity 0.15s ease;
 }
 
 button:hover {
@@ -470,7 +552,7 @@ button:disabled {
   justify-content: center;
   width: 18px;
   height: 18px;
-  color: var(--border-color);
+  color: var(--border-hover);
   transition: color 0.15s ease-in-out;
 }
 
@@ -498,7 +580,7 @@ button:disabled {
 }
 
 .checkbox-group:hover .control__indicator {
-  color: var(--border-color);
+  color: var(--text-secondary);
 }
 
 .checkbox-group span:not(.control__indicator) {
@@ -506,13 +588,20 @@ button:disabled {
   color: var(--text-primary);
 }
 
+/* Подписи чекбоксов обычным регистром, а не капсом как у подписей полей */
+label.checkbox-group {
+  text-transform: none;
+  letter-spacing: normal;
+  font-weight: 500;
+}
+
 /* Светлая тема для чекбоксов */
 [data-theme="light"] .checkbox-group .control__indicator {
-  color: var(--border-color);
+  color: var(--border-hover);
 }
 
 [data-theme="light"] .checkbox-group:hover .control__indicator {
-  color: var(--border-color);
+  color: var(--text-secondary);
 }
 
 /* Стили кнопок прокрутки */
@@ -528,9 +617,10 @@ button:disabled {
 .scroll-btn {
   width: 40px;
   height: 40px;
-  background-color: var(--bg-tertiary);
+  background-color: var(--toolbar-bg);
+  backdrop-filter: blur(10px);
   border: 1px solid var(--border-color);
-  border-radius: var(--border-radius);
+  border-radius: 50%;
   color: var(--text-primary);
   cursor: pointer;
   position: absolute;
@@ -551,4 +641,84 @@ button:disabled {
 .scroll-btn i {
   font-size: 16px;
   transition: transform 0.15s ease-in-out;
+}
+
+/* Toast (общие для popup и окна с вкладками) */
+#toast-container {
+  position: fixed;
+  top: 10px;
+  right: 10px;
+  z-index: 9999;
+  pointer-events: none;
+}
+
+.toast {
+  background-color: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--border-radius);
+  padding: var(--spacing-xs) var(--spacing-md);
+  font-size: var(--font-size-md);
+  color: var(--text-primary);
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  box-shadow: var(--card-shadow);
+  pointer-events: auto;
+  position: absolute;
+  right: 0;
+  transform: translateX(100%);
+  opacity: 0;
+  transition: transform 0.2s ease-out, opacity 0.2s ease-out;
+  white-space: nowrap;
+}
+
+.toast.show {
+  transform: translateX(0);
+  opacity: 1;
+}
+
+.toast.hide {
+  transform: translateX(100%);
+  opacity: 0;
+  transition: transform 0.2s ease-in, opacity 0.2s ease-in;
+}
+
+.toast.success {
+  border-color: var(--success-color);
+}
+
+.toast.success i {
+  color: var(--success-color);
+}
+
+.toast.error {
+  border-color: var(--danger-color);
+}
+
+.toast.error i {
+  color: var(--danger-color);
+}
+
+.toast.cancel {
+  border-color: #f5a524;
+}
+
+.toast.cancel i {
+  color: #f5a524;
+}
+
+.toast.update {
+  border-color: var(--success-color);
+}
+
+.toast.update i {
+  color: var(--success-color);
+}
+
+.toast.update:hover {
+  opacity: 0.8;
+}
+
+.toast i {
+  font-size: 14px;
 }

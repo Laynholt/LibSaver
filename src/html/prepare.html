@@ -2,6 +2,7 @@
 <html lang="ru">
 <head>
   <meta charset="UTF-8">
+  <link rel="icon" href="../assets/icons/icon32.png">
   <title>LibSaver - Подготовка</title>
   <style>body { opacity: 0; }</style>
   <script src="../core/theme-init.js"></script>
@@ -10,18 +11,13 @@
   <link rel="stylesheet" href="../css/loading.css">
   <script src="../utils/window-loader.js"></script>
   <script src="../core/theme.js"></script>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@400;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <link rel="stylesheet" href="../libs/fontawesome/css/all.min.css">
   <link rel="stylesheet" href="../css/prepare.css">
   <link rel="stylesheet" href="../css/scale-subtle.css">
   <script src="../libs/popper.min.js"></script>
   <script src="../libs/tippy-bundle.umd.min.js"></script>
   <script src="../libs/jszip.min.js"></script>
   <script src="../libs/pica.min.js"></script>
-  <script src="../libs/pdf-lib.min.js"></script>
-  <script src="../libs/fontkit.umd.min.js"></script>
   <script src="../libs/FileSaver.min.js"></script>
   <script src="../core/api.js"></script>
   <script src="../utils/protection.js"></script>
@@ -65,15 +61,18 @@
         <button class="btn-control btn-success" id="btn-download-file" style="display: none;" title="Скачать файл">
           <i class="fa-solid fa-download"></i>
         </button>
+        <button class="btn-control" id="btn-new-download" style="display: none;" title="Скачать ещё раз: в другом формате или с другими настройками">
+          <i class="fa-solid fa-rotate-left"></i>
+        </button>
       </div>
       
       <div class="format-selector">
-        <select class="format-select" id="format-select" aria-label="Формат файла"></select>
+        <select class="format-select" id="format-select" aria-label="Формат файла" title="Формат файла"></select>
       </div>
       <div class="image-server-selector" id="image-server-selector" style="display: none;">
-        <select class="server-select" id="server-select" aria-label="Сервер изображений">
-          <option value="normal">Оригинальный</option>
-          <option value="compressed" selected>Сжатия</option>
+        <select class="server-select" id="server-select" aria-label="Сервер изображений" title="Картинки манги: оригиналы (часто PNG) или JPEG того же размера — файл легче, сервер надёжнее">
+          <option value="normal">Оригиналы</option>
+          <option value="compressed" selected>JPEG</option>
         </select>
       </div>
       <div class="text-only-toggle" id="text-only-toggle" style="display: none;">

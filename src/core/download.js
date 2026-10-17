@@ -543,7 +543,7 @@ function resetDownloadState() {
 async function startDownload() {
     try {
         resetDownloadState();
-        const result = await chrome.storage.local.get(['downloadData', 'rateLimit', 'metadataFieldOrder', 'fieldLabels', 'debugLogging', 'disableToc', 'currentSlug', 'speedMode', 'txtImageMarker', 'pdfFont', 'pdfFontSize', 'pdfPageSize', 'pdfLineSpacing', 'pdfParagraphSpacing', 'tocFormat', 'customTocFormat', 'hideChapterName', 'hideVolumeNumber', 'generateComicInfo']);
+        const result = await chrome.storage.local.get(['downloadData', 'rateLimit', 'metadataFieldOrder', 'fieldLabels', 'debugLogging', 'disableToc', 'currentSlug', 'speedMode', 'txtImageMarker', 'pdfFont', 'pdfFontSize', 'pdfPageSize', 'pdfLineSpacing', 'pdfParagraphSpacing', 'tocFormat', 'customTocFormat', 'hideChapterName', 'hideVolumeNumber', 'generateComicInfo', 'sameWidth']);
         // Устанавливаем режим детального логирования из настроек
         debugMode = result.debugLogging || false;
 
@@ -688,6 +688,7 @@ async function startDownload() {
             hideVolumeNumber: options.settings.hideVolumeNumber || false,
             // Передаем настройку генерации ComicInfo.xml
             generateComicInfo: result.generateComicInfo !== false,
+            sameWidth: result.sameWidth === true,
             // Передаем siteType для определения типа контента
             siteType: options.siteType,
             // Передаем параметры для manga
@@ -761,6 +762,7 @@ async function startDownload() {
         if (btnDownloadFile) {
           btnDownloadFile.style.display = 'flex';
         }
+        if (btnNewDownload) btnNewDownload.style.display = 'flex';
 
     } catch (err) {
         addLog(`Критическая ошибка: ${err.message}`, true);
@@ -846,6 +848,16 @@ if (btnDownloadFile) {
         if (savedBlob) {
             saveAs(savedBlob.content, savedBlob.fileName);
         }
+    });
+}
+
+// Новая загрузка в том же окне: возвращаем выбор формата и глав, состояние сбросит startDownload
+const btnNewDownload = document.getElementById('btn-new-download');
+if (btnNewDownload) {
+    btnNewDownload.addEventListener('click', () => {
+        btnNewDownload.style.display = 'none';
+        document.getElementById('download-toolbar').style.display = 'none';
+        window.restoreDownloadControls?.();
     });
 }
 

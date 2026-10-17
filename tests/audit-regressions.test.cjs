@@ -106,7 +106,7 @@ test('switching titles preserves the previous title edits', async () => {
   const before = structuredClone(data['titleData:old']);
   const context = vm.createContext({ chaptersResult: { slug: 'new' }, currentSlug: 'old', chrome: { storage: { local: storageApi(data) } } });
   vm.runInContext(titleStore, context);
-  await vm.runInContext('(async () => {' + between('src/core/popup.js', '      const newSlug = chaptersResult.slug;', '      // Загружаем приоритет переводчиков') + '})()', context);
+  await vm.runInContext('(async () => {' + between('src/core/popup.js', '    const newSlug = chaptersResult.slug;', '    // Загружаем приоритет переводчиков') + '})()', context);
   assert.deepEqual(data['titleData:old'], before);
   assert.equal(data.currentSlug, 'new');
 });
@@ -211,6 +211,22 @@ test('window detection ignores unrelated websites and recognizes own page', asyn
   assert.equal(data.currentOpenWindow, 'settings');
 });
 
+test('tabbed editor window is detected and embedded editors leave registration and closing to it', async () => {
+  const data = {};
+  const context = vm.createContext({ chrome: {
+    windows: { getAll: async () => [{ tabs: [{ url: 'chrome-extension://self/html/workspace.html?title=0#settings' }] }] },
+    runtime: { getURL: file => 'chrome-extension://self/' + file },
+    storage: { local: storageApi(data) }
+  } });
+  vm.runInContext(functionSource('src/core/popup.js', 'syncOpenWindows'), context);
+  await context.syncOpenWindows();
+  assert.equal(data.currentOpenWindow, 'workspace');
+  for (const file of ['src/editors/chapters.js', 'src/editors/covers.js', 'src/editors/metadata.js', 'src/core/settings.js']) {
+    assert.match(source(file), /if \(window === window\.top\) await chrome\.storage\.local\.set\(\{ currentOpenWindow:/, file);
+    assert.doesNotMatch(source(file), /chrome\.windows\.remove/, file);
+  }
+});
+
 function errorHandlers() {
   const buttons = {};
   const context = vm.createContext({
@@ -252,7 +268,7 @@ function downloadHarness({ fail = false, partial = false, storageFailure = false
   const data = { downloadData: { slug: 'test', chapters: [{ id: 1 }, { id: 2 }], metadata: {}, selectedFormat: 'epub' } };
   const context = vm.createContext({
     console: { error: noop }, progressText: element('progress-text'), progressBar: element('progress-bar'),
-    btnDownloadFile: element('btn-download-file'), btnPauseElement: element('btn-pause'), btnRetryElement: element('btn-retry'), btnSkipElement: element('btn-skip'),
+    btnDownloadFile: element('btn-download-file'), btnNewDownload: element('btn-new-download'), btnPauseElement: element('btn-pause'), btnRetryElement: element('btn-retry'), btnSkipElement: element('btn-skip'),
     statsUpdateInterval: null, skippedChapters: [],
     document: { getElementById: element, querySelectorAll: () => checkboxes },
     resetDownloadState: noop, calculateInitialSpeed: () => 60, updateStatisticsDisplay: noop,
@@ -302,6 +318,15 @@ test('partial completion reports skipped content instead of unconditional succes
   assert.equal(harness.timers.size, 0);
   assert.match(harness.elements['progress-text'].textContent, /пропуск/i);
   assert.match(harness.elements['progress-text'].textContent, /1.*2/);
+  // После загрузки можно скачать ещё раз в другом формате, не закрывая окно
+  assert.equal(harness.elements['btn-new-download'].style.display, 'flex');
+});
+
+test('new download button returns the format and chapter choice in the same window', () => {
+  const handler = between('src/core/download.js', "btnNewDownload.addEventListener('click'", '});');
+  assert.match(handler, /download-toolbar'\)\.style\.display = 'none'/);
+  assert.match(handler, /restoreDownloadControls/);
+  assert.match(source('src/html/prepare.html'), /id="btn-new-download"/);
 });
 
 test('recovery restores chapter selection and the download button', () => {
@@ -438,6 +463,21 @@ test('FB2 without images converts chapter markup instead of escaping tags', asyn
   assert.equal(await formatter.convertJsonToFb2Xml('<p>a</p>'), '<p>a</p>');
 });
 
+test('FB2 unwraps a chapter wrapper instead of nesting paragraphs', () => {
+  const formatter = formatterWithDom('src/formatters/fb2.js', 'Fb2Formatter', fakeChapterDom());
+  const text = textContent => ({ nodeType: 3, textContent });
+  const el = (tagName, ...childNodes) => ({ nodeType: 1, tagName, childNodes, children: childNodes.filter(node => node.nodeType === 1), getAttribute: () => null, style: {} });
+  // Глава старого формата приходит как <div><p>…</p>…</div>: раньше это давало <p><p>…</p></p>, и читалки не открывали книгу
+  assert.equal(formatter.htmlToFb2(el('DIV', el('P', text('a')), text('loose'), el('P', text('b')))), '<p>a</p><p>loose</p><p>b</p>');
+  assert.equal(formatter.htmlToFb2(el('P', text('x'))), '<p>x</p>');
+});
+
+test('TXT keeps paragraphs of HTML chapters apart', () => {
+  const htmlToText = between('src/formatters/txt.js', '  async htmlToText(html, context = {}) {', '  generateInfoPage(metadata) {');
+  assert.match(htmlToText, /querySelectorAll\('p, div[^']*'\)\.forEach\(block => block\.append\('\\n\\n'\)\)/);
+  assert.match(source('src/formatters/txt.js'), /text \+= await this\.htmlToText\(chapterContent\.content, context\)/);
+});
+
 test('HTML export escapes titles, author, metadata and captions', async () => {
   const formatter = formatterWithDom('src/formatters/html.js', 'HtmlFormatter', fakeChapterDom());
   const evil = '<img src=x onerror=alert(1)> & co';
@@ -518,3 +558,92 @@ for (const [file, className] of [['src/formatters/epub.js', 'EpubFormatter'], ['
     assert.equal(img.attrs.src, 'data:IMAGE');
   });
 }
+
+test('archives deflate text but keep mimetype first and images stored', async () => {
+  const JSZip = require(path.join(root, 'src/libs/jszip.min.js'));
+  const context = vm.createContext({});
+  vm.runInContext(source('src/formatters/base.js') + '\nthis.Formatter = BaseFormatter;', context);
+  const zip = new JSZip();
+  zip.file('mimetype', 'application/epub+zip');
+  zip.folder('OEBPS').file('ch1.xhtml', '<p>Текст главы</p>'.repeat(500));
+  zip.folder('OEBPS').folder('images').file('1.jpg', crypto.randomBytes(1000));
+  const bytes = Buffer.from(await (await new context.Formatter({}).generateZip(zip)).arrayBuffer());
+  const methods = {};
+  for (let at = 0; bytes.readUInt32LE(at) === 0x04034b50; ) {
+    const nameLength = bytes.readUInt16LE(at + 26);
+    const name = bytes.toString('utf8', at + 30, at + 30 + nameLength);
+    methods[name] = bytes.readUInt16LE(at + 8);
+    at += 30 + nameLength + bytes.readUInt16LE(at + 28) + bytes.readUInt32LE(at + 18);
+  }
+  assert.equal(Object.keys(methods)[0], 'mimetype');
+  assert.equal(methods.mimetype, 0);
+  assert.equal(methods['OEBPS/ch1.xhtml'], 8);
+  assert.equal(methods['OEBPS/images/1.jpg'], 0);
+});
+
+test('image unavailable on the original server is fetched from the compressed server', async () => {
+  const requested = [];
+  const logs = [];
+  const context = vm.createContext({ URL, chrome: { runtime: { sendMessage: (message, reply) => {
+    requested.push(message.url);
+    reply({ success: false, error: message.url.includes('img2.') ? 'HTTP 403: ' : 'HTTP 404: ' });
+  } } } });
+  vm.runInContext(source('src/formatters/base.js') + '\nthis.Formatter = BaseFormatter;', context);
+  const formatter = new context.Formatter({ addLog: message => logs.push(message) });
+  const url = 'https://img2.imglib.info//manga/slug/chapters/1/page.png';
+  await assert.rejects(formatter.downloadAndResizeImage(url, 'ORIGINAL'));
+  assert.deepEqual(requested, [url, 'https://img3.cdnlibs.org//manga/slug/chapters/1/page.png']);
+  assert.equal(logs.filter(message => message.includes('403')).length, 1);
+  assert.equal(formatter.compressedImageUrl('https://img3.cdnlibs.org/x.png'), null);
+});
+
+test('same-width option scales manga pages to the most common width of the first chapter', async () => {
+  const canvases = [];
+  let pageWidths = [800, 1000, 800, 640];
+  const context = vm.createContext({
+    URL,
+    chrome: {
+      runtime: { sendMessage: (message, reply) => reply({ success: true, data: 'data:image/png;base64,' }) },
+      scripting: { executeScript: async () => [{ result: { success: true, pages: pageWidths.map(width => ({ width })) } }] }
+    },
+    Image: class { set src(value) { this.width = 1000; this.height = 1500; this.onload(); } },
+    fetch: async () => ({ blob: async () => ({ size: 1000, type: 'image/png' }) }),
+    document: { createElement: () => {
+      const canvas = { getContext: () => ({ drawImage() {} }), toBlob: done => done({ size: 500 }) };
+      canvases.push(canvas);
+      return canvas;
+    } }
+  });
+  vm.runInContext(source('src/formatters/base.js') + '\nthis.Formatter = BaseFormatter;', context);
+
+  const formatter = new context.Formatter({ sameWidth: true });
+  await formatter.loadMangaChapterPages(1, 1, 1, 1, 'slug');
+  pageWidths = [1000, 1000];
+  await formatter.loadMangaChapterPages(1, 2, 1, 2, 'slug');
+  assert.equal(formatter.commonPageWidth, 800);
+
+  await formatter.downloadAndResizeImage('https://img3.cdnlibs.org/p.png', 'ORIGINAL').catch(() => {});
+  await formatter.downloadAndResizeImage('https://img3.cdnlibs.org/p.png', 'HD').catch(() => {});
+  await formatter.downloadAndResizeImage('https://img3.cdnlibs.org/c.png', 'ORIGINAL', null, 'обложка').catch(() => {});
+  assert.deepEqual(canvases.map(({ width, height }) => [width, height]), [[800, 1200], [720, 1080]]);
+
+  const off = new context.Formatter({});
+  await off.loadMangaChapterPages(1, 1, 1, 1, 'slug');
+  assert.equal(off.commonPageWidth, undefined);
+});
+
+test('PDF libraries load lazily and fonts are embedded whole', () => {
+  assert.doesNotMatch(source('src/html/prepare.html'), /pdf-lib|fontkit/);
+  const pdf = source('src/formatters/pdf.js');
+  assert.match(between('src/formatters/pdf.js', '  async format(chapters, metadata) {', 'const { PDFDocument'), /await loadPdfLibs\(\);/);
+  // subset в pdf-lib/fontkit рисует кириллицу Merriweather, Inter и Crimson Text пустыми местами
+  const embeds = pdf.match(/embedFont\([^)]*\)/g);
+  assert.ok(embeds.length > 0 && embeds.every(call => !call.includes('subset')), embeds.join('\n'));
+});
+
+test('reload-page button waits for the tab to finish loading and reruns the title load', () => {
+  const handler = between('src/core/popup.js', "document.getElementById('btn-reload-page').addEventListener", '// Кнопки открытия LIB сайтов');
+  assert.match(handler, /info\.status === 'complete'/);
+  assert.match(handler, /await loadTitle\(\);/);
+  assert.doesNotMatch(handler, /setTimeout|loadCovers\(/);
+});

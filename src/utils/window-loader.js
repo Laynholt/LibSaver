@@ -18,9 +18,9 @@
     loader.innerHTML = '<div class="skeleton-toolbar"></div>';
     document.documentElement.appendChild(loader);
 
-    const MIN_DELAY = 120;
-    const MAX_DELAY = 1200;
-    const STABILITY_TIME = 120;
+    const MIN_DELAY = 50;
+    const MAX_DELAY = 500;
+    const STABILITY_TIME = 60;
 
     let startTime = Date.now();
     let lastMutationTime = Date.now();

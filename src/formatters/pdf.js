@@ -1,3 +1,15 @@
+// pdf-lib и fontkit весят ~1,3 МБ, поэтому подключаем их только при сборке PDF, а не при каждом открытии окна
+function loadPdfLibs() {
+  loadPdfLibs.promise ??= Promise.all(['../libs/pdf-lib.min.js', '../libs/fontkit.umd.min.js'].map(src => new Promise((resolve, reject) => {
+    const script = document.createElement('script');
+    script.src = src;
+    script.onload = resolve;
+    script.onerror = () => reject(new Error(`Не удалось загрузить ${src}`));
+    document.head.appendChild(script);
+  })));
+  return loadPdfLibs.promise;
+}
+
 class PdfFormatter extends BaseFormatter {
   constructor(options) {
     super(options);
@@ -12,6 +24,7 @@ class PdfFormatter extends BaseFormatter {
   }
 
   async format(chapters, metadata) {
+    await loadPdfLibs();
     const { PDFDocument, rgb } = PDFLib;
     const addLog = this.options.addLog || (() => {});
 
@@ -124,6 +137,7 @@ class PdfFormatter extends BaseFormatter {
         throw new Error(`Неизвестный шрифт: ${fontName}`);
       }
 
+      // Шрифт встраивается целиком: subset в pdf-lib/fontkit теряет глифы у Merriweather, Inter и Crimson Text
       const fontUrl = chrome.runtime.getURL(fontPath.regular);
       const fontResponse = await fetch(fontUrl);
       const fontBytes = await fontResponse.arrayBuffer();

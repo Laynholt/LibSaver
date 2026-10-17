@@ -2,6 +2,7 @@
 <html lang="ru">
 <head>
   <meta charset="UTF-8">
+  <link rel="icon" href="../assets/icons/icon32.png">
   <title>LibSaver - Настройки</title>
   <style>body { opacity: 0; }</style>
   <script src="../core/theme-init.js"></script>
@@ -11,7 +12,7 @@
   <link rel="stylesheet" href="../css/loading.css">
   <script src="../utils/window-loader.js"></script>
   <script src="../utils/header.js"></script>
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <link rel="stylesheet" href="../libs/fontawesome/css/all.min.css">
   <link rel="stylesheet" href="../css/settings.css">
 </head>
 <body>
@@ -56,7 +57,7 @@
         <i class="fa-solid fa-triangle-exclamation"></i>
         Может потребоваться перезагрузка страницы
       </span>
-      <button class="btn-help-toolbar" data-tooltip="Подробнее о настройках — на GitHub.<br>Нашли ошибку? Есть идеи? Сообщите!<br>Буду рад любым замечаниям! <3<div class='github-buttons'><a href='https://github.com/dfy-dpg/LibSaver' target='_blank' class='github-btn'><i class='fa-brands fa-github'></i></a><a href='https://github.com/dfy-dpg/LibSaver/blob/main/SETTINGS.md' target='_blank' class='github-btn'><i class='fa-solid fa-book'></i></a><a href='mailto:dpg.vault@gmail.com' target='_blank' class='github-btn email-btn'><i class='fa-regular fa-at'></i></a></div>">
+      <button class="btn-help-toolbar" data-tooltip="Подробнее о настройках — на GitHub.<br>Нашли ошибку? Есть идеи? Сообщите!<br>Буду рад любым замечаниям! <3<div class='github-buttons'><a href='https://github.com/dfy-dpg/LibSaver' target='_blank' class='github-btn' title='Репозиторий'><i class='fa-brands fa-github'></i></a><a href='https://github.com/dfy-dpg/LibSaver/blob/main/SETTINGS.md' target='_blank' class='github-btn' title='Описание настроек'><i class='fa-solid fa-book'></i></a><a href='#' class='github-btn issue-btn' title='Сообщить о проблеме'><i class='fa-solid fa-bug'></i></a><a href='mailto:dpg.vault@gmail.com' target='_blank' class='github-btn email-btn' title='Написать автору'><i class='fa-regular fa-at'></i></a></div>">
         <i class="fa-solid fa-question"></i>
       </button>
     </div>
@@ -245,6 +246,17 @@
           <input type="range" id="jpeg-quality" min="0.1" max="1.0" step="0.1" value="1.0">
           <div class="range-value" id="jpeg-quality-value">1.0</div>
         </div>
+      </div>
+
+      <div class="field">
+        <label class="checkbox-group" title="Манга: все страницы приводятся к самой частой ширине — широкие ужимаются, узкие растягиваются">
+          <input type="checkbox" id="same-width">
+          <span class="control__indicator" data-type="checkbox">
+            <svg class="svg-inline--fa fa-square-check fa-fw" aria-hidden="true" focusable="false" data-prefix="fas" data-icon="square-check" role="img" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512" data-state="checked"><path fill="currentColor" d="M64 32C28.7 32 0 60.7 0 96L0 416c0 35.3 28.7 64 64 64l320 0c35.3 0 64-28.7 64-64l0-320c0-35.3-28.7-64-64-64L64 32zM337 209L209 337c-9.4 9.4-24.6 9.4-33.9 0l-64-64c-9.4-9.4-9.4-24.6 0-33.9s24.6-9.4 33.9 0l47 47L303 175c9.4-9.4 24.6-9.4 33.9 0s9.4 24.6 0 33.9z"></path></svg>
+            <svg class="svg-inline--fa fa-square fa-fw" aria-hidden="true" focusable="false" data-prefix="far" data-icon="square" role="img" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512" data-state="default"><path fill="currentColor" d="M384 80c8.8 0 16 7.2 16 16l0 320c0 8.8-7.2 16-16 16L64 432c-8.8 0-16-7.2-16-16L48 96c0-8.8 7.2-16 16-16l320 0zM64 32C28.7 32 0 60.7 0 96L0 416c0 35.3 28.7 64 64 64l320 0c35.3 0 64-28.7 64-64l0-320c0-35.3-28.7-64-64-64L64 32z"></path></svg>
+          </span>
+          <span>Одинаковая ширина страниц</span>
+        </label>
       </div>
     </div>
 
