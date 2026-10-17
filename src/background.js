@@ -311,6 +311,11 @@ function handleEngineMessage(request, sender, sendResponse) {
     ensureEngine().then(sendResponse, error => { console.error('[LibSaver] ensureEngine', error); sendResponse(false); });
     return true;
   }
+  if (request.action === 'whoami') {
+    // Скрипту на странице сайта: в какой он вкладке (нужно окну расширения поверх сайта)
+    sendResponse({ tabId: sender.tab?.id, url: sender.tab?.url });
+    return;
+  }
   if (request.action === 'saveFile') {
     // Движок живёт в offscreen без вкладки; скрипт страницы сайта не должен тихо качать произвольный URL
     if (sender.tab) {

@@ -37,6 +37,11 @@
       "matches": ["https://ranobelib.me/*", "https://*.ranobelib.me/*", "https://novelslib.me/*", "https://*.novelslib.me/*", "https://mangalib.me/*", "https://*.mangalib.me/*", "https://mangalib.org/*", "https://*.mangalib.org/*", "https://hentailib.me/*", "https://*.hentailib.me/*", "https://hentailib.org/*", "https://*.hentailib.org/*", "https://shlib.life/*", "https://*.shlib.life/*", "https://animelib.org/*", "https://*.animelib.org/*", "https://anilib.me/*", "https://*.anilib.me/*"],
       "js": ["content/SiteMenuRestorer.js"],
       "run_at": "document_idle"
+    },
+    {
+      "matches": ["https://ranobelib.me/*", "https://*.ranobelib.me/*", "https://novelslib.me/*", "https://*.novelslib.me/*", "https://mangalib.me/*", "https://*.mangalib.me/*", "https://mangalib.org/*", "https://*.mangalib.org/*", "https://hentailib.me/*", "https://*.hentailib.me/*", "https://hentailib.org/*", "https://*.hentailib.org/*", "https://shlib.life/*", "https://*.shlib.life/*"],
+      "js": ["core/theme.js", "utils/page-call.js", "content/site-ui.js"],
+      "run_at": "document_idle"
     }
   ],
   "icons": {
@@ -55,7 +60,7 @@
   },
   "web_accessible_resources": [
     {
-      "resources": ["html/popup.html", "html/settings.html", "html/metadata.html", "html/chapters.html", "html/covers.html", "html/prepare.html", "html/downloads.html", "assets/local_data", "assets/svg/*.svg", "assets/fonts/*", "assets/gif/*"],
+      "resources": ["html/popup.html", "html/settings.html", "html/metadata.html", "html/chapters.html", "html/covers.html", "html/prepare.html", "html/downloads.html", "assets/local_data", "assets/svg/*.svg", "assets/fonts/*", "assets/gif/*", "css/site-ui.css", "html/workspace.html", "html/panel.html", "html/quick.html", "libs/fontawesome/webfonts/fa-solid-900.woff2"],
       "matches": ["<all_urls>"]
     }
   ]

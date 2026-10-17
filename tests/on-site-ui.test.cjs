@@ -1016,3 +1016,150 @@ test('title loader and chapter helpers do not touch the page DOM', () => {
   assert.doesNotMatch(source('src/core/title-loader.js'), /document\.|window\./);
   assert.doesNotMatch(source('src/core/chapter-range.js'), /document\.|window\./);
 });
+
+// ---- Task 7: content script site-ui.js ----
+
+// Minimal DOM: just what ensureButtons and the buttons host use
+class FakeEl {
+  constructor(tag) {
+    this.tag = tag; this.children = []; this.attrs = {}; this.parentElement = null; this.selectors = []; this.computed = {};
+    this.style = { setProperty: (name, value) => { this.style[name] = value; } };
+  }
+  setAttribute(name, value) { this.attrs[name] = String(value); }
+  append(...nodes) { for (const node of nodes) { node.parentElement = this; this.children.push(node); } }
+  attachShadow() { return new FakeEl('#shadow'); }
+  addEventListener() {}
+  remove() { this.parentElement?.children.splice(this.parentElement.children.indexOf(this), 1); this.parentElement = null; }
+  insertAdjacentElement(where, el) {
+    assert.equal(where, 'afterend');
+    this.parentElement.children.splice(this.parentElement.children.indexOf(this) + 1, 0, el);
+    el.parentElement = this.parentElement;
+    return el;
+  }
+  matches(selector) { return selector === '[data-libsaver-buttons]' ? 'data-libsaver-buttons' in this.attrs : this.selectors.includes(selector); }
+  querySelectorAll(selector) { return this.children.flatMap(child => [...(child.matches(selector) ? [child] : []), ...child.querySelectorAll(selector)]); }
+  querySelector(selector) { return this.querySelectorAll(selector)[0] || null; }
+}
+
+// Title page: root > grid > read button; `columns` is the grid's computed grid-template-columns
+function fakeTitleDoc(siteKey, { columns = '260px' } = {}) {
+  const doc = new FakeEl('#document');
+  const grid = new FakeEl('div');
+  grid.computed = { gridTemplateColumns: columns };
+  const anchor = new FakeEl('a');
+  anchor.selectors = ['a.btn.variant-primary[href*="/read/"]'];
+  anchor.computed = { height: '32px', width: '260px', borderRadius: '6px' };
+  grid.append(anchor);
+  doc.append(grid);
+  Object.assign(doc, {
+    anchor, grid, siteKey,
+    head: new FakeEl('head'),
+    createElement: tag => new FakeEl(tag),
+    createElementNS: (ns, tag) => new FakeEl(tag),
+    defaultView: { getComputedStyle: el => el.computed }
+  });
+  return doc;
+}
+
+function siteUiContext() {
+  const ctx = {
+    console, URL, URLSearchParams,
+    chrome: { runtime: { getURL: file => 'chrome-extension://id/' + file, sendMessage: async () => ({}) }, storage: { local: { get: async () => ({}) } } }
+  };
+  ctx.window = ctx;
+  vm.createContext(ctx);
+  // the content script list from manifest.json: theme.js (ACCENT_COLORS), page-call.js (siteKeyOf), site-ui.js
+  vm.runInContext(['src/core/theme.js', 'src/utils/page-call.js', 'src/content/site-ui.js'].map(source).join('\n'), ctx);
+  return ctx;
+}
+
+test('ensureButtons inserts once and survives repeated SPA updates', () => {
+  const ctx = siteUiContext();
+  const doc = fakeTitleDoc('mangalib');
+  assert.equal(ctx.ensureButtons(doc, 'https://mangalib.me/ru/manga/x'), 'inserted');
+  assert.equal(doc.grid.children[1].attrs['data-libsaver-buttons'], '');
+  assert.equal(ctx.ensureButtons(doc, 'https://mangalib.me/ru/manga/x'), 'present');
+  assert.equal(doc.querySelectorAll('[data-libsaver-buttons]').length, 1);
+  assert.equal(ctx.ensureButtons(doc, 'https://mangalib.me/ru/catalog'), 'not-title');
+  assert.equal(doc.querySelectorAll('[data-libsaver-buttons]').length, 0);
+});
+
+test('ensureButtons reports a missing anchor and an unsupported site without touching the page', () => {
+  const ctx = siteUiContext();
+  const doc = fakeTitleDoc('mangalib');
+  doc.anchor.selectors = [];
+  assert.equal(ctx.ensureButtons(doc, 'https://mangalib.me/ru/manga/x'), 'no-anchor');
+  const other = fakeTitleDoc('x');
+  assert.equal(ctx.ensureButtons(other, 'https://example.com/ru/manga/x'), 'no-anchor');
+  assert.equal(doc.querySelectorAll('[data-libsaver-buttons]').length + other.querySelectorAll('[data-libsaver-buttons]').length, 0);
+});
+
+test('ensureButtons takes a full grid row when the grid has several columns, and sizes itself from the anchor', () => {
+  const ctx = siteUiContext();
+  const narrow = fakeTitleDoc('ranobelib', { columns: '170px 170px' });
+  ctx.ensureButtons(narrow, 'https://ranobelib.me/ru/book/y');
+  assert.equal(narrow.grid.children[1].style.gridColumn, '1 / -1');
+  const wide = fakeTitleDoc('ranobelib');
+  ctx.ensureButtons(wide, 'https://ranobelib.me/ru/book/y');
+  const host = wide.grid.children[1];
+  assert.ok(!host.style.gridColumn);
+  assert.deepEqual([host.style['--ls-height'], host.style['--ls-radius'], host.style['--ls-width']], ['32px', '6px', '260px']);
+});
+
+test('reader pages are not title pages', () => {
+  const ctx = siteUiContext();
+  assert.equal(ctx.isTitlePage('https://mangalib.me/ru/manga/x/read/v1/c1'), false);
+  assert.equal(ctx.isTitlePage('https://ranobelib.me/ru/book/y'), true);
+  assert.equal(ctx.isTitlePage('https://mangalib.me/ru/manga/123--title?section=info#top'), true);
+  assert.equal(ctx.isTitlePage('https://mangalib.me/ru/catalog'), false);
+});
+
+test('title slug is parsed like title-loader does, and the settings URL carries slug, tab, url and parent', () => {
+  const ctx = siteUiContext();
+  assert.equal(ctx.titleSlug('https://mangalib.me/ru/manga/123--title?section=info#top'), '123--title');
+  assert.equal(ctx.titleSlug('https://ranobelib.me/ru/book/7--y'), '7--y');
+  const url = new URL(ctx.buildPanelUrl('https://mangalib.me/ru/manga/123--title', 42, 'https://mangalib.me'));
+  assert.equal(url.href.split('?')[0], 'chrome-extension://id/html/workspace.html');
+  assert.deepEqual(Object.fromEntries(url.searchParams), { slug: '123--title', tab: '42', url: 'https://mangalib.me/ru/manga/123--title', parent: 'https://mangalib.me' });
+});
+
+test('frame messages are trusted only from our iframe and origin', () => {
+  const ctx = siteUiContext();
+  const frame = { contentWindow: {} };
+  assert.equal(ctx.isTrustedFrameMessage({ source: frame.contentWindow, origin: 'chrome-extension://id', data: { libsaver: true } }, frame), true);
+  assert.equal(ctx.isTrustedFrameMessage({ source: {}, origin: 'chrome-extension://id', data: { libsaver: true } }, frame), false);
+  assert.equal(ctx.isTrustedFrameMessage({ source: frame.contentWindow, origin: 'https://mangalib.me', data: { libsaver: true } }, frame), false);
+  assert.equal(ctx.isTrustedFrameMessage({ source: frame.contentWindow, origin: 'chrome-extension://id', data: { libsaver: false } }, frame), false);
+  assert.equal(ctx.isTrustedFrameMessage({ source: frame.contentWindow, origin: 'chrome-extension://id', data: null }, frame), false);
+});
+
+test('accent: the forced one wins, otherwise the site color; the light theme uses the light variant', () => {
+  const ctx = siteUiContext();
+  const accent = (site, forced, dark) => JSON.parse(JSON.stringify(ctx.accentFor(site, forced, dark)));
+  assert.equal(accent('mangalib', 'auto', true).color, '#ef6c00');
+  assert.equal(accent('mangalib', undefined, false).color, '#ff9100');
+  assert.equal(accent('hentailib', 'auto', true).color, '#b71c1c');
+  assert.equal(accent('shlib', 'auto', true).color, '#ad1457');
+  assert.equal(accent('ranobelib', 'auto', true).color, '#1565c0');
+  assert.equal(accent('mangalib', 'green', true).color, '#4caf50');
+  assert.equal(accent('mangalib', 'nonsense', true).color, '#ef6c00');
+});
+
+test('site-ui content script is registered for the four sites, with its stylesheet, font and iframe pages exposed', () => {
+  const manifest = JSON.parse(source('src/manifest.json'));
+  const script = manifest.content_scripts[1];
+  const notAnime = match => !/anilib|animelib/.test(match);
+  assert.deepEqual(script.js, ['core/theme.js', 'utils/page-call.js', 'content/site-ui.js']);
+  assert.deepEqual(script.matches, manifest.content_scripts[0].matches.filter(notAnime));
+  for (const resource of ['css/site-ui.css', 'html/workspace.html', 'html/panel.html', 'html/quick.html', 'libs/fontawesome/webfonts/fa-solid-900.woff2']) {
+    assert.ok(manifest.web_accessible_resources[0].resources.includes(resource), resource);
+  }
+});
+
+test('whoami answers with the sender tab id and url', () => {
+  const ctx = vm.createContext({ chrome: {}, console });
+  vm.runInContext(functionSource('src/background.js', 'handleEngineMessage'), ctx);
+  let answer;
+  ctx.handleEngineMessage({ action: 'whoami' }, { tab: { id: 5, url: 'https://mangalib.me/ru/manga/x' } }, response => { answer = JSON.parse(JSON.stringify(response)); });
+  assert.deepEqual(answer, { tabId: 5, url: 'https://mangalib.me/ru/manga/x' });
+});

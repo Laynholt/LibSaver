@@ -1,0 +1,93 @@
+/* Стили закрытых Shadow DOM из content/site-ui.js: кнопки под «Начать читать» и окно поверх сайта */
+
+/* Кнопки: ширина, высота и радиус приходят от «Начать читать» (--ls-*), цвета - от акцента (--ls-accent*) */
+:host([data-libsaver-buttons]) {
+  display: block;
+  width: var(--ls-width, 100%);
+  max-width: 100%;
+}
+
+.row {
+  display: flex;
+  gap: 6px;
+  height: var(--ls-height, 32px);
+}
+
+button {
+  box-sizing: border-box;
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  height: 100%;
+  margin: 0;
+  padding: 0 12px;
+  border: 0;
+  border-radius: var(--ls-radius, 6px);
+  background: var(--ls-accent, #ef6c00);
+  color: #fff;
+  font: 600 14px/1 Inter, system-ui, sans-serif;
+  cursor: pointer;
+}
+
+button:hover {
+  background: var(--ls-accent-hover, #d86201);
+}
+
+button:focus-visible {
+  outline: 2px solid var(--ls-accent-hover, #d86201);
+  outline-offset: 2px;
+}
+
+.download {
+  flex: 1;
+  min-width: 0;
+}
+
+.settings {
+  flex: none;
+  width: var(--ls-height, 32px);
+  padding: 0;
+}
+
+.icon {
+  font: normal 900 14px/1 'LibSaver FA';
+  -webkit-font-smoothing: antialiased;
+}
+
+.format {
+  position: absolute;
+  right: 10px;
+  font-size: 11px;
+  font-weight: 500;
+  opacity: 0.75;
+}
+
+/* Окно поверх сайта */
+.backdrop {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.6);
+}
+
+.frame {
+  width: min(1100px, 100vw - 48px);
+  height: min(820px, 100vh - 48px);
+  border: 0;
+  border-radius: 12px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+}
+
+/* Телефонный режим: окно на весь экран */
+@media (max-width: 767px) {
+  .frame {
+    width: 100%;
+    height: 100%;
+    border-radius: 0;
+    box-shadow: none;
+  }
+}
