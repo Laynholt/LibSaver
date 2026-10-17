@@ -6,25 +6,6 @@ let coverQuality = 'ORIGINAL';
 let tippyInstances = [];
 let tooltipContents = [];
 
-// Функция получения имени переводчика
-function getTranslatorName(branch) {
-  if (branch.teams && branch.teams[0]) {
-    const teamName = branch.teams[0].name;
-    // Если команда "Неизвестный", но есть пользователь, добавляем никнейм в скобках
-    if (teamName === 'Неизвестный' && branch.user?.username) {
-      return `${teamName} (${branch.user.username})`;
-    }
-    return teamName;
-  } else if (branch.team) {
-    const teamName = branch.team.name;
-    if (teamName === 'Неизвестный' && branch.user?.username) {
-      return `${teamName} (${branch.user.username})`;
-    }
-    return teamName;
-  }
-  return branch.user?.username || 'Основной перевод';
-}
-
 // Функция для обновления темы в tippy
 function updateTippyTheme() {
   const isDark = !document.documentElement.hasAttribute('data-theme');

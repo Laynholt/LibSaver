@@ -26,20 +26,6 @@ let customTocFormat = '';
 let hideChapterName = false;
 let hideVolumeNumber = false;
 
-function getUniqueChapters(chapters) {
-  const uniqueChapterIds = new Set();
-  const uniqueChapters = [];
-  
-  chapters.forEach(ch => {
-    if (!uniqueChapterIds.has(ch.id)) {
-      uniqueChapterIds.add(ch.id);
-      uniqueChapters.push(ch);
-    }
-  });
-  
-  return uniqueChapters;
-}
-
 function extractBranches() {
   branches = {};
   
@@ -70,36 +56,7 @@ function extractBranches() {
   });
 }
 
-function getTranslatorKey(branch) {
-  const branchId = branch.branch_id === null ? 'null' : branch.branch_id;
-  let teamId = 'unknown';
-  if (branch.teams && branch.teams[0]) {
-    teamId = branch.teams[0].id;
-  } else if (branch.team) {
-    teamId = branch.team.id;
-  }
-  return `${branchId}_${teamId}`;
-}
-
-function getTranslatorName(branch) {
-  if (branch.teams && branch.teams[0]) {
-    const teamName = branch.teams[0].name;
-    // Если команда "Неизвестный", но есть пользователь, добавляем никнейм в скобках
-    if (teamName === 'Неизвестный' && branch.user?.username) {
-      return `${teamName} (${branch.user.username})`;
-    }
-    return teamName;
-  } else if (branch.team) {
-    const teamName = branch.team.name;
-    if (teamName === 'Неизвестный' && branch.user?.username) {
-      return `${teamName} (${branch.user.username})`;
-    }
-    return teamName;
-  }
-  return branch.user?.username || 'Основной перевод';
-}
-
-function getChapterVariants(chapterId) {
+function getChapterVariantsById(chapterId) {
   const variants = new Map();
   allChapters.forEach(ch => {
     if (ch.id === chapterId && ch.branches && Array.isArray(ch.branches)) {
@@ -279,7 +236,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // Применяем сохраненные настройки переводчиков к загруженным главам
   if (translatorPriority.length > 0 || Object.keys(chapterBranchOverrides).length > 0) {
-    applyTranslatorPriority(false); // false = не перезаписывать индивидуальные override
+    applyTranslatorPriorityToEditor(false); // false = не перезаписывать индивидуальные override
   }
 
   // totalChapters уже обновлён выше из originalTitleData.metadata.totalChapters
@@ -420,7 +377,7 @@ function renderChaptersList(chapters, originalChapters, startIndex = 0, append =
     
     inputWrapper.appendChild(input);
     
-    const variants = getChapterVariants(ch.id);
+    const variants = getChapterVariantsById(ch.id);
     let currentTranslatorKey = chapterBranchOverrides[ch.id];
     let currentTranslator = '';
     
@@ -768,7 +725,7 @@ document.getElementById('btn-reset').addEventListener('click', () => {
   populateTranslators();
   
   // Применяем приоритет и обновляем DOM без полного рендера (сохраняет пагинацию)
-  applyTranslatorPriority(true, false, true);
+  applyTranslatorPriorityToEditor(true, false, true);
 });
 
 
@@ -789,7 +746,7 @@ function initChapterResetButtons() {
       if (displayChapter) {
         delete chapterBranchOverrides[displayChapter.id];
 
-        const variants = getChapterVariants(displayChapter.id);
+        const variants = getChapterVariantsById(displayChapter.id);
         // Находим соответствующую главу в allChapters по ID
         const allChapter = uniqueAllChapters.find(ch => ch.id === displayChapter.id);
         if (allChapter) {
@@ -1008,7 +965,7 @@ function updatePriorityFromList(listElement) {
   // Обновляем только DOM без полного рендера (сохраняет пагинацию)
   const uniqueDisplayChapters = getUniqueChapters(displayChapters);
   if (uniqueDisplayChapters.length < 800) {
-    applyTranslatorPriority(true, false, true); // updateDomOnly=true
+    applyTranslatorPriorityToEditor(true, false, true); // updateDomOnly=true
   }
   // Если глав много (>800), приоритет не применяется сразу для оптимизации
 }
@@ -1087,7 +1044,7 @@ function initTranslatorPriorityPopup() {
         if (priorityChanged) {
           const uniqueDisplayChapters = getUniqueChapters(displayChapters);
           if (uniqueDisplayChapters.length >= 800) {
-            applyTranslatorPriority(true, false, true); // updateDomOnly=true
+            applyTranslatorPriorityToEditor(true, false, true); // updateDomOnly=true
           }
           priorityChanged = false;
         }
@@ -1121,7 +1078,7 @@ function applyTranslatorPriorityToChapter(chapter, variants, allowOverride = tru
   }
 }
 
-function applyTranslatorPriority(allowOverride = true, forceRenderAll = false, updateDomOnly = false) {
+function applyTranslatorPriorityToEditor(allowOverride = true, forceRenderAll = false, updateDomOnly = false) {
   // Если принудительно requested (сброс) - рендерим даже если приоритет пуст
   if (translatorPriority.length === 0 && !forceRenderAll) return;
 
@@ -1129,7 +1086,7 @@ function applyTranslatorPriority(allowOverride = true, forceRenderAll = false, u
   const uniqueDisplayChapters = getUniqueChapters(displayChapters);
 
   uniqueAllChapters.forEach(ch => {
-    const variants = getChapterVariants(ch.id);
+    const variants = getChapterVariantsById(ch.id);
     applyTranslatorPriorityToChapter(ch, variants, allowOverride);
   });
 
@@ -1167,7 +1124,7 @@ function updateChapterDom(uniqueDisplayChapters) {
     // Обновляем текст переводчика
     const translatorSelect = document.querySelector(`.chapter-translator[data-chapter-id="${displayCh.id}"]`);
     if (translatorSelect) {
-      const variants = getChapterVariants(displayCh.id);
+      const variants = getChapterVariantsById(displayCh.id);
 
       // Вычисляем currentTranslatorKey так же как при рендере
       let currentTranslatorKey = chapterBranchOverrides[displayCh.id];

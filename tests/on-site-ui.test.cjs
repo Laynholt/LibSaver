@@ -884,20 +884,42 @@ test('applyTranslatorPriority picks the preferred translator per chapter and rec
   assert.equal(getUniqueChapters([{ id: 1 }, { id: 1 }, { id: 2 }]).length, 2);
 });
 
-test('getTitleStore takes currentSlug from ?slug= in the page URL, else from storage', async () => {
-  const run = async search => {
+test('getTitleStore takes currentSlug from ?slug= on extension pages only, else from storage', async () => {
+  const run = async (search, protocol = 'chrome-extension:') => {
     const data = { currentSlug: 'stored', 'titleData:abc': { n: 1 }, 'titleData:stored': { n: 2 } };
-    const ctx = vm.createContext({ chrome: { storage: { local: {
+    const ctx = vm.createContext({ URLSearchParams, chrome: { storage: { local: {
       get: async keys => structuredClone(Object.fromEntries([].concat(keys).filter(key => key in data).map(key => [key, data[key]]))),
       set: async values => Object.assign(data, values),
       remove: async keys => { for (const key of [].concat(keys)) delete data[key]; }
-    } } }, location: { search } });
+    } } }, location: { search, protocol } });
     vm.runInContext(source('src/utils/title-store.js'), ctx);
     return structuredClone(await ctx.getTitleStore(['titleData', 'currentSlug']));
   };
-  assert.deepEqual(await run('?slug=abc'), { currentSlug: 'abc', titleData: { abc: { n: 1 } } });
-  assert.deepEqual(await run('?title=0'), { currentSlug: 'stored', titleData: { stored: { n: 2 } } });
-  assert.deepEqual(await run(''), { currentSlug: 'stored', titleData: { stored: { n: 2 } } });
+  const fromUrl = { currentSlug: 'abc', titleData: { abc: { n: 1 } } };
+  const fromStorage = { currentSlug: 'stored', titleData: { stored: { n: 2 } } };
+  assert.deepEqual(await run('?slug=abc'), fromUrl);
+  assert.deepEqual(await run('?slug=abc', 'moz-extension:'), fromUrl);
+  assert.deepEqual(await run('?title=0'), fromStorage);
+  assert.deepEqual(await run(''), fromStorage);
+  // у сайта свой параметр slug: он не подменяет тайтл
+  assert.deepEqual(await run('?slug=abc', 'https:'), fromStorage);
+  // битое процентное кодирование не бросает
+  await assert.doesNotReject(run('?slug=%E0%A4%A'));
+});
+
+test('chapter-range.js, title-loader.js and the pages loading them are not redefined by other scripts on the pages loading them', () => {
+  const names = file => [...source(file).matchAll(/^(?:async\s+)?function\s+(\w+)|^(?:const|let|var)\s+(\w+)/gm)].map(m => m[1] || m[2]);
+  const pages = { 'src/html/popup.html': 'src/core/popup.js', 'src/html/chapters.html': 'src/editors/chapters.js', 'src/html/prepare.html': 'src/core/prepare.js' };
+  for (const [html, script] of Object.entries(pages)) {
+    const scripts = [...source(html).matchAll(/<script src="\.\.\/([^"]+)"/g)].map(m => 'src/' + m[1]);
+    assert.ok(scripts.includes('src/core/chapter-range.js') && scripts.indexOf('src/core/chapter-range.js') < scripts.indexOf(script), html);
+    const shared = scripts.filter(file => file.endsWith('/chapter-range.js') || file.endsWith('/title-loader.js'));
+    const sharedNames = new Set(shared.flatMap(names));
+    for (const file of scripts.filter(file => !shared.includes(file) && !file.includes('/libs/'))) {
+      const clash = names(file).filter(name => sharedNames.has(name));
+      assert.deepEqual(clash, [], `${file} redefines names from chapter-range.js/title-loader.js on ${html}`);
+    }
+  }
 });
 
 // title-loader.js в vm: хранилище на data, загрузчики api.js заменены заглушками
