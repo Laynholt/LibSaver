@@ -240,56 +240,46 @@ test('tabbed editor window is detected and embedded editors leave registration a
   }
 });
 
-function errorHandlers() {
-  const buttons = {};
-  const context = vm.createContext({
-    currentErrorChapter: null, currentError: null, isWaitingForUser: false,
-    shouldRetryChapter: false, isPaused: false, skippedChapters: [], addLog() {}, window: {}, btnDownloadFile: null,
-    document: { getElementById: id => buttons[id] = { style: {}, addEventListener: (_, fn) => buttons[id].click = fn } }
-  });
-  vm.runInContext(between('src/core/download.js', '// Обработчик кнопки Пауза/Возобновить', '// Функции для статистики') + '\n' + source('src/core/download.js').slice(source('src/core/download.js').indexOf('async function handleChapterError')), context);
-  return { context, buttons };
+// download.js целиком: он не трогает DOM, ход загрузки уходит событиями в listener
+function downloadEvents() {
+  const events = [];
+  const context = vm.createContext({ console: { error() {}, log() {} }, window: {} });
+  vm.runInContext(source('src/core/download.js') + '\nthis.downloadControl = downloadControl;', context);
+  context.setDownloadListener(event => events.push(event));
+  return { context, events };
 }
 
 for (const action of ['retry', 'skip']) {
   test(`image ${action} after a chapter error targets the image`, async () => {
-    const { context, buttons } = errorHandlers();
+    const { context } = downloadEvents();
     let decision = context.handleChapterError({ number: 1 }, new Error('chapter'), 0);
-    buttons['btn-retry'].click();
+    context.downloadControl.retry();
     assert.equal((await decision).shouldRetry, true);
     decision = context.handleImageError({ number: 2 }, new Error('image'), 1, 'image');
-    buttons['btn-' + action].click();
+    context.downloadControl[action]();
     assert.equal((await decision).shouldRetry, action === 'retry');
-    assert.equal(context.skippedChapters.length, 0);
+    assert.equal(vm.runInContext('skippedChapters.length', context), 0);
     decision = context.handleChapterError({ number: 3 }, new Error('chapter'), 2);
-    buttons['btn-retry'].click();
+    context.downloadControl.retry();
     assert.equal((await decision).shouldRetry, true);
   });
 }
 
 function downloadHarness({ fail = false, partial = false, noDownloadData = false } = {}) {
   const timers = new Set();
-  const elements = {};
-  const element = id => elements[id] ||= { style: {}, disabled: true, textContent: '', classList: { remove() {} } };
-  const checkboxes = [element('chapter'), element('volume')];
-  checkboxes.forEach(box => box.closest = () => null);
-  let stopped = false;
-  let restored = false;
+  const logs = [];
   let saved = 0;
   const noop = () => {};
-  // Снимок загрузки; без downloadData startDownload обязан упасть, оставив кнопки восстановленными
+  // Снимок загрузки; без downloadData startDownload обязан упасть
   const snapshot = { stored: {}, titleExtras: {} };
   if (!noDownloadData) snapshot.downloadData = { slug: 'test', chapters: [{ id: 1 }, { id: 2 }], metadata: {}, selectedFormat: 'epub' };
   let thrown = null;
   const context = vm.createContext({
-    console: { error: noop }, progressText: element('progress-text'), progressBar: element('progress-bar'),
-    btnDownloadFile: element('btn-download-file'), btnNewDownload: element('btn-new-download'), btnPauseElement: element('btn-pause'), btnRetryElement: element('btn-retry'), btnSkipElement: element('btn-skip'),
-    statsUpdateInterval: null, skippedChapters: [],
-    document: { getElementById: element, querySelectorAll: () => checkboxes },
+    console: { error: noop }, statsUpdateInterval: null, skippedChapters: [],
     resetDownloadState: noop, calculateInitialSpeed: () => 60, updateStatisticsDisplay: noop,
     formatChapterTitle: () => 'Test', trackRequest: noop, updateProgress: noop,
     handleChapterError: noop, handleImageError: noop, onTranslatorSelected: noop,
-    addLog: noop, setExactFileSize: noop, saveAs: () => saved++,
+    addLog: line => logs.push(line), setExactFileSize: noop, saveAs: () => saved++,
     setInterval: () => { const id = timers.size + 1; timers.add(id); return id; }, clearInterval: id => timers.delete(id),
     getFormatter: () => ({ format: async () => {
       if (fail) throw new Error('Synthetic formatter failure');
@@ -298,41 +288,101 @@ function downloadHarness({ fail = false, partial = false, noDownloadData = false
     } }),
     window: {
       setDownloadStartTime: noop,
-      stopStatisticsUpdate: () => stopped = true,
-      restoreDownloadControls: () => { restored = true; },
       getStatisticsValue: name => partial && name === 'skippedImagesCount' ? 1 : 0
     }
   });
-  vm.runInContext(functionSource('src/core/download.js', 'startDownload'), context);
-  return { context, timers, elements, run: async () => { try { await context.startDownload(snapshot); } catch (err) { thrown = err; } }, thrown: () => thrown, status: () => ({ stopped, restored, saved }) };
+  vm.runInContext(functionSource('src/core/download.js', 'completionText') + functionSource('src/core/download.js', 'startDownload'), context);
+  let result;
+  return { timers, logs, run: async () => { try { result = await context.startDownload(snapshot); } catch (err) { thrown = err; } }, result: () => result, thrown: () => thrown, saved: () => saved };
 }
 
 for (const noDownloadData of [false, true]) {
-  test(`failed download cleans up and offers another attempt (${noDownloadData ? 'no snapshot data' : 'formatter'})`, async () => {
+  test(`failed download cleans up and rethrows without saving (${noDownloadData ? 'no snapshot data' : 'formatter'})`, async () => {
     const harness = downloadHarness({ fail: true, noDownloadData });
     await harness.run();
     assert.ok(harness.thrown());
     assert.equal(harness.timers.size, 0);
-    assert.equal(harness.status().stopped, true);
-    assert.equal(harness.status().restored, true);
-    assert.equal(harness.status().saved, 0);
-    assert.match(harness.elements['progress-text'].textContent, /Ошибка/);
+    assert.equal(harness.saved(), 0);
+    assert.ok(harness.logs.some(line => /Критическая ошибка/.test(line)));
   });
 }
 
-test('partial completion reports skipped content instead of unconditional success', async () => {
+test('partial completion reports skipped content and leaves saving to the caller', async () => {
   const harness = downloadHarness({ partial: true });
   await harness.run();
-  assert.equal(harness.status().saved, 1);
+  assert.equal(harness.saved(), 0);
   assert.equal(harness.timers.size, 0);
-  assert.match(harness.elements['progress-text'].textContent, /пропуск/i);
-  assert.match(harness.elements['progress-text'].textContent, /1.*2/);
+  const { downloaded, total, skippedImages, filename } = harness.result();
+  assert.deepEqual([downloaded, total, skippedImages, filename], [1, 2, 1, 'test.epub']);
+  assert.ok(harness.logs.includes('Готово с пропусками: 1 / 2 глав; пропущено картинок: 1'));
+});
+
+// Окно «Подготовка»: функции prepare.js над фальшивым DOM, startDownload подменён
+function windowHarness({ start }) {
+  const elements = {};
+  const element = id => elements[id] ||= { style: {}, textContent: '', innerHTML: '', title: '' };
+  const counts = { saved: 0, restored: 0, toasts: 0 };
+  const logged = [];
+  const context = vm.createContext({
+    document: { getElementById: element },
+    setDownloadListener() {}, startDownload: start,
+    saveAs: () => counts.saved++, restoreDownloadControls: () => counts.restored++, showToast: () => counts.toasts++,
+    addLogToContainer: (...args) => logged.push(args)
+  });
+  vm.runInContext(functionSource('src/core/download.js', 'completionText'), context);
+  for (const name of ['renderStats', 'handleDownloadEvent', 'resetDownloadUi', 'runDownload']) {
+    vm.runInContext(functionSource('src/core/prepare.js', name), context);
+  }
+  vm.runInContext('let downloadPaused = false, downloadResult = null;', context);
+  return { context, element, counts, logged };
+}
+
+test('failed download shows exactly one error and restores controls once', async () => {
+  const { context, element, counts } = windowHarness({ start: async () => { throw new Error('boom'); } });
+  await context.runDownload({});
+  assert.equal(element('progress-text').textContent, 'Ошибка: boom');
+  assert.equal(counts.restored, 1);
+  assert.equal(counts.toasts, 0);
+  assert.equal(counts.saved, 0);
+  for (const id of ['btn-pause', 'btn-retry', 'btn-skip']) assert.equal(element(id).style.display, 'none', id);
+});
+
+test('partial completion reports skipped content instead of unconditional success', async () => {
+  const { context, element, counts } = windowHarness({ start: async () => ({ blob: {}, filename: 'a.epub', downloaded: 1, total: 2, skippedChapters: [{ number: 1 }], skippedImages: 1 }) });
+  await context.runDownload({});
+  assert.equal(counts.saved, 1);
+  assert.equal(counts.restored, 0);
+  assert.equal(element('progress-text').textContent, 'Готово с пропусками: 1 / 2 глав; пропущено картинок: 1');
+  assert.equal(element('progress-bar').style.width, '100%');
   // После загрузки можно скачать ещё раз в другом формате, не закрывая окно
-  assert.equal(harness.elements['btn-new-download'].style.display, 'flex');
+  assert.equal(element('btn-new-download').style.display, 'flex');
+  assert.equal(element('btn-download-file').style.display, 'flex');
+});
+
+test('window draws download events: log, progress, stats, decision buttons, pause', () => {
+  const { context, element, logged } = windowHarness({ start: async () => ({}) });
+  context.handleDownloadEvent({ type: 'log', line: '[t] hi', isError: true, color: null });
+  assert.deepEqual(logged, [['[t] hi', true, null]]);
+  context.handleDownloadEvent({ type: 'progress', current: 1, total: 4 });
+  assert.equal(element('progress-bar').style.width, '25%');
+  assert.equal(element('progress-text').textContent, '1 / 4 глав');
+  context.handleDownloadEvent({ type: 'stats', stats: { elapsed: '5 сек', requestsPerMinute: 7, maxRequestsPerMinute: 75, errors: 2 } });
+  assert.equal(element('stats-requests-per-minute').textContent, '7 (75)');
+  assert.equal(element('stats-errors').textContent, 2);
+  context.handleDownloadEvent({ type: 'decision', decision: { kind: 'chapter', chapterTitle: 'Г', message: 'm' } });
+  assert.equal(element('btn-retry').style.display, '');
+  assert.equal(element('btn-skip').style.display, '');
+  context.handleDownloadEvent({ type: 'decisionDone' });
+  assert.equal(element('btn-retry').style.display, 'none');
+  assert.equal(element('btn-skip').style.display, 'none');
+  context.handleDownloadEvent({ type: 'paused', paused: true });
+  assert.equal(element('btn-pause').title, 'Возобновить');
+  context.handleDownloadEvent({ type: 'paused', paused: false });
+  assert.equal(element('btn-pause').title, 'Пауза');
 });
 
 test('new download button returns the format and chapter choice in the same window', () => {
-  const handler = between('src/core/download.js', "btnNewDownload.addEventListener('click'", '});');
+  const handler = between('src/core/prepare.js', "btnNewDownload.addEventListener('click'", '});');
   assert.match(handler, /download-toolbar'\)\.style\.display = 'none'/);
   assert.match(handler, /restoreDownloadControls/);
   assert.match(source('src/html/prepare.html'), /id="btn-new-download"/);

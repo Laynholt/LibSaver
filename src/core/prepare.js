@@ -705,139 +705,112 @@ function initializeStatistics() {
     }
   });
   
-  // Вычисляем начальную скорость на основе количества глав
-  const chapterCount = downloadData.chapters ? downloadData.chapters.length : 0;
-  let initialSpeed = 60; // дефолтное значение
-  if (chapterCount > 0) {
-    // Используем ту же логику что в download.js
-    if (chapterCount >= 50) {
-      initialSpeed = 60;  // Большие тайтлы (>= 50 глав)
-    } else {
-      initialSpeed = 75;  // Малые тайтлы (< 50 глав)
-    }
-  }
-  
   if (statsRequestsPerMinute) {
     statsRequestsPerMinute.textContent = `0 (0)`;
   }
-  
-  // Слушаем изменения storage для обновления "Запросов в минуту" в реальном времени
-  chrome.storage.onChanged.addListener((changes, areaName) => {
-    if (areaName === 'local') {
-      // Если меняется режим ускорения - обновляем отдельно
-      if (changes.speedMode) {
-        if (statsRequestsPerMinute) {
-          const current = changes.currentRequestsPerMinute?.newValue || 0;
-          const max = changes.maxRequestsPerMinute?.newValue || (changes.speedMode.newValue ? 80 : initialSpeed);
-          statsRequestsPerMinute.textContent = `${current} (${max})`;
-        }
-      }
-      // Иначе обновляем из storage (только если меняется maxRequestsPerMinute)
-      else if (changes.maxRequestsPerMinute) {
-        const current = changes.currentRequestsPerMinute?.newValue || 0;
-        const max = changes.maxRequestsPerMinute?.newValue;
-        if (max !== undefined && statsRequestsPerMinute) {
-          statsRequestsPerMinute.textContent = `${current} (${max})`;
-        }
-      }
-    }
+}
+
+// Ход загрузки приходит событиями download.js (setDownloadListener); окно рисует его само
+function renderStats(stats) {
+  const set = (id, value) => {
+    const element = document.getElementById(id);
+    if (element) element.textContent = value;
+  };
+  set('stats-time', stats.elapsed);
+  set('stats-estimated-time', stats.estimated);
+  set('stats-file-size', stats.fileSize);
+  set('stats-errors', stats.errors);
+  set('stats-old-format-chapters', stats.oldFormatChapters);
+  set('stats-total-chapters', stats.totalChapters);
+  set('stats-total-covers', stats.totalCovers);
+  set('stats-total-images', stats.totalImages);
+  set('stats-skipped-chapters', stats.skippedChapters);
+  set('stats-skipped-images', stats.skippedImages);
+  set('stats-requests-per-minute', `${stats.requestsPerMinute} (${stats.maxRequestsPerMinute})`);
+}
+
+let downloadPaused = false;
+let downloadResult = null; // результат последней загрузки, для «Скачать файл»
+
+function handleDownloadEvent(event) {
+  const byId = id => document.getElementById(id);
+  switch (event.type) {
+    case 'log':
+      addLogToContainer(event.line, event.isError, event.color);
+      break;
+    case 'progress':
+      byId('progress-bar').style.width = (event.total ? (event.current / event.total) * 100 : 0) + '%';
+      byId('progress-text').textContent = `${event.current} / ${event.total} глав`;
+      break;
+    case 'stats':
+      renderStats(event.stats);
+      break;
+    case 'paused':
+      downloadPaused = event.paused;
+      byId('btn-pause').innerHTML = `<i class="fa-solid fa-${event.paused ? 'play' : 'pause'}"></i>`;
+      byId('btn-pause').title = event.paused ? 'Возобновить' : 'Пауза';
+      break;
+    case 'decision':
+      byId('btn-retry').style.display = '';
+      byId('btn-skip').style.display = '';
+      break;
+    case 'decisionDone':
+      byId('btn-retry').style.display = 'none';
+      byId('btn-skip').style.display = 'none';
+      break;
+  }
+}
+
+function resetDownloadUi() {
+  const byId = id => document.getElementById(id);
+  downloadResult = null;
+  byId('progress-bar').style.width = '0%';
+  byId('progress-text').textContent = '0 / 0 глав';
+  byId('btn-download-file').style.display = 'none';
+  byId('btn-pause').style.display = '';
+  handleDownloadEvent({ type: 'paused', paused: false });
+  byId('log').innerHTML = '';
+}
+
+// Запускает загрузку, сохраняет файл и показывает итог; любую ошибку показывает один раз и возвращает управление
+async function runDownload(snapshot) {
+  const byId = id => document.getElementById(id);
+  setDownloadListener(handleDownloadEvent);
+  resetDownloadUi();
+  try {
+    const result = await startDownload(snapshot);
+    downloadResult = result;
+    saveAs(result.blob, result.filename);
+    byId('progress-bar').style.width = '100%';
+    byId('progress-text').textContent = completionText(result);
+    // После загрузки можно скачать ещё раз в другом формате, не закрывая окно
+    byId('btn-download-file').style.display = 'flex';
+    byId('btn-new-download').style.display = 'flex';
+  } catch (error) {
+    byId('progress-text').textContent = `Ошибка: ${error.message}`;
+    restoreDownloadControls();
+  } finally {
+    for (const id of ['btn-pause', 'btn-retry', 'btn-skip']) byId(id).style.display = 'none';
+  }
+}
+
+function setupDownloadControls() {
+  document.getElementById('btn-pause').addEventListener('click', () => {
+    if (downloadPaused) downloadControl.resume();
+    else downloadControl.pause();
   });
-}
-
-let statisticsUpdateInterval = null;
-
-function startStatisticsUpdate() {
-  // Останавливаем предыдущий интервал если есть
-  if (statisticsUpdateInterval) {
-    clearInterval(statisticsUpdateInterval);
-  }
-
-  // Обновляем статистику каждые 500 мс
-  statisticsUpdateInterval = setInterval(() => {
-    updateStatisticsDisplay();
-  }, 500);
-}
-
-function stopStatisticsUpdate() {
-  if (statisticsUpdateInterval) {
-    clearInterval(statisticsUpdateInterval);
-    statisticsUpdateInterval = null;
-  }
-}
-
-// Экспортируем функции в window для доступа из download.js
-window.stopStatisticsUpdate = stopStatisticsUpdate;
-
-function updateStatisticsDisplay() {
-  const statsTime = document.getElementById('stats-time');
-  const statsFileSize = document.getElementById('stats-file-size');
-  const statsErrors = document.getElementById('stats-errors');
-  const statsOldFormatChapters = document.getElementById('stats-old-format-chapters');
-  const statsSkippedChapters = document.getElementById('stats-skipped-chapters');
-  const statsSkippedImages = document.getElementById('stats-skipped-images');
-  const statsTotalChapters = document.getElementById('stats-total-chapters');
-  const statsTotalCovers = document.getElementById('stats-total-covers');
-  const statsTotalImages = document.getElementById('stats-total-images');
-
-  // Получаем текущие значения из statistics.js
-  const currentChapterIndex = window.getStatisticsValue('currentChapterIndex') || 0;
-  const totalChapters = window.getStatisticsValue('totalChapters') || 0;
-  const totalCovers = window.getStatisticsValue('totalCovers') || 0;
-  const totalImages = window.getStatisticsValue('totalImages') || 0;
-  const totalErrorCount = window.getStatisticsValue('totalErrorCount') || 0;
-  const skippedChaptersCount = window.getStatisticsValue('skippedChaptersCount') || 0;
-  const skippedImagesCount = window.getStatisticsValue('skippedImagesCount') || 0;
-  const oldFormatChaptersCount = window.getStatisticsValue('oldFormatChaptersCount') || 0;
-  const totalFileSize = window.getStatisticsValue('totalFileSize') || 0;
-
-  // Обновляем время загрузки
-  if (statsTime && window.getStatisticsValue('downloadStartTime')) {
-    const elapsed = Math.floor((Date.now() - window.getStatisticsValue('downloadStartTime')) / 1000);
-    const minutes = Math.floor(elapsed / 60);
-    const seconds = elapsed % 60;
-    statsTime.textContent = minutes > 0 ? `${minutes}м ${seconds}с` : `${seconds}с`;
-  }
-
-  // Обновляем размер файла
-  if (statsFileSize) {
-    const sizeMB = (totalFileSize / (1024 * 1024)).toFixed(2);
-    statsFileSize.textContent = `${sizeMB} MB`;
-  }
-
-  // Обновляем ошибки
-  if (statsErrors) {
-    statsErrors.textContent = totalErrorCount;
-  }
-
-  // Обновляем главы старого формата
-  if (statsOldFormatChapters) {
-    statsOldFormatChapters.textContent = oldFormatChaptersCount;
-  }
-
-  // Обновляем пропущенные главы
-  if (statsSkippedChapters) {
-    statsSkippedChapters.textContent = skippedChaptersCount;
-  }
-
-  // Обновляем пропущенные картинки
-  if (statsSkippedImages) {
-    statsSkippedImages.textContent = skippedImagesCount;
-  }
-
-  // Обновляем загруженные главы (текущий индекс)
-  if (statsTotalChapters) {
-    statsTotalChapters.textContent = `${currentChapterIndex} / ${totalChapters}`;
-  }
-
-  // Обновляем загруженные обложки
-  if (statsTotalCovers) {
-    statsTotalCovers.textContent = totalCovers;
-  }
-
-  // Обновляем загруженные картинки
-  if (statsTotalImages) {
-    statsTotalImages.textContent = totalImages;
-  }
+  document.getElementById('btn-retry').addEventListener('click', () => downloadControl.retry());
+  document.getElementById('btn-skip').addEventListener('click', () => downloadControl.skip());
+  document.getElementById('btn-download-file').addEventListener('click', () => {
+    if (downloadResult) saveAs(downloadResult.blob, downloadResult.filename);
+  });
+  // Новая загрузка в том же окне: возвращаем выбор формата и глав, состояние сбросит startDownload
+  const btnNewDownload = document.getElementById('btn-new-download');
+  btnNewDownload.addEventListener('click', () => {
+    btnNewDownload.style.display = 'none';
+    document.getElementById('download-toolbar').style.display = 'none';
+    restoreDownloadControls();
+  });
 }
 
 function logDownloadSettings() {
@@ -945,11 +918,6 @@ function restoreDownloadControls() {
   button.disabled = false;
   button.style.display = '';
 }
-
-window.restoreDownloadControls = restoreDownloadControls;
-
-// Экспортируем функции для использования в download.js
-window.addLogToContainer = addLogToContainer;
 
 function setupLogAutoScroll() {
   const logsPanel = document.getElementById('logs-panel');
@@ -1349,6 +1317,8 @@ function setupEventListeners() {
       chrome.storage.local.set({ textOnly: textOnlyCheckbox.checked });
     });
 
+    setupDownloadControls();
+
     const btnDownload = document.getElementById('btn-start-download');
     btnDownload.addEventListener('click', async () => {
       if (selectedChapterIds.size === 0) {
@@ -1397,17 +1367,9 @@ function setupEventListeners() {
           logsZone.classList.remove('collapsed');
         }
 
-        // Запускаем обновление статистики в реальном времени
-        startStatisticsUpdate();
-
-        // Запускаем загрузку
-        if (typeof startDownload === 'function') {
-          await startDownload(snapshot);
-        } else {
-          throw new Error('Загрузчик недоступен');
-        }
+        // Запускаем загрузку; ошибки самой загрузки runDownload показывает сама
+        await runDownload(snapshot);
       } catch (error) {
-        stopStatisticsUpdate();
         restoreDownloadControls();
         showToast(`Не удалось начать загрузку: ${error.message}`, 'error');
       }
@@ -1492,20 +1454,9 @@ function setupEventListeners() {
     if (speedModeCheckbox) {
       speedModeCheckbox.addEventListener('change', (e) => {
         const isChecked = e.target.checked;
-        // Устанавливаем режим ускорения в protection module
-        setSpeedMode(isChecked);
+        downloadControl.setSpeedMode(isChecked);
         // Сохраняем состояние в storage
         chrome.storage.local.set({ speedMode: isChecked });
-        
-        // Немедленно обновляем статистику через storage
-        if (isChecked) {
-          chrome.storage.local.set({ maxRequestsPerMinute: 80 });
-        } else {
-          // Восстанавливаем начальную скорость
-          const chapterCount = downloadData.chapters ? downloadData.chapters.length : 0;
-          const initialSpeed = chapterCount >= 50 ? 60 : 75;
-          chrome.storage.local.set({ maxRequestsPerMinute: initialSpeed });
-        }
       });
       
       // Загружаем сохраненное состояние при загрузке

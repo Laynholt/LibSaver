@@ -160,3 +160,60 @@ test('startDownload and formatters never read chrome.storage', () => {
   assert.doesNotMatch(functionSource('src/core/download.js', 'startDownload'), /chrome\.storage|getTitleStore/);
   assert.doesNotMatch(source('src/formatters/cbz.js'), /getTitleStore|chrome\.storage/);
 });
+
+// download.js целиком в vm; листенер собирает события в events
+function downloadEventsContext(extra = {}) {
+  const events = [];
+  const ctx = vm.createContext({ console: { error() {}, log() {} }, window: { getStatisticsValue: () => 0 }, ...extra });
+  vm.runInContext(source('src/core/download.js') + '\nthis.downloadControl = downloadControl;', ctx);
+  ctx.setDownloadListener(event => events.push(structuredClone(event))); // clone: vm objects have another Object.prototype, deepEqual is strict about it
+  return { ctx, events };
+}
+
+test('download.js does not touch the DOM or storage', () => {
+  assert.doesNotMatch(source('src/core/download.js'), /document\.|chrome\.storage|saveAs\(/);
+});
+
+test('chapter error emits a decision and skip resumes with the chapter skipped', async () => {
+  const { ctx, events } = downloadEventsContext();
+  const pending = ctx.handleChapterError({ volume: 1, number: 2, displayTitle: 'Г2' }, new Error('boom'), 1);
+  assert.deepEqual(events.at(-1), { type: 'decision', decision: { kind: 'chapter', chapterTitle: 'Г2', message: 'boom' } });
+  assert.ok(events.some(e => e.type === 'paused' && e.paused === true));
+  ctx.downloadControl.skip();
+  assert.deepEqual({ ...(await pending) }, { shouldRetry: false, shouldSkip: true });
+  assert.ok(events.some(e => e.type === 'decisionDone'));
+  assert.deepEqual(events.filter(e => e.type === 'paused').map(e => e.paused), [true, false]);
+});
+
+test('image error emits a decision with the image url and retry repeats the image', async () => {
+  const { ctx, events } = downloadEventsContext();
+  const pending = ctx.handleImageError({ volume: 1, number: 2, displayTitle: 'Г2' }, new Error('bad'), 1, 'https://x/1.jpg');
+  assert.deepEqual(events.at(-1), { type: 'decision', decision: { kind: 'image', chapterTitle: 'Г2', message: 'bad', imageUrl: 'https://x/1.jpg' } });
+  ctx.downloadControl.retry();
+  assert.deepEqual({ ...(await pending) }, { shouldRetry: true, shouldSkip: false });
+});
+
+test('pause and resume emit paused events', () => {
+  const { ctx, events } = downloadEventsContext();
+  ctx.downloadControl.pause();
+  ctx.downloadControl.resume();
+  assert.deepEqual(events, [{ type: 'paused', paused: true }, { type: 'paused', paused: false }]);
+});
+
+test('stats event carries the protocol fields and takes over from storage', () => {
+  const { ctx, events } = downloadEventsContext({ window: { getStatisticsValue: name => name === 'downloadStartTime' ? 0 : 3 } });
+  ctx.updateStatisticsDisplay();
+  const { type, stats } = events.at(-1);
+  assert.equal(type, 'stats');
+  assert.deepEqual(Object.keys(stats).sort(), ['elapsed', 'errors', 'estimated', 'fileSize', 'maxRequestsPerMinute', 'oldFormatChapters', 'requestsPerMinute', 'skippedChapters', 'skippedImages', 'totalChapters', 'totalCovers', 'totalImages']);
+  assert.deepEqual([stats.errors, stats.requestsPerMinute, stats.maxRequestsPerMinute, stats.oldFormatChapters], [3, 0, 0, 3]);
+});
+
+test('log and progress events carry what the window draws', () => {
+  const { ctx, events } = downloadEventsContext();
+  ctx.addLog('hi', true, 'red');
+  ctx.updateProgress(2, 5);
+  assert.match(events[0].line, /^\[.*\] hi$/);
+  assert.deepEqual([events[0].type, events[0].isError, events[0].color], ['log', true, 'red']);
+  assert.deepEqual(events[1], { type: 'progress', current: 2, total: 5 });
+});
