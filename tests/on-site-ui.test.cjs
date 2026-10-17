@@ -12,7 +12,7 @@ const toRegExp = pattern => new RegExp('^' + pattern.replace(/[.+?^${}()|[\]\\]/
 // page-call.js in a vm with a fake chrome over the `tabs` array.
 // onNoTab(tabs) runs when pageCall asks the user to open the site; onExec(tabId, tabs, n) may throw or change tabs.
 function pageCallContext(tabs, { onNoTab = () => {}, onExec = () => {}, noTabApi = false, sendMessage } = {}) {
-  const ctx = { tabs, handlerCalls: [], execTabs: [] };
+  const ctx = { tabs, handlerCalls: [], execTabs: [], delays: [] };
   const chrome = { runtime: { sendMessage } };
   if (!noTabApi) {
     chrome.tabs = {
@@ -27,7 +27,7 @@ function pageCallContext(tabs, { onNoTab = () => {}, onExec = () => {}, noTabApi
       }
     };
   }
-  Object.assign(ctx, { chrome, URL, console });
+  Object.assign(ctx, { chrome, URL, console, setTimeout: (fn, ms) => { ctx.delays.push(ms); fn(); } });
   vm.createContext(ctx);
   vm.runInContext(source('src/core/page-calls.js') + source('src/utils/page-call.js'), ctx);
   ctx.setNoTabHandler(async siteKey => { ctx.handlerCalls.push(siteKey); onNoTab(tabs); });
@@ -66,6 +66,14 @@ test('pageCall waits through the no-tab handler and retries when the tab disappe
   assert.equal(await ctx.pageCall('mangalib', 'chapterPages', [1, 's', 'normal']), 'ok');
   assert.deepEqual(ctx.handlerCalls, ['mangalib']);
   assert.deepEqual(ctx.execTabs, [3, 4]);
+  assert.deepEqual(ctx.delays, [1000]); // pause before retrying a gone tab, no hot loop
+});
+
+test('findSiteTab treats a discarded or unloaded preferred tab as absent', async () => {
+  const tabs = [{ id: 7, url: 'https://mangalib.me/a', discarded: true }, { id: 8, url: 'https://mangalib.me/b', status: 'unloaded' }, { id: 9, url: 'https://mangalib.me/c' }];
+  const ctx = pageCallContext(tabs);
+  assert.equal(await ctx.findSiteTab('mangalib', 7), 9);
+  assert.equal(await ctx.findSiteTab('mangalib', 8), 9);
 });
 
 test('pageCall passes other injection errors through', async () => {
@@ -216,4 +224,252 @@ test('log and progress events carry what the window draws', () => {
   assert.match(events[0].line, /^\[.*\] hi$/);
   assert.deepEqual([events[0].type, events[0].isError, events[0].color], ['log', true, 'red']);
   assert.deepEqual(events[1], { type: 'progress', current: 2, total: 5 });
+});
+
+test('downloadControl.cancel ends a pending decision and stops further requests', async () => {
+  const { ctx } = downloadEventsContext();
+  const pending = ctx.handleChapterError({ volume: 1, number: 2, displayTitle: 'Г2' }, new Error('boom'), 1);
+  ctx.downloadControl.cancel();
+  await assert.rejects(pending, { message: 'Загрузка отменена', canceled: true });
+  await assert.rejects(ctx.trackRequest(), { message: 'Загрузка отменена' });
+});
+
+// queue.js in this realm (deepEqual compares prototypes); run promises are settled by the test
+const createQueue = options => new Function(source('src/engine/queue.js') + '\nreturn createQueue;')()(options);
+const snap = (slug, id = slug) => ({ id, slug, siteKey: 'mangalib', title: 'T ' + slug, downloadData: { selectedFormat: 'cbz', tabId: 5, chapters: [{ id: 1 }] } });
+const flush = () => new Promise(resolve => setImmediate(resolve));
+const settle = async () => { for (let i = 0; i < 30; i++) await flush(); };
+function manualRun() {
+  const runs = [];
+  return { runs, run: (item, snapshot) => new Promise((resolve, reject) => runs.push({ item, snapshot, resolve, reject })) };
+}
+const statuses = q => Object.fromEntries(q.items().map(item => [item.id, item.status]));
+
+test('queue runs one title at a time and starts the next by itself', async () => {
+  const { runs, run } = manualRun();
+  const changes = [];
+  const q = createQueue({ run, onChange: items => changes.push(items) });
+  const a = snap('a');
+  q.enqueue(a);
+  q.enqueue(snap('b'));
+  await flush();
+  assert.deepEqual(statuses(q), { a: 'running', b: 'queued' });
+  assert.deepEqual(q.items()[1], { id: 'b', slug: 'b', siteKey: 'mangalib', title: 'T b', format: 'cbz', status: 'queued', progress: { current: 0, total: 0 } });
+  assert.equal(runs.length, 1);
+  assert.notEqual(runs[0].snapshot, a); // own copy: startDownload mutates chapters
+  assert.deepEqual(runs[0].snapshot, a);
+  runs[0].resolve({ filename: 'a.cbz' });
+  await flush();
+  assert.deepEqual(statuses(q), { a: 'done', b: 'running' });
+  assert.equal(q.items()[0].filename, 'a.cbz');
+  assert.equal(runs[1].item.slug, 'b');
+  assert.ok(changes.length > 0);
+});
+
+test('queue rejects a second click on a title that is already queued or running', () => {
+  const q = createQueue({ run: () => new Promise(() => {}), onChange() {} });
+  assert.deepEqual(q.enqueue(snap('a')), { ok: true });
+  assert.deepEqual(q.enqueue(snap('a', 'a2')), { ok: false, reason: 'already-queued' });
+  assert.deepEqual(q.enqueue(snap('b')), { ok: true });
+  assert.deepEqual(q.enqueue(snap('b', 'b2')), { ok: false, reason: 'already-queued' });
+  q.cancel('b');
+  assert.deepEqual(q.enqueue(snap('b', 'b3')), { ok: true });
+});
+
+test('an error in one title marks it and the queue moves on', async () => {
+  const { runs, run } = manualRun();
+  const q = createQueue({ run, onChange() {} });
+  q.enqueue(snap('a'));
+  q.enqueue(snap('b'));
+  await flush();
+  runs[0].reject(new Error('boom'));
+  await flush();
+  assert.deepEqual(statuses(q), { a: 'error', b: 'running' });
+  assert.equal(q.items()[0].error, 'boom');
+});
+
+test('remove refuses the running item and drops a queued one', async () => {
+  const { runs, run } = manualRun();
+  const q = createQueue({ run, onChange() {} });
+  q.enqueue(snap('a'));
+  q.enqueue(snap('b'));
+  await flush();
+  assert.equal(q.remove('a'), false);
+  assert.equal(q.remove('b'), true);
+  assert.deepEqual(statuses(q), { a: 'running' });
+  runs[0].resolve({ filename: 'a.cbz' });
+  await flush();
+  assert.equal(q.remove('a'), true);
+  assert.deepEqual(q.items(), []);
+});
+
+test('cancel stops a queued title at once and the running one when its run settles', async () => {
+  const { runs, run } = manualRun();
+  const q = createQueue({ run, onChange() {} });
+  q.enqueue(snap('a'));
+  q.enqueue(snap('b'));
+  q.enqueue(snap('c'));
+  await flush();
+  q.cancel('b');
+  q.cancel('a');
+  await flush();
+  assert.deepEqual(statuses(q), { a: 'canceled', b: 'canceled', c: 'queued' }); // one download at a time: c waits for a's run to end
+  runs[0].reject(new Error('Загрузка отменена'));
+  await flush();
+  assert.deepEqual(statuses(q), { a: 'canceled', b: 'canceled', c: 'running' });
+  assert.equal(q.items()[0].error, undefined);
+  assert.deepEqual(runs.map(r => r.item.id), ['a', 'c']);
+});
+
+test('setStatus merges extra fields and drops cleared ones', () => {
+  const q = createQueue({ run: () => new Promise(() => {}), onChange() {} });
+  q.enqueue(snap('a'));
+  q.setStatus('a', 'waiting-decision', { decision: { kind: 'chapter', chapterTitle: 'Г1', message: 'x' } });
+  assert.deepEqual(q.items()[0].decision, { kind: 'chapter', chapterTitle: 'Г1', message: 'x' });
+  q.setStatus('a', 'running', { decision: undefined, progress: { current: 1, total: 3 } });
+  assert.equal('decision' in q.items()[0], false);
+  assert.deepEqual(q.items()[0].progress, { current: 1, total: 3 });
+});
+
+// engine.js + queue.js in a vm; startDownload(snapshot, { noTab, emit }) is the test's fake download
+function engineContext({ findSiteTab = async () => 1, startDownload, downloads } = {}) {
+  const ctx = { delays: [], history: [], sent: [], urls: [], revoked: [], controlCalls: [] };
+  let onConnect, noTabHandler, listener;
+  const downloadControl = {};
+  for (const name of ['pause', 'resume', 'retry', 'skip', 'setSpeedMode', 'cancel']) downloadControl[name] = (...args) => ctx.controlCalls.push([name, ...args]);
+  const chrome = { runtime: { onConnect: { addListener: fn => { onConnect = fn; } }, sendMessage: async message => { ctx.sent.push(JSON.parse(JSON.stringify(message))); return { ok: true }; } } };
+  if (downloads) chrome.downloads = downloads;
+  Object.assign(ctx, {
+    chrome, console, structuredClone, Date,
+    URL: { createObjectURL: () => { ctx.urls.push('blob:' + ctx.urls.length); return ctx.urls.at(-1); }, revokeObjectURL: url => ctx.revoked.push(url) },
+    setTimeout: (fn, ms) => { ctx.delays.push(ms); setImmediate(fn); return ctx.delays.length; }, // a macrotask, so a polling loop cannot starve the test
+    clearTimeout() {},
+    findSiteTab,
+    setNoTabHandler: fn => { noTabHandler = fn; },
+    setDownloadListener: fn => { listener = fn; },
+    startDownload: snapshot => startDownload(snapshot, { noTab: siteKey => noTabHandler(siteKey), emit: event => listener(event) }),
+    downloadControl
+  });
+  vm.createContext(ctx);
+  vm.runInContext(source('src/engine/queue.js'), ctx);
+  const realCreateQueue = ctx.createQueue;
+  ctx.createQueue = options => realCreateQueue({ ...options, onChange: items => { ctx.history.push(items.map(item => item.status).join()); options.onChange(items); } });
+  vm.runInContext(source('src/engine/engine.js'), ctx);
+  ctx.connect = (name = 'libsaver-engine') => {
+    const port = { name, posted: [], postMessage: message => port.posted.push(JSON.parse(JSON.stringify(message))) };
+    port.onMessage = { addListener: fn => { port.send = fn; } };
+    port.onDisconnect = { addListener: fn => { port.disconnect = fn; } };
+    onConnect(port);
+    return port;
+  };
+  ctx.statusHistory = () => ctx.history.filter((entry, i) => entry !== ctx.history[i - 1]);
+  return ctx;
+}
+
+test('waiting-tab returns to running when a tab of the site appears', async () => {
+  const answers = [null, null, 12];
+  const ctx = engineContext({
+    findSiteTab: async () => answers.shift(),
+    startDownload: async (snapshot, { noTab }) => { await noTab(snapshot.siteKey); return { blob: {}, filename: 'a.cbz' }; }
+  });
+  ctx.connect().send({ cmd: 'enqueue', snapshot: snap('a') });
+  await settle();
+  assert.deepEqual(ctx.statusHistory(), ['queued', 'running', 'waiting-tab', 'running', 'done']);
+  assert.equal(answers.length, 0);
+  assert.equal(ctx.delays.filter(ms => ms === 2000).length, 3);
+});
+
+test('cancel of a title waiting for a tab ends the wait and the next title starts', async () => {
+  const runs = [];
+  const ctx = engineContext({
+    findSiteTab: async () => null,
+    startDownload: (snapshot, { noTab }) => { const done = noTab(snapshot.siteKey).then(() => ({ blob: {}, filename: 'x' })); runs.push(done); return done; }
+  });
+  const port = ctx.connect();
+  port.send({ cmd: 'enqueue', snapshot: snap('a') });
+  port.send({ cmd: 'enqueue', snapshot: snap('b') });
+  await settle();
+  port.send({ cmd: 'cancel', id: 'a' });
+  await settle();
+  await assert.rejects(runs[0], { message: 'Загрузка отменена' });
+  assert.ok(ctx.controlCalls.some(([name]) => name === 'cancel'));
+  const { items } = port.posted.filter(m => m.type === 'state').at(-1).state;
+  assert.deepEqual(items.map(item => item.status), ['canceled', 'waiting-tab']);
+  port.send({ cmd: 'cancel', id: 'b' }); // stop b's polling so the test process can exit
+  await assert.rejects(runs[1], { message: 'Загрузка отменена' });
+});
+
+test('engine turns download events into state, forwards commands and saves the file', async () => {
+  let finish;
+  const ctx = engineContext({
+    startDownload: (snapshot, { emit }) => new Promise(resolve => {
+      emit({ type: 'progress', current: 1, total: 2 });
+      emit({ type: 'log', line: 'L1', isError: false, color: null });
+      emit({ type: 'stats', stats: { elapsed: '00:01' } });
+      emit({ type: 'paused', paused: true });
+      emit({ type: 'decision', decision: { kind: 'chapter', chapterTitle: 'Г1', message: 'boom' } });
+      finish = () => { emit({ type: 'decisionDone' }); emit({ type: 'paused', paused: false }); resolve({ blob: {}, filename: 'a.cbz' }); };
+    })
+  });
+  assert.equal(ctx.connect('other-port').send, undefined); // other ports are ignored
+  const port = ctx.connect();
+  assert.deepEqual(port.posted[0], { type: 'state', state: { items: [], stats: null, logTail: [] } });
+  port.send({ cmd: 'enqueue', snapshot: snap('a') });
+  port.send({ cmd: 'enqueue', snapshot: snap('a', 'a2') });
+  await settle();
+  assert.deepEqual(port.posted.filter(m => m.type === 'enqueueResult'), [{ type: 'enqueueResult', ok: true }, { type: 'enqueueResult', ok: false, reason: 'already-queued' }]);
+  assert.deepEqual(port.posted.find(m => m.type === 'log'), { type: 'log', id: 'a', line: 'L1', isError: false, color: null });
+  const states = port.posted.filter(m => m.type === 'state');
+  assert.equal(states.length, 2); // the burst of changes goes out as one throttled state
+  assert.deepEqual(states[1].state, {
+    items: [{ id: 'a', slug: 'a', siteKey: 'mangalib', title: 'T a', format: 'cbz', status: 'waiting-decision', progress: { current: 1, total: 2 }, decision: { kind: 'chapter', chapterTitle: 'Г1', message: 'boom' } }],
+    stats: { elapsed: '00:01' },
+    logTail: [{ line: 'L1', isError: false, color: null }]
+  });
+  port.send({ cmd: 'decision', choice: 'retry' });
+  port.send({ cmd: 'pause' });
+  port.send({ cmd: 'speedMode', on: true });
+  assert.deepEqual(ctx.controlCalls, [['retry'], ['pause'], ['setSpeedMode', true]]);
+  finish();
+  await settle();
+  assert.deepEqual(ctx.sent, [{ action: 'saveFile', url: 'blob:0', filename: 'a.cbz' }]);
+  const last = port.posted.filter(m => m.type === 'state').at(-1).state.items[0];
+  assert.deepEqual([last.status, last.filename, 'decision' in last], ['done', 'a.cbz', false]);
+  port.send({ cmd: 'saveAgain', id: 'a' });
+  await settle();
+  assert.equal(ctx.sent.length, 2);
+  port.send({ cmd: 'remove', id: 'a' });
+  assert.deepEqual(ctx.revoked, ['blob:0']);
+});
+
+test('engine saves through chrome.downloads where it exists', async () => {
+  const calls = [];
+  const ctx = engineContext({ downloads: { download: async options => { calls.push({ ...options }); return 1; } }, startDownload: async () => ({ blob: {}, filename: 'a.cbz' }) });
+  ctx.connect().send({ cmd: 'enqueue', snapshot: snap('a') });
+  await settle();
+  assert.deepEqual(calls, [{ url: 'blob:0', filename: 'a.cbz', saveAs: false }]);
+  assert.deepEqual(ctx.sent, []);
+});
+
+test('ensureEngine creates one offscreen document even for concurrent calls', async () => {
+  const created = [];
+  let has = false;
+  const chrome = { offscreen: { hasDocument: async () => has, createDocument: async options => { await null; created.push(JSON.parse(JSON.stringify(options))); has = true; } } };
+  const ctx = vm.createContext({ chrome });
+  vm.runInContext('let engineReady = null;\n' + functionSource('src/background.js', 'ensureEngine'), ctx);
+  assert.deepEqual(await Promise.all([ctx.ensureEngine(), ctx.ensureEngine()]), [true, true]);
+  assert.equal(await ctx.ensureEngine(), true);
+  assert.deepEqual(created, [{ url: 'engine/engine.html', reasons: ['DOM_PARSER', 'BLOBS'], justification: 'Фоновая сборка файлов LibSaver' }]);
+  assert.ok(JSON.parse(source('src/manifest.json')).permissions.includes('offscreen'));
+});
+
+test('scripts of the engine page use neither storage, tabs, downloads nor the window DOM', () => {
+  const scripts = [...source('src/engine/engine.html').matchAll(/<script src="\.\.\/([^"]+)"/g)].map(match => match[1]);
+  assert.deepEqual(scripts, ['libs/jszip.min.js', 'libs/pica.min.js', 'core/page-calls.js', 'utils/page-call.js', 'core/api.js', 'utils/protection.js', 'utils/header.js', 'core/statistics.js',
+    'formatters/base.js', 'formatters/epub.js', 'formatters/txt.js', 'formatters/pdf.js', 'formatters/html.js', 'formatters/fb2.js', 'formatters/cbz.js', 'formatters/index.js', 'core/download.js', 'engine/queue.js', 'engine/engine.js']);
+  // code only: template literals (html.js builds the reader page's script in one) and line comments are text
+  const code = file => source('src/' + file).replace(/`(?:\\[\s\S]|[^`\\])*`/g, '``').replace(/^\s*\/\/.*$/gm, '');
+  for (const file of scripts.filter(file => file !== 'utils/page-call.js' && file !== 'engine/engine.js')) {
+    assert.doesNotMatch(code(file), /chrome\.storage|chrome\.tabs\.|chrome\.scripting|chrome\.downloads|document\.getElementById/, file);
+  }
 });

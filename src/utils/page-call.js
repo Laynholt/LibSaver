@@ -92,16 +92,20 @@ async function viaServiceWorker(message) {
   throw Object.assign(new Error(response?.error || 'Нет ответа от service worker'), { tabGone: !!response?.tabGone });
 }
 
-// Вкладка сайта: предпочтительная, пока она жива и на том же сайте; иначе любая загруженная вкладка этого сайта
+// Выгруженная вкладка не выполнит вызов
+const isLoadedTab = tab => tab.status !== 'unloaded' && tab.discarded !== true;
+
+// Вкладка сайта: предпочтительная, пока она жива, загружена и на том же сайте; иначе любая загруженная вкладка этого сайта
 async function findSiteTab(siteKey, preferredTabId) {
   if (!hasTabApi()) return viaServiceWorker({ action: 'pageCall:findTab', siteKey, preferredTabId });
   if (preferredTabId != null) {
     try {
-      if (siteKeyOf((await chrome.tabs.get(preferredTabId)).url) === siteKey) return preferredTabId;
+      const preferred = await chrome.tabs.get(preferredTabId);
+      if (siteKeyOf(preferred.url) === siteKey && isLoadedTab(preferred)) return preferredTabId;
     } catch (e) { /* вкладки уже нет - ищем другую */ }
   }
   const tabs = await chrome.tabs.query({ url: SITE_TAB_PATTERNS[siteKey] || [] });
-  const tab = tabs.find(item => item.status !== 'unloaded' && item.discarded !== true);
+  const tab = tabs.find(isLoadedTab);
   return tab ? tab.id : null;
 }
 
@@ -126,7 +130,7 @@ function setNoTabHandler(fn) {
   noTabHandler = fn || defaultNoTabHandler;
 }
 
-// Выполнить PAGE_CALLS[name] во вкладке сайта; нет вкладки - ждём handler, вкладка пропала - ищем заново
+// Выполнить PAGE_CALLS[name] во вкладке сайта; нет вкладки - ждём handler, вкладка пропала - через секунду ищем заново
 async function pageCall(siteKey, name, args, preferredTabId) {
   for (;;) {
     const tabId = await findSiteTab(siteKey, preferredTabId);
@@ -138,6 +142,7 @@ async function pageCall(siteKey, name, args, preferredTabId) {
       return await execPageCall(tabId, name, args);
     } catch (e) {
       if (!e.tabGone) throw e;
+      await new Promise(resolve => setTimeout(resolve, 1000)); // вкладка, что падает раз за разом, не крутит цикл вхолостую
     }
   }
 }

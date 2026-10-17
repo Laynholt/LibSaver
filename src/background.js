@@ -292,3 +292,30 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   );
   return true;
 });
+
+// Фоновый движок загрузки (engine/engine.html). Одновременные вызовы делят одно создание документа
+let engineReady = null;
+function ensureEngine() {
+  engineReady ??= (async () => {
+    if (chrome.offscreen && !(await chrome.offscreen.hasDocument())) {
+      await chrome.offscreen.createDocument({ url: 'engine/engine.html', reasons: ['DOM_PARSER', 'BLOBS'], justification: 'Фоновая сборка файлов LibSaver' });
+    }
+    return true;
+  })().finally(() => { engineReady = null; });
+  return engineReady;
+}
+
+// Движку: поднять offscreen-документ; сохранить собранный им файл (в offscreen нет chrome.downloads)
+chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+  if (request.action === 'ensureEngine') {
+    ensureEngine().then(sendResponse, error => { console.error('[LibSaver] ensureEngine', error); sendResponse(false); });
+    return true;
+  }
+  if (request.action === 'saveFile') {
+    chrome.downloads.download({ url: request.url, filename: request.filename, saveAs: false }).then(
+      () => sendResponse({ ok: true }),
+      error => sendResponse({ ok: false, error: error.message })
+    );
+    return true;
+  }
+});

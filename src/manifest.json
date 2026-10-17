@@ -15,7 +15,8 @@
     "declarativeNetRequestWithHostAccess",
     "downloads",
     "system.display",
-    "unlimitedStorage"
+    "unlimitedStorage",
+    "offscreen"
   ],
 
   "declarative_net_request": {

@@ -192,6 +192,11 @@ let currentError = null; // Текущая ошибка
 let skippedChapters = []; // Список пропущенных глав
 let isWaitingForUser = false; // Ожидание решения пользователя
 let shouldRetryChapter = false; // Флаг для повтора текущей главы
+let cancelRequested = false; // Отмена: следующий запрос или решение пользователя бросает ошибку
+
+function throwIfCanceled() {
+    if (cancelRequested) throw Object.assign(new Error('Загрузка отменена'), { canceled: true });
+}
 
 // Ход загрузки сообщается событиями: log, progress, stats, decision, decisionDone, paused
 let downloadListener = null;
@@ -257,6 +262,7 @@ function onTranslatorSelected(chapter, selectedTranslatorName, selectedBranchId,
 }
 
 async function trackRequest() {
+    throwIfCanceled();
     return new Promise((resolve) => {
         pendingQueue.push({ resolve });
         processQueue();
@@ -516,6 +522,7 @@ function resetDownloadState() {
     shouldRetryImage = false;
     skippedChapters = [];
     userDecisionResolve = null;
+    cancelRequested = false;
 
     // Останавливаем интервал обновления статистики если он был
     if (statsUpdateInterval) {
@@ -684,6 +691,7 @@ async function startDownload(snapshot) {
         
         const formatter = getFormatter(selectedFormat, formatterOptions);
         const { blob, filename } = await formatter.format(chaptersToDownload, options.metadata);
+        throwIfCanceled(); // форматтер мог доделать файл, глотая ошибки отменённых запросов
 
         // Устанавливаем точный размер файла после финализации
         setExactFileSize(blob.size);
@@ -783,6 +791,12 @@ const downloadControl = {
     },
     setSpeedMode(on) {
         window.setSpeedMode?.(on);
+    },
+    // Ждущее решение и следующий запрос бросают ошибку отмены; startDownload завершается с ней
+    cancel() {
+        cancelRequested = true;
+        isPaused = false;
+        userDecisionMade();
     }
 };
 
@@ -909,6 +923,7 @@ function calculateEstimatedTime() {
 
 // Обработчик ошибок глав
 async function handleChapterError(chapter, error, chapterIndex) {
+    throwIfCanceled();
     currentErrorImage = null;
     currentErrorChapter = chapter;
     currentError = error;
@@ -927,6 +942,7 @@ async function handleChapterError(chapter, error, chapterIndex) {
     emit({ type: 'decision', decision: { kind: 'chapter', chapterTitle: title, message: error.message } });
     await waitForUserDecision();
     emit({ type: 'decisionDone' });
+    throwIfCanceled();
 
     // Возобновляем загрузку
     setPaused(false);
@@ -946,6 +962,7 @@ let currentErrorImage = null;
 let shouldRetryImage = false;
 
 async function handleImageError(chapter, error, chapterIndex, imageUrl) {
+    throwIfCanceled();
     currentErrorChapter = null;
     currentError = null;
     currentErrorImage = { chapter, error, imageUrl };
@@ -965,6 +982,7 @@ async function handleImageError(chapter, error, chapterIndex, imageUrl) {
     emit({ type: 'decision', decision: { kind: 'image', chapterTitle: title, message: error.message, imageUrl } });
     await waitForUserDecision();
     emit({ type: 'decisionDone' });
+    throwIfCanceled();
 
     // Возобновляем загрузку
     setPaused(false);
