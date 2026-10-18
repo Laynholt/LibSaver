@@ -14,14 +14,6 @@ const PANEL_GROUPS = [
   { id: 'extension', title: 'Расширение' }
 ];
 
-// Свои настройки в settings.html есть только у CBZ/ZIP, PDF и TXT; у остальных форматов раздела «формат» нет
-const FORMAT_SETTINGS = {
-  cbz: { group: 'cbz', title: 'CBZ/ZIP' },
-  zip: { group: 'cbz', title: 'CBZ/ZIP' },
-  pdf: { group: 'pdf', title: 'PDF' },
-  txt: { group: 'txt', title: 'TXT' }
-};
-
 // Подписи значений - как в settings.html
 const IMAGE_QUALITY_LABELS = { NONE: 'Без картинок', ORIGINAL: 'Без сжатия', '2K': '1600px', QHD: '1440px', FHD: '1080px', HD: '720px', qHD: '540px', SD: '480px' };
 const TOC_FORMAT_LABELS = {
@@ -29,16 +21,16 @@ const TOC_FORMAT_LABELS = {
   default: 'Том X. Глава Y. Название', no_headers: 'Без заголовков', custom: 'Пользовательский формат'
 };
 
-// Разделы в порядке меню. group: null - «Загрузки» отдельно внизу. format - выбранный формат файла (null - без него)
-function PANEL_SECTIONS(format) {
-  const own = FORMAT_SETTINGS[format];
+// Разделы в порядке меню. group: null - «Загрузки» отдельно внизу.
+// «Форматы» - настройки всех форматов (CBZ/ZIP, PDF, TXT), как во вкладке настроек: их можно поправить заранее, не переключая формат
+function PANEL_SECTIONS() {
   return [
     { id: 'chapters', group: 'title', title: 'Главы', url: 'chapters.html' },
     { id: 'metadata', group: 'title', title: 'Метаданные', url: 'metadata.html' },
     { id: 'covers', group: 'title', title: 'Обложки', url: 'covers.html' },
     { id: 'images', group: 'build', title: 'Картинки', url: 'settings.html?group=images' },
     { id: 'toc', group: 'build', title: 'Оглавление', url: 'settings.html?group=toc' },
-    ...(own ? [{ id: 'format', group: 'build', title: own.title, url: `settings.html?group=${own.group}` }] : []),
+    { id: 'formats', group: 'build', title: 'Форматы', url: 'settings.html?group=formats' },
     { id: 'general', group: 'extension', title: 'Общие', url: 'settings.html?group=general' },
     { id: 'about', group: 'extension', title: 'О LibSaver', url: 'settings.html?group=about' },
     { id: 'downloads', group: null, title: 'Загрузки', url: 'downloads.html' }
@@ -77,7 +69,7 @@ function sectionSubtitle(id, settings, counts) {
     case 'covers': return String(counts.covers);
     case 'images': return IMAGE_QUALITY_LABELS[settings.imageQuality || 'ORIGINAL'] ?? '';
     case 'toc': return TOC_FORMAT_LABELS[settings.tocFormat || 'default'] ?? '';
-    case 'format': return settings.format?.toUpperCase() ?? '';
+    case 'formats': return settings.format?.toUpperCase() ?? '';
     default: return '';
   }
 }
@@ -123,7 +115,7 @@ function startPanel() {
     show('error');
   };
   const solo = () => single || early; // только «Загрузки», без меню и низа окна
-  const sections = () => solo() ? PANEL_SECTIONS(null).filter(section => section.id === 'downloads') : PANEL_SECTIONS(format);
+  const sections = () => solo() ? PANEL_SECTIONS().filter(section => section.id === 'downloads') : PANEL_SECTIONS();
 
   // Справа от пункта: на широком экране число, на телефоне подпись (для «Загрузок» - тоже число)
   const noteFor = section => {
@@ -171,7 +163,6 @@ function startPanel() {
 
   // Фрейм раздела создаётся при первом открытии и живёт до закрытия окна, чтобы не терять несохранённые правки
   const mountSection = section => {
-    const src = panelFrameSrc(section, slug);
     let frame = frames.get(section.id);
     if (!frame) {
       frame = document.createElement('iframe');
@@ -180,12 +171,9 @@ function startPanel() {
       frame.addEventListener('load', () => {
         try { frame.contentDocument.addEventListener('keydown', onEscape); } catch (e) { /* чужой документ */ }
       });
+      frame.src = panelFrameSrc(section, slug);
       frames.set(section.id, frame);
       framesEl.append(frame);
-    }
-    if (frame.dataset.src !== src) { // формат сменился - у раздела «формат» другая группа
-      frame.dataset.src = src;
-      frame.src = src;
     }
     for (const [id, other] of frames) other.classList.toggle('active', id === section.id);
   };
@@ -195,7 +183,7 @@ function startPanel() {
     if (!loaded) return;
     phone = window.innerWidth < PANEL_PHONE_WIDTH;
     const list = sections();
-    if (!list.some(section => section.id === current)) current = solo() ? 'downloads' : DEFAULT_SECTION; // формат сменился, раздела больше нет
+    if (!list.some(section => section.id === current)) current = solo() ? 'downloads' : DEFAULT_SECTION; // в окне одних «Загрузок» других разделов нет
     const inSection = solo() || !phone || view === 'section';
     const body = document.body;
     body.classList.toggle('phone', phone);

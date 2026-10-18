@@ -2198,20 +2198,13 @@ function panelLogic() {
   return ctx;
 }
 
-test('the section list follows the format: settings for CBZ/ZIP, PDF and TXT only, in the fixed order with «Загрузки» last', () => {
+test('the section list is fixed: «Форматы» holds the settings of every format whatever format is picked, «Загрузки» last', () => {
   const ctx = panelLogic();
-  const ids = format => Array.from(ctx.PANEL_SECTIONS(format), section => section.id);
-  const all = ['chapters', 'metadata', 'covers', 'images', 'toc', 'format', 'general', 'about', 'downloads'];
-  for (const hidden of ['epub', 'fb2', 'html', 'mkv', null]) assert.deepEqual(ids(hidden), all.filter(id => id !== 'format'), String(hidden));
-  for (const shown of ['cbz', 'zip', 'pdf', 'txt']) assert.deepEqual(ids(shown), all, shown);
-  const format = format => jsonCopy(ctx.PANEL_SECTIONS(format).find(section => section.id === 'format'));
-  assert.deepEqual(format('cbz'), { id: 'format', group: 'build', title: 'CBZ/ZIP', url: 'settings.html?group=cbz' });
-  assert.deepEqual([format('zip').title, format('zip').url], ['CBZ/ZIP', 'settings.html?group=cbz']);
-  assert.deepEqual([format('pdf').title, format('pdf').url], ['PDF', 'settings.html?group=pdf']);
-  assert.deepEqual([format('txt').title, format('txt').url], ['TXT', 'settings.html?group=txt']);
-  const urls = Object.fromEntries(Array.from(ctx.PANEL_SECTIONS('cbz'), section => [section.id, section.url]));
-  assert.deepEqual(urls, { chapters: 'chapters.html', metadata: 'metadata.html', covers: 'covers.html', images: 'settings.html?group=images', toc: 'settings.html?group=toc', format: 'settings.html?group=cbz', general: 'settings.html?group=general', about: 'settings.html?group=about', downloads: 'downloads.html' });
-  assert.equal(ctx.PANEL_SECTIONS('cbz').at(-1).group, null);
+  const sections = ctx.PANEL_SECTIONS();
+  const urls = Object.fromEntries(Array.from(sections, section => [section.id, section.url]));
+  assert.deepEqual(urls, { chapters: 'chapters.html', metadata: 'metadata.html', covers: 'covers.html', images: 'settings.html?group=images', toc: 'settings.html?group=toc', formats: 'settings.html?group=formats', general: 'settings.html?group=general', about: 'settings.html?group=about', downloads: 'downloads.html' });
+  assert.deepEqual(jsonCopy(sections.find(section => section.id === 'formats')), { id: 'formats', group: 'build', title: 'Форматы', url: 'settings.html?group=formats' });
+  assert.equal(sections.at(-1).group, null);
 });
 
 test('every section frame gets the title slug, after ? or &, and none when there is no title', () => {
@@ -2235,7 +2228,7 @@ test('phone subtitles: chapters, fields, covers, image quality, TOC format and t
   assert.equal(ctx.sectionSubtitle('images', { imageQuality: 'FHD' }, counts), '1080px');
   assert.equal(ctx.sectionSubtitle('toc', {}, counts), 'Том X. Глава Y. Название');
   assert.equal(ctx.sectionSubtitle('toc', { tocFormat: 'no_headers' }, counts), 'Без заголовков');
-  assert.equal(ctx.sectionSubtitle('format', { format: 'cbz' }, counts), 'CBZ');
+  assert.equal(ctx.sectionSubtitle('formats', { format: 'cbz' }, counts), 'CBZ');
   for (const id of ['general', 'about', 'downloads']) assert.equal(ctx.sectionSubtitle(id, {}, counts), '', id);
   assert.equal(ctx.sectionSubtitle('images', { imageQuality: 'bogus' }, counts), '');
 });
@@ -2418,7 +2411,7 @@ test('a vouched title page loads with the tab and URL from whoami, writes siteTy
   assert.deepEqual(page.frames(), [{ src: 'chapters.html?slug=123--title', active: true }]); // other sections are not created until opened
   assert.equal(page.element('title').textContent, 'Морино');
   const entries = page.menu().map(entry => [entry.title, entry.note, entry.on]);
-  assert.deepEqual(entries, [['Главы', '24', true], ['Метаданные', '15', false], ['Обложки', '3', false], ['Картинки', '', false], ['Оглавление', '', false], ['CBZ/ZIP', '', false], ['Общие', '', false], ['О LibSaver', '', false], ['Загрузки', '', false]]);
+  assert.deepEqual(entries, [['Главы', '24', true], ['Метаданные', '15', false], ['Обложки', '3', false], ['Картинки', '', false], ['Оглавление', '', false], ['Форматы', '', false], ['Общие', '', false], ['О LibSaver', '', false], ['Загрузки', '', false]]);
   assert.equal(page.element('download').textContent, 'Скачать 24 главы');
   assert.equal(page.element('download').disabled, false);
   assert.equal(page.element('format').value, 'cbz');
@@ -2442,22 +2435,19 @@ test('sections open lazily, keep their frame, and a section named in the address
   assert.equal(bogus.frames()[0].src, 'chapters.html?slug=123--title');
 });
 
-test('the format select is the stored format; a format without settings drops its section and a change reloads the format frame', async () => {
-  const page = panelPage({ me: { tabId: 7, url: panelUrl }, search: '?tab=7&section=format', stored: { selectedFormat_manga: 'pdf' } });
+test('the format select is the stored format; changing it keeps «Форматы» and its frame', async () => {
+  const page = panelPage({ me: { tabId: 7, url: panelUrl }, search: '?tab=7&section=formats', stored: { selectedFormat_manga: 'pdf' } });
   await page.settle();
   assert.equal(page.element('format').value, 'pdf');
-  assert.deepEqual(page.frames(), [{ src: 'settings.html?group=pdf&slug=123--title', active: true }]);
-  page.element('format').value = 'cbz';
-  page.element('format').fire('change');
-  await page.settle();
-  assert.equal(page.data.selectedFormat_manga, 'cbz');
-  assert.deepEqual(page.frames(), [{ src: 'settings.html?group=cbz&slug=123--title', active: true }]); // same frame, new address
-  page.element('format').value = 'epub';
-  page.element('format').fire('change');
-  await page.settle();
-  assert.equal(page.menu().some(entry => entry.title === 'CBZ/ZIP'), false);
-  assert.deepEqual(page.menu().filter(entry => entry.on).map(entry => entry.title), ['Главы']); // the open section vanished: back to the default
-  assert.deepEqual(page.frames().map(frame => frame.active), [false, true]);
+  assert.deepEqual(page.frames(), [{ src: 'settings.html?group=formats&slug=123--title', active: true }]);
+  for (const format of ['cbz', 'epub']) {
+    page.element('format').value = format;
+    page.element('format').fire('change');
+    await page.settle();
+    assert.equal(page.data.selectedFormat_manga, format);
+    assert.deepEqual(page.menu().filter(entry => entry.on).map(entry => entry.title), ['Форматы']);
+    assert.deepEqual(page.frames(), [{ src: 'settings.html?group=formats&slug=123--title', active: true }]); // the frame is not reloaded
+  }
 });
 
 test('«Скачать N глав» queues the selected chapters, leaves «Ускорить» to the snapshot, then opens «Загрузки»', async () => {
@@ -3073,6 +3063,7 @@ test('settings.html?group= lists panels by data-group; «general» is «general,
   assert.deepEqual(jsonCopy(ctx.settingsGroupsFromUrl('?group=general')), ['general', 'storage']);
   assert.deepEqual(jsonCopy(ctx.settingsGroupsFromUrl('?group=images&slug=1--a')), ['images']);
   assert.deepEqual(jsonCopy(ctx.settingsGroupsFromUrl('?group=toc,about')), ['toc', 'about']);
+  assert.deepEqual(jsonCopy(ctx.settingsGroupsFromUrl('?group=formats')), ['cbz', 'pdf', 'txt']);
 });
 
 test('group mode hides the panels outside the list and switches the page to one column without the toolbar', () => {
@@ -3095,11 +3086,9 @@ test('every settings group of the window has a panel, every panel is in some sec
   const ctx = settingsGroupsLogic();
   const panelCtx = panelLogic();
   const reachable = new Set();
-  for (const format of ['cbz', 'pdf', 'txt']) {
-    for (const section of panelCtx.PANEL_SECTIONS(format)) {
-      const group = new URL(section.url, 'chrome-extension://x/').searchParams.get('group');
-      if (group) for (const name of ctx.settingsGroupsFromUrl(`?group=${group}`)) reachable.add(name);
-    }
+  for (const section of panelCtx.PANEL_SECTIONS()) {
+    const group = new URL(section.url, 'chrome-extension://x/').searchParams.get('group');
+    if (group) for (const name of ctx.settingsGroupsFromUrl(`?group=${group}`)) reachable.add(name);
   }
   assert.deepEqual([...reachable].sort(), Object.keys(byGroup).sort());
   const outside = html.slice(0, html.indexOf('<div class="container">')) + html.slice(html.lastIndexOf('<div class="scroll-buttons"'));

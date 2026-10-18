@@ -1,6 +1,6 @@
-// Раздел окна LibSaver (?group=images|toc|cbz|pdf|txt|general|about): показываем только панели с data-group из списка (через запятую),
+// Раздел окна LibSaver (?group=images|toc|formats|cbz|pdf|txt|general|about): показываем только панели с data-group из списка (через запятую),
 // без тулбара и раскладки колонок. Без ?group= - вся страница с тулбаром (старое окно настроек)
-const GROUP_ALIASES = { general: ['general', 'storage'] };
+const GROUP_ALIASES = { general: ['general', 'storage'], formats: ['cbz', 'pdf', 'txt'] };
 
 function settingsGroupsFromUrl(search = location.search) {
   const value = new URLSearchParams(search).get('group');
