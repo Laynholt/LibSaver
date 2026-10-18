@@ -367,9 +367,10 @@ function ensureButtons(doc, url) {
 
 const ENGINE_RETRY_MS = 1000;
 const ENGINE_MAX_RETRIES = 5;
+const ENGINE_STABLE_MS = 5000; // связь, продержавшаяся столько, - не мигание: счётчик неудач обнуляется
 
-// failures - подряд неудачных подключений (сбрасываются первым состоянием); после ENGINE_MAX_RETRIES ждём смены адреса
-const engine = { port: null, state: null, failures: 0, connecting: false, stopped: false, timer: 0 };
+// failures - подряд неудачных подключений (сбрасываются, когда связь продержалась ENGINE_STABLE_MS); после ENGINE_MAX_RETRIES ждём смены адреса
+const engine = { port: null, state: null, failures: 0, connectedAt: 0, connecting: false, stopped: false, timer: 0 };
 
 // После перезагрузки расширения chrome.runtime в старом скрипте остаётся без id и бросает на каждый вызов
 function extensionAlive() {
@@ -390,6 +391,7 @@ function onEngineLost(port) {
   if (port) {
     if (engine.port !== port) return;
     engine.port = null;
+    if (Date.now() - engine.connectedAt >= ENGINE_STABLE_MS) engine.failures = 0;
   }
   setEngineState(null); // чужое состояние без связи не показываем
   if (engine.stopped) return;
@@ -413,11 +415,11 @@ async function connectEngine() {
     const port = chrome.runtime.connect({ name: 'libsaver-engine' });
     port.onMessage.addListener(message => {
       if (message?.type !== 'state') return;
-      engine.failures = 0;
       setEngineState(message.state);
     });
     port.onDisconnect.addListener(() => onEngineLost(port));
     engine.port = port;
+    engine.connectedAt = Date.now();
   } catch (e) {
     onEngineLost(null);
   } finally {
@@ -525,13 +527,17 @@ function createPlaque(doc) {
   const result = { host, title, detail, button, stopDrag: () => {} };
   button.addEventListener('pointerdown', event => {
     if (!event.isTrusted || event.button !== 0) return;
+    if (event.pointerType === 'mouse') event.preventDefault(); // без выделения текста страницы под рукой
     result.stopDrag();
     const start = { x: event.clientX, y: event.clientY };
     const rect = host.getBoundingClientRect();
     dragged = false;
     const onMove = move => {
-      if (!dragged && Math.hypot(move.clientX - start.x, move.clientY - start.y) < PLAQUE_DRAG_THRESHOLD) return;
-      dragged = true;
+      if (!dragged) {
+        if (Math.hypot(move.clientX - start.x, move.clientY - start.y) < PLAQUE_DRAG_THRESHOLD) return;
+        dragged = true;
+        try { button.setPointerCapture(event.pointerId); } catch (e) { /* указатель уже отпущен */ }
+      }
       Object.assign(host.style, { left: `${rect.left + move.clientX - start.x}px`, top: `${rect.top + move.clientY - start.y}px`, right: 'auto', bottom: 'auto' });
     };
     const onEnd = end => {
@@ -543,6 +549,7 @@ function createPlaque(doc) {
         saveCorner();
       }
       applyCorner(host);
+      setTimeout(() => { dragged = false; }, 0); // клик после отпускания придёт раньше; позднее нажатие с клавиатуры он не проглотит
     };
     const types = [['pointermove', onMove], ['pointerup', onEnd], ['pointercancel', onEnd]];
     for (const [type, handler] of types) window.addEventListener(type, handler, true);

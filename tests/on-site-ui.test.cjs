@@ -1622,13 +1622,37 @@ test('after five failed reconnects in a row the content script stops until the p
   await settle();
   assert.equal(link.messages.length, 7);
   assert.equal(link.timers.length, 6);
-  // a state from the engine gives a fresh count
-  const healthy = engineLinkContext();
+  const healthy = engineLinkContext(); // not exhausted: a new address changes nothing
   await healthy.ctx.connectEngine();
-  healthy.link.ports[0].receive({ type: 'state', state: stateOf() });
-  assert.equal(healthy.link.failures(), 0);
-  healthy.ctx.retryEngine(); // not exhausted: nothing happens
+  healthy.ctx.retryEngine();
   assert.equal(healthy.link.messages.length, 1);
+});
+
+test('a flapping engine does not reconnect forever: the count resets only after the link stayed up 5 s', async () => {
+  const { ctx, link } = engineLinkContext();
+  let now = 1000;
+  ctx.Date = { now: () => now };
+  // up and dropped at once, six times: a state message alone does not reset the count
+  for (let round = 0; round < 6; round++) {
+    await ctx.connectEngine();
+    if (link.ports.length === round) break; // gave up
+    link.ports[round].receive({ type: 'state', state: stateOf() });
+    now += 100;
+    link.ports[round].drop();
+    if (link.timers[round]) link.timers[round].fn();
+    await settle();
+  }
+  assert.equal(link.ports.length, 6);
+  assert.equal(link.timers.length, 5); // the sixth drop schedules nothing
+  assert.equal(link.failures(), 6);
+  // a link that stayed up long enough starts the count over
+  ctx.retryEngine();
+  await settle();
+  assert.equal(link.ports.length, 7);
+  now += 5000;
+  link.ports[6].drop();
+  assert.equal(link.failures(), 1);
+  assert.equal(link.timers.length, 6);
 });
 
 test('ensureEngine answering false is a failed attempt, not a connection', async () => {
@@ -1737,4 +1761,131 @@ test('the plaque click opens the downloads page in the overlay (until the new wi
 test('the site name map lives in page-call.js and the downloads view no longer carries its own copy', () => {
   assert.match(source('src/utils/page-call.js'), /const SITE_NAMES = /);
   assert.doesNotMatch(source('src/core/downloads-view.js'), /const SITE_NAMES/);
+});
+
+// ---- Task 9, round 1: plaque pointer path and teardown ----
+
+// Fake pointer events through the real listeners of createPlaque; window listeners are kept per type
+function plaqueDragContext() {
+  const { ctx, link } = engineLinkContext();
+  const { doc } = link;
+  doc.documentElement.clientWidth = 1000;
+  doc.documentElement.clientHeight = 800;
+  const windowHandlers = {};
+  ctx.addEventListener = (type, fn) => { (windowHandlers[type] ||= new Set()).add(fn); };
+  ctx.removeEventListener = (type, fn) => { windowHandlers[type]?.delete(fn); };
+  const handlers = new Map(); // element -> { type: fn }
+  const createElement = doc.createElement;
+  doc.createElement = tag => {
+    const el = createElement(tag);
+    el.addEventListener = (type, fn) => { handlers.set(el, { ...handlers.get(el), [type]: fn }); };
+    return el;
+  };
+  const saved = [];
+  ctx.chrome.storage.local.set = async values => { saved.push(values); };
+  const opened = [];
+  ctx.openOverlay = src => opened.push(src);
+  vm.runInContext('engine.state = ' + JSON.stringify(stateOf(queueEntry('running', { progress: { current: 1, total: 4 } }))), ctx);
+  ctx.renderPlaque(doc);
+  const { button, host } = vm.runInContext('plaque', ctx);
+  host.getBoundingClientRect = () => ({ left: 900, top: 700 });
+  const captured = [];
+  button.setPointerCapture = id => captured.push(id);
+  const event = (type, x, y, extra = {}) => ({ type, clientX: x, clientY: y, isTrusted: true, button: 0, pointerId: 7, pointerType: 'mouse', preventDefault() { this.prevented = true; }, ...extra });
+  const fire = e => { for (const fn of [...(windowHandlers[e.type] || [])]) fn(e); };
+  const click = (extra = {}) => handlers.get(button).click({ isTrusted: true, ...extra });
+  const down = e => handlers.get(button).pointerdown(e);
+  const listenerCount = () => Object.values(windowHandlers).reduce((sum, set) => sum + set.size, 0);
+  return { ctx, link, host, opened, saved, captured, event, fire, click, down, listenerCount, corner: () => vm.runInContext('plaqueCorner', ctx) };
+}
+
+test('plaque: a press with a move under 5px is a click that opens the downloads overlay', () => {
+  const t = plaqueDragContext();
+  const press = t.event('pointerdown', 950, 750);
+  t.down(press);
+  assert.equal(press.prevented, true); // the mouse does not select page text
+  assert.equal(t.listenerCount(), 3);
+  t.fire(t.event('pointermove', 952, 751));
+  t.fire(t.event('pointerup', 952, 751));
+  assert.equal(t.listenerCount(), 0);
+  t.click();
+  assert.deepEqual([t.opened, t.saved, t.captured, t.corner()], [['chrome-extension://id/html/downloads.html'], [], [], 'bottom-right']);
+  t.click({ isTrusted: false }); // a script click does nothing
+  assert.equal(t.opened.length, 1);
+});
+
+test('plaque: a drag over 5px captures the pointer, snaps to the nearest corner, saves it, and the click after it opens nothing', () => {
+  const t = plaqueDragContext();
+  t.down(t.event('pointerdown', 950, 750));
+  t.fire(t.event('pointermove', 940, 740));
+  assert.deepEqual(t.captured, [7]);
+  assert.deepEqual([t.host.style.left, t.host.style.top, t.host.style.right, t.host.style.bottom], ['890px', '690px', 'auto', 'auto']);
+  t.fire(t.event('pointermove', 120, 90));
+  t.fire(t.event('pointerup', 120, 90));
+  assert.deepEqual([t.corner(), jsonOf(t.saved), t.listenerCount()], ['top-left', [{ plaqueCorner: 'top-left' }], 0]);
+  assert.deepEqual([t.host.style.top, t.host.style.left, t.host.style.bottom, t.host.style.right], ['16px', '16px', 'auto', 'auto']);
+  t.click(); // the click the browser sends after the release
+  assert.equal(t.opened.length, 0);
+  // an activation that comes after the release's own click (the keyboard) must not be swallowed
+  t.down(t.event('pointerdown', 20, 20));
+  t.fire(t.event('pointermove', 400, 20));
+  t.fire(t.event('pointerup', 400, 20));
+  const reset = t.link.timers.at(-1);
+  assert.equal(reset.ms, 0);
+  reset.fn();
+  t.click();
+  assert.equal(t.opened.length, 1);
+});
+
+test('plaque: a cancelled drag puts the plaque back in its corner without saving and cleans up', () => {
+  const t = plaqueDragContext();
+  t.down(t.event('pointerdown', 950, 750));
+  t.fire(t.event('pointermove', 300, 300));
+  assert.equal(t.host.style.right, 'auto');
+  t.fire(t.event('pointercancel', 300, 300));
+  assert.deepEqual([t.corner(), t.saved, t.listenerCount()], ['bottom-right', [], 0]);
+  assert.deepEqual([t.host.style.right, t.host.style.bottom, t.host.style.left, t.host.style.top], ['16px', '16px', 'auto', 'auto']);
+  const other = t.event('pointerdown', 950, 750, { button: 2 }); // not the main button
+  t.down(other);
+  assert.equal(t.listenerCount(), 0);
+});
+
+test('stopSiteUi takes everything down: observer, resize and storage listeners, plaque, buttons, scheduler and the engine port', async () => {
+  const { ctx, link } = engineLinkContext();
+  const { doc } = link;
+  doc.body = new FakeEl('body');
+  doc.documentElement = doc; // the fake document is its own root, so the plaque lands next to the title grid
+  const observers = [];
+  ctx.MutationObserver = class {
+    constructor(callback) { this.callback = callback; this.disconnected = false; observers.push(this); }
+    observe(target, options) { this.target = target; this.options = options; }
+    disconnect() { this.disconnected = true; }
+  };
+  const windowListeners = new Set();
+  ctx.addEventListener = (type, fn) => windowListeners.add(`${type}`);
+  ctx.removeEventListener = (type, fn) => windowListeners.delete(`${type}`);
+  const cleared = [];
+  ctx.clearTimeout = id => cleared.push(id);
+  ctx.startSiteUi();
+  await settle();
+  const [observer] = observers;
+  assert.deepEqual([observers.length, observer.target === doc, observer.options.subtree], [1, true, true]);
+  assert.ok(windowListeners.has('resize'));
+  assert.ok(ctx.listeners.has(ctx.onPlaqueCornerChanged));
+  assert.equal(doc.querySelectorAll('[data-libsaver-buttons]').length, 1);
+  link.ports[0].receive({ type: 'state', state: stateOf(queueEntry('running', { progress: { current: 1, total: 4 } })) });
+  assert.notEqual(vm.runInContext('plaque', ctx), null);
+  observer.callback(); // a mutation: the check is scheduled
+  const pending = link.timers.length; // the scheduler's timer id is its 1-based index
+  vm.runInContext('stopSiteUi()', ctx);
+
+  assert.equal(observer.disconnected, true);
+  assert.equal(windowListeners.has('resize'), false);
+  assert.equal(ctx.listeners.has(ctx.onPlaqueCornerChanged), false);
+  assert.equal(doc.querySelectorAll('[data-libsaver-buttons]').length, 0);
+  assert.equal(vm.runInContext('plaque', ctx), null);
+  assert.ok(cleared.includes(pending)); // the scheduled check is canceled
+  assert.equal(link.ports[0].disconnected, true);
+  assert.equal(vm.runInContext('engine.stopped', ctx), true);
+  vm.runInContext('stopSiteUi()', ctx); // a second call is harmless
 });
