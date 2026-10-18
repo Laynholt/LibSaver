@@ -113,7 +113,12 @@ function verifiedEmbedder(me, tabParam, { requireTitle = true } = {}) {
   if (typeof me?.tabId !== 'number' || typeof me.url !== 'string') return null;
   if (tabParam != null && tabParam !== String(me.tabId)) return null;
   if (!siteKeyByHost(me.url) || (requireTitle && !isTitlePage(me.url))) return null;
-  return { tabId: me.tabId, url: me.url, parentOrigin: new URL(me.url).origin };
+  const parentOrigin = new URL(me.url).origin;
+  // whoami ручается за верхнюю страницу, а не за фрейм, встроивший нас: чужой iframe (реклама) на той же странице отклоняем.
+  // Нужен прямой родитель - страница сайта. В Firefox ancestorOrigins нет: там хватает whoami
+  const ancestors = typeof location !== 'undefined' ? location.ancestorOrigins : undefined;
+  if (ancestors && (ancestors.length < 1 || ancestors[0] !== parentOrigin)) return null;
+  return { tabId: me.tabId, url: me.url, parentOrigin };
 }
 
 // Ссылки на главные страницы сайта: https://<домен> (без поддоменных шаблонов)

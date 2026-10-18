@@ -277,7 +277,7 @@ function startPanel() {
     show('main');
     update();
     chrome.storage.onChanged.addListener((changes, area) => {
-      if (area === 'local' && ['titleData:' + slug, 'metadataFields', 'imageQuality', 'tocFormat', 'speedMode', formatKeyFor(info.siteType)].some(key => key in changes)) refresh();
+      if (area === 'local' && ['titleData:' + slug, 'metadataFields', 'imageQuality', 'tocFormat', 'speedMode', formatKeyFor(info.siteType)].some(key => key in changes)) refresh().catch(error => console.error('[LibSaver] panel', error));
     });
     watchQueue();
   }

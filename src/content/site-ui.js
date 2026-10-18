@@ -603,10 +603,12 @@ function onPlaqueCornerChanged(changes, area) {
   if (plaque) applyCorner(plaque.host);
 }
 
-// Иконка расширения на странице тайтла: popup просит фон, фон передаёт просьбу вкладке (action 'openPanel' в background.js)
-function onRuntimeMessage(message, sender) {
+// Иконка расширения на странице тайтла: popup просит фон, фон передаёт просьбу вкладке (action 'openPanel' в background.js).
+// Ответ true - окно открыто: без него promise chrome.tabs.sendMessage отклоняется и popup не закрывается
+function onRuntimeMessage(message, sender, sendResponse) {
   if (message?.action !== 'libsaver:openPanel' || sender?.id !== chrome.runtime.id) return;
-  openSettings(typeof message.section === 'string' ? message.section : undefined);
+  Promise.resolve(openSettings(typeof message.section === 'string' ? message.section : undefined)).then(() => sendResponse(true), () => sendResponse(false));
+  return true;
 }
 
 // ---- Слежение за страницей ----

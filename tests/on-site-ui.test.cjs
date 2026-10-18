@@ -1417,7 +1417,7 @@ function quickPage({ me, search = '?tab=7' }) {
   vm.runInContext(['src/utils/title-store.js', 'src/utils/page-call.js', 'src/core/chapter-range.js', 'src/utils/formats.js', 'src/core/title-loader.js', 'src/core/site-download.js', 'src/core/quick.js'].map(source).join('\n'), ctx);
   // startQuick is waiting for whoami: swap the loader before it answers
   ctx.loadTitleData = async args => { loads.push(JSON.parse(JSON.stringify(args))); return { chapters: [] }; };
-  return { element, data, loads, posted, settle: () => new Promise(resolve => setTimeout(resolve, 5)) };
+  return { ctx, element, data, loads, posted, settle: () => new Promise(resolve => setTimeout(resolve, 5)) };
 }
 
 test('an embedder that whoami does not vouch for gets an error without «Повторить», and nothing can load or write', async () => {
@@ -1992,7 +1992,7 @@ const panelChapters = Array.from({ length: 109 }, (_, index) => ({ id: index + 1
 const panelTitleData = (extra = {}) => ({ chapters: panelChapters, metadata: { titleRu: 'Морино' }, covers: [{}, {}, {}], filteredChapters: panelChapters.slice(0, 24), ...extra });
 const panelUrl = 'https://mangalib.me/ru/manga/123--title';
 
-function panelPage({ me, search = '?tab=7', width = 1000, stored = {}, title = panelTitleData(), enqueueResult = { ok: true } }) {
+function panelPage({ me, search = '?tab=7', ancestorOrigins, width = 1000, stored = {}, title = panelTitleData(), enqueueResult = { ok: true } }) {
   const data = { 'titleData:123--title': title, ...structuredClone(stored) };
   const calls = { loads: [], snapshots: [], enqueues: [], posted: [], writes: [], messages: [] };
   const elements = {};
@@ -2003,7 +2003,7 @@ function panelPage({ me, search = '?tab=7', width = 1000, stored = {}, title = p
   const port = { onMessage: { addListener: fn => { port.receive = fn; } }, onDisconnect: { addListener: fn => { port.drop = fn; } } };
   const ctx = vm.createContext({
     URL, URLSearchParams, console: { error() {}, log() {} },
-    location: { search, protocol: 'chrome-extension:' },
+    location: { search, protocol: 'chrome-extension:', ancestorOrigins },
     window: {
       innerWidth: width,
       parent: { postMessage: (message, origin) => calls.posted.push([message, origin]) },
@@ -2299,26 +2299,43 @@ test('panel.html loads its scripts in dependency order and panel.js never reads 
   assert.match(source('src/html/quick.html'), /core\/site-download\.js[\s\S]*core\/quick\.js/);
 });
 
-test('the settings window is opened from the page by the popup request, and only by the extension', () => {
+test('the settings window is opened from the page by the popup request, only by the extension, and the page answers true once it is open', async () => {
   const ctx = siteUiContext();
   const opened = [];
-  ctx.openSettings = section => opened.push(section);
-  ctx.onRuntimeMessage({ action: 'libsaver:openPanel', section: 'chapters' }, { id: 'id' });
-  ctx.onRuntimeMessage({ action: 'libsaver:openPanel' }, { id: 'id' });
-  ctx.onRuntimeMessage({ action: 'libsaver:openPanel', section: { x: 1 } }, { id: 'id' });
-  ctx.onRuntimeMessage({ action: 'libsaver:openPanel', section: 'chapters' }, { id: 'other-extension' });
-  ctx.onRuntimeMessage({ action: 'showToast' }, { id: 'id' });
-  ctx.onRuntimeMessage(null, { id: 'id' });
+  ctx.openSettings = async section => { opened.push(section); };
+  const ask = async (message, sender = { id: 'id' }) => {
+    const replies = [];
+    const kept = ctx.onRuntimeMessage(message, sender, value => replies.push(value));
+    await settle();
+    return [kept, replies];
+  };
+  assert.deepEqual(await ask({ action: 'libsaver:openPanel', section: 'chapters' }), [true, [true]]);
+  assert.deepEqual(await ask({ action: 'libsaver:openPanel' }), [true, [true]]);
+  assert.deepEqual(await ask({ action: 'libsaver:openPanel', section: { x: 1 } }), [true, [true]]);
+  assert.deepEqual(await ask({ action: 'libsaver:openPanel', section: 'chapters' }, { id: 'other-extension' }), [undefined, []]);
+  assert.deepEqual(await ask({ action: 'showToast' }), [undefined, []]);
+  assert.deepEqual(await ask(null), [undefined, []]);
   assert.deepEqual(opened, ['chapters', undefined, undefined]);
+  ctx.openSettings = async () => { throw new Error('boom'); };
+  assert.deepEqual(await ask({ action: 'libsaver:openPanel' }), [true, [false]]);
 });
 
 test('background forwards the popup request to the active title tab only', async () => {
   const sent = [];
   let tabs = [{ id: 3, url: 'https://mangalib.me/ru/manga/1--a' }];
   let failSend = false;
+  const page = siteUiContext();
+  page.openSettings = async () => {};
   const ctx = vm.createContext({ URL, console, chrome: { tabs: {
     query: async () => tabs,
-    sendMessage: async (id, message) => { if (failSend) throw new Error('Could not establish connection'); sent.push([id, message]); }
+    // the page side is the real handler: like Chrome, the promise rejects when it keeps no channel open or never replies
+    sendMessage: (id, message) => new Promise((resolve, reject) => {
+      if (failSend) return reject(new Error('Could not establish connection'));
+      sent.push([id, message]);
+      let replied = false;
+      const kept = page.onRuntimeMessage(message, { id: 'id' }, value => { replied = true; resolve(value); });
+      if (kept !== true && !replied) reject(new Error('The message port closed before a response was received.'));
+    })
   } } });
   vm.runInContext(source('src/utils/page-call.js') + functionSource('src/background.js', 'openPanelOnActiveTab') + functionSource('src/background.js', 'handleOpenPanel'), ctx);
   const ask = async (request, sender = {}) => {
@@ -2367,4 +2384,42 @@ test('the popup asks the background for the settings window on a title page and 
 test('the old windows are no longer opened from the page or the background', () => {
   assert.doesNotMatch(source('src/content/site-ui.js'), /workspace\.html|html\/downloads\.html/);
   assert.doesNotMatch(source('src/background.js'), /workspace\.html/);
+});
+
+test('a third-party frame on a title page cannot use the window: the direct parent must be the site page (Chrome), whoami alone is enough where there is no ancestorOrigins (Firefox)', async () => {
+  const ctx = vm.createContext({ URL, location: {} });
+  vm.runInContext(source('src/utils/page-call.js'), ctx);
+  const me = { tabId: 7, url: panelUrl };
+  const embedder = ancestors => { ctx.location.ancestorOrigins = ancestors; return ctx.verifiedEmbedder(me, '7'); };
+  assert.notEqual(embedder(['https://mangalib.me']), null);
+  assert.notEqual(embedder(undefined), null);
+  assert.equal(embedder(['https://ads.example']), null); // an ad iframe on the page
+  assert.equal(embedder([]), null); // not framed at all
+  assert.equal(embedder(['https://ads.example', 'https://mangalib.me']), null); // framed by the ad, which sits on the page
+  assert.equal(embedder(['https://mangalib.me.evil.example']), null);
+  assert.equal(ctx.verifiedEmbedder({ tabId: 5, url: 'https://mangalib.me/ru/catalog' }, '5', { requireTitle: false }), null);
+
+  for (const ancestorOrigins of [['https://ads.example'], []]) {
+    const page = panelPage({ me, ancestorOrigins });
+    await page.settle();
+    assert.equal(page.element('error').has('hidden'), false);
+    page.element('retry').fire('click');
+    page.element('download').fire('click');
+    await page.settle();
+    assert.deepEqual([page.calls.writes, page.calls.loads, page.calls.snapshots, page.calls.enqueues, page.calls.posted], [[], [], [], [], []]);
+    assert.deepEqual(page.calls.messages, ['whoami']);
+  }
+  const ok = panelPage({ me, ancestorOrigins: ['https://mangalib.me'] });
+  await ok.settle();
+  assert.equal(ok.calls.loads.length, 1);
+
+  const quick = quickPage({ me, search: '?tab=7' });
+  quick.ctx.location.ancestorOrigins = ['https://ads.example']; // set before whoami answers
+  await quick.settle();
+  assert.deepEqual([quick.data, quick.loads, quick.posted], [{}, [], []]);
+  assert.equal(quick.element('retry').classes.has('hidden'), true);
+});
+
+test('a failing refresh after a storage change is logged, not left as an unhandled rejection', () => {
+  assert.match(source('src/core/panel.js'), /refresh\(\)\.catch\(/);
 });
