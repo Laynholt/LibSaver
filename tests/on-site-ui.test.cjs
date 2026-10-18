@@ -3122,10 +3122,11 @@ test('a section of the window saves only the keys of its own groups, so a stale 
   assert.ok(['imageQuality', 'tocFormat', 'pdfFont', 'txtImageMarker', 'generateComicInfo', 'cleanupOldTitles', 'enableSiteMenu'].every(key => key in whole));
 });
 
-test('about: the version is from the manifest and the update check is the one the extension already had', () => {
+test('about: the version is from the manifest and the update check asks the latest GitHub release', () => {
   const settings = source('src/core/settings.js');
   assert.match(functionSource('src/core/settings.js', 'displayVersion'), /chrome[.]runtime[.]getManifest[(][)]/);
-  assert.match(settings, /cdn[.]jsdelivr[.]net[/]gh[/]dfy-dpg[/]LibSaver@latest[/]src[/]manifest[.]json/);
+  assert.match(functionSource('src/core/settings.js', 'checkForUpdates'), /fetchLatestRelease[(][)]/);
+  assert.match(source('src/core/popup.js'), /fetchLatestRelease[(][)]/);
   assert.match(settings, /getElementById[(]'btn-check-updates'[)]/);
 });
 
@@ -3379,4 +3380,44 @@ test('saveMetadata does not write fieldLabels until they have been loaded, so a 
   await ctx.saveMetadata();
   assert.deepEqual(jsonCopy(writes[1].fieldLabels), { author: 'Автор книги' });
   assert.match(source('src/editors/metadata.js'), /originalFieldLabels = [{] [.][.][.]\(labelResult[.]fieldLabels \|\| {}\) [}];\s*tempFieldLabels = [{] [.][.][.]originalFieldLabels [}];\s*fieldLabelsLoaded = true;/);
+});
+
+// ---- v2.0.0: обновления по релизам GitHub ----
+
+function updateCheckContext(release, { status = 200, userAgent = 'Chrome' } = {}) {
+  const calls = { tabs: [], downloads: [], fetched: [] };
+  const context = vm.createContext({
+    AbortController, setTimeout, clearTimeout, navigator: { userAgent },
+    fetch: async url => { calls.fetched.push(url); return { ok: status === 200, status, json: async () => release }; },
+    chrome: { tabs: { create: ({ url }) => calls.tabs.push(url) }, downloads: { download: async ({ url }) => { calls.downloads.push(url); } } }
+  });
+  vm.runInContext(source('src/utils/update-check.js'), context);
+  return { ctx: context, calls };
+}
+
+test('update check: the tag of the latest release is compared with the manifest version, assets come only from the repository', async () => {
+  const assets = [
+    { name: 'LibSaver-v2.1.0.zip', browser_download_url: 'https://github.com/Laynholt/LibSaver/releases/download/v2.1.0/LibSaver-v2.1.0.zip' },
+    { name: 'LibSaver-v2.1.0-firefox.zip', browser_download_url: 'https://github.com/Laynholt/LibSaver/releases/download/v2.1.0/LibSaver-v2.1.0-firefox.zip' },
+    { name: 'evil.xpi', browser_download_url: 'https://evil.example/evil.xpi' }
+  ];
+  const { ctx, calls } = updateCheckContext({ tag_name: 'v2.1.0', assets });
+  const release = jsonOf(await ctx.fetchLatestRelease());
+  assert.equal(calls.fetched[0], 'https://api.github.com/repos/Laynholt/LibSaver/releases/latest');
+  assert.deepEqual(release, { version: '2.1.0', page: 'https://github.com/Laynholt/LibSaver/releases/latest', zip: assets[0].browser_download_url });
+  assert.equal(ctx.compareVersions('2.1.0', '2.0.0'), 1);
+  assert.equal(ctx.compareVersions('2.0', '2.0.0'), 0);
+  assert.equal(ctx.compareVersions('1.7', '2.0.0'), -1);
+  ctx.openUpdate(release);
+  assert.deepEqual(calls.downloads, [assets[0].browser_download_url]);
+  assert.deepEqual(calls.tabs, ['https://github.com/Laynholt/LibSaver/releases/latest']);
+});
+
+test('update check: no releases or a tag that is not a version is an error, Firefox opens a signed xpi', async () => {
+  await assert.rejects(updateCheckContext({}, { status: 404 }).ctx.fetchLatestRelease(), { message: 'HTTP 404' });
+  await assert.rejects(updateCheckContext({ tag_name: 'nightly' }).ctx.fetchLatestRelease(), { message: 'Нет версии в релизе' });
+  const xpi = 'https://github.com/Laynholt/LibSaver/releases/download/v2.1.0/libsaver.xpi';
+  const { ctx, calls } = updateCheckContext({ tag_name: 'v2.1.0', assets: [{ name: 'libsaver.xpi', browser_download_url: xpi }] }, { userAgent: 'Mozilla/5.0 Firefox/130.0' });
+  ctx.openUpdate(await ctx.fetchLatestRelease());
+  assert.deepEqual([calls.tabs, calls.downloads], [[xpi], []]);
 });

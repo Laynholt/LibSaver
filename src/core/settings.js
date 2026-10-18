@@ -1256,30 +1256,19 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 });
 
-// Сравнение версий (semver)
-function compareVersions(v1, v2) {
-  const parts1 = v1.split('.').map(Number);
-  const parts2 = v2.split('.').map(Number);
-
-  const maxLength = Math.max(parts1.length, parts2.length);
-
-  for (let i = 0; i < maxLength; i++) {
-    const num1 = parts1[i] || 0;
-    const num2 = parts2[i] || 0;
-
-    if (num1 > num2) return 1;
-    if (num1 < num2) return -1;
-  }
-
-  return 0;
-}
-
-// Проверка обновлений
+// Проверка обновлений по последнему релизу на GitHub (utils/update-check.js)
 async function checkForUpdates() {
   const versionElement = document.getElementById('extension-version');
-  const manifest = chrome.runtime.getManifest();
-  const currentVersion = manifest.version;
+  const currentVersion = chrome.runtime.getManifest().version;
   const originalText = `LibSaver v${currentVersion}`;
+  const showBriefly = (text, color) => {
+    versionElement.textContent = text;
+    versionElement.style.color = color;
+    setTimeout(() => {
+      versionElement.textContent = originalText;
+      versionElement.style.color = '';
+    }, 4000);
+  };
 
   versionElement.textContent = 'Проверка...';
   versionElement.style.color = '#999';
@@ -1287,75 +1276,29 @@ async function checkForUpdates() {
   versionElement.classList.remove('clickable-version');
 
   try {
-    console.log('Текущая версия:', currentVersion);
-
-    // Таймаут 30 секунд для fetch
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 30000);
-
-    const response = await fetch('https://cdn.jsdelivr.net/gh/dfy-dpg/LibSaver@latest/src/manifest.json', {
-      signal: controller.signal
-    });
-    clearTimeout(timeoutId);
-
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}`);
-    }
-
-    const manifest = await response.json();
-    if (!manifest || !manifest.version) {
-      throw new Error('Нет версии в manifest');
-    }
-
-    const latestVersion = manifest.version;
-
-    console.log('Версия на GitHub:', latestVersion);
-
-    // Фейковая задержка 1 секунда после успешного ответа
-    await new Promise(resolve => setTimeout(resolve, 1000));
-
-    // Семантическое сравнение версий
-    if (compareVersions(latestVersion, currentVersion) > 0) {
-      // Обновление доступно - показываем постоянно, кликабельно
-      versionElement.textContent = `v${currentVersion} → v${latestVersion}`;
+    const release = await fetchLatestRelease();
+    if (compareVersions(release.version, currentVersion) > 0) {
+      // Обновление есть - надпись остаётся и по клику скачивает релиз
+      versionElement.textContent = `v${currentVersion} → v${release.version} · скачать`;
       versionElement.style.color = '#4CAF50';
       versionElement.classList.add('clickable-version');
-      console.log(`Доступно обновление: v${currentVersion} → v${latestVersion}`);
-
-      // При клике открываем GitHub releases (последний релиз)
-      versionElement.onclick = () => {
-        chrome.tabs.create({ url: 'https://github.com/dfy-dpg/LibSaver/releases/latest' });
-      };
+      versionElement.onclick = () => openUpdate(release);
     } else {
-      // Актуальная версия - показываем 4 секунды, не кликабельно
-      versionElement.textContent = 'Актуальная версия';
-      versionElement.style.color = '#4CAF50';
-
-      setTimeout(() => {
-        versionElement.textContent = originalText;
-        versionElement.style.color = '';
-      }, 4000);
+      showBriefly('Актуальная версия', '#4CAF50');
     }
   } catch (error) {
-    // Определяем тип ошибки для более информативного сообщения
     let errorMessage = 'Ошибка';
     if (error.name === 'AbortError') {
       errorMessage = 'Таймаут';
     } else if (error.message.includes('Failed to fetch') || error.message.includes('NetworkError')) {
       errorMessage = 'Нет соединения';
-    } else if (error.message.includes('HTTP 4') || error.message.includes('HTTP 5')) {
-      errorMessage = 'CDN недоступен';
+    } else if (error.message === 'HTTP 404') {
+      errorMessage = 'Релизов пока нет';
+    } else if (error.message.startsWith('HTTP ')) {
+      errorMessage = 'GitHub недоступен';
     }
-
-    // Ошибка - показываем 4 секунды, не кликабельно (без задержки)
-    versionElement.textContent = errorMessage;
-    versionElement.style.color = '#f44336';
     console.error('Ошибка проверки обновлений:', error);
-
-    setTimeout(() => {
-      versionElement.textContent = originalText;
-      versionElement.style.color = '';
-    }, 4000);
+    showBriefly(errorMessage, '#f44336');
   }
 }
 
