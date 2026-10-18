@@ -5,6 +5,8 @@ let originalChapters = [];
 let uniqueChapters = []; // getUniqueChapters(displayChapters): индекс в списке = data-index в DOM и значения «от»/«до»
 let volumeChapters = new Map(); // том (строкой) -> его главы из uniqueChapters, все, а не только показанные
 let volumeCards = new Map(); // том (строкой) -> карточка тома в DOM (по мере показа глав)
+// Тома свёрнуты, если их больше одного; раскрытые помнятся, пока окно открыто, - перерисовка списка их не сворачивает
+const expandedVolumes = new Set();
 let chosenIds = new Set(); // id отмеченных глав (хранится в titleData[slug].selectedChapterIds)
 let selectionDirty = false; // выбор правили здесь и ещё не записали: без этого saveChapters чужой выбор (быстрое окошко) не трогает
 let userChapters = [];
@@ -103,7 +105,25 @@ function createVolumeCard(key) {
   title.textContent = `Том ${key}`;
   const count = document.createElement('span');
   count.className = 'volume-count';
-  header.append(select.label, title, count);
+  const toggle = document.createElement('button');
+  toggle.type = 'button';
+  toggle.className = 'volume-toggle';
+  toggle.innerHTML = '<i class="fa-solid fa-chevron-down"></i>';
+  const setOpen = open => {
+    card.classList.toggle('collapsed', !open);
+    toggle.setAttribute('aria-expanded', String(open));
+    toggle.title = open ? 'Свернуть том' : 'Развернуть том';
+  };
+  const flip = () => {
+    const open = card.classList.contains('collapsed');
+    if (open) expandedVolumes.add(key);
+    else expandedVolumes.delete(key);
+    setOpen(open);
+  };
+  setOpen(volumeChapters.size <= 1 || expandedVolumes.has(key));
+  toggle.addEventListener('click', flip);
+  title.addEventListener('click', flip);
+  header.append(select.label, title, count, toggle);
 
   const body = document.createElement('div');
   body.className = 'volume-body';

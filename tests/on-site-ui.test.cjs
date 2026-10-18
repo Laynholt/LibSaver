@@ -1264,8 +1264,10 @@ test('ensureButtons reports a missing anchor and an unsupported site without tou
 test('ensureButtons takes a full grid row when the grid has several columns, and sizes itself from the anchor', () => {
   const ctx = siteUiContext();
   const narrow = fakeTitleDoc('ranobelib', { columns: '170px 170px' });
+  Object.assign(narrow.anchor.computed, { zIndex: '3', order: '1' }); // телефонная вёрстка: сайт поднимает кнопки над фоном шапки
   ctx.ensureButtons(narrow, 'https://ranobelib.me/ru/book/y');
-  assert.equal(narrow.grid.children[1].style.gridColumn, '1 / -1');
+  const row = narrow.grid.children[1];
+  assert.deepEqual([row.style.gridColumn, row.style['--ls-width'], row.style.zIndex, row.style.order], ['1 / -1', '100%', '3', '1']);
   const wide = fakeTitleDoc('ranobelib');
   ctx.ensureButtons(wide, 'https://ranobelib.me/ru/book/y');
   const host = wide.grid.children[1];

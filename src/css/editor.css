@@ -132,6 +132,41 @@ body {
   min-width: 0;
 }
 
+.volume-title {
+  cursor: pointer;
+}
+
+.volume-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-sm, 4px);
+  background: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: transform 0.2s;
+}
+
+.volume-toggle:hover {
+  color: var(--text-primary);
+}
+
+.volume-card.collapsed .volume-toggle {
+  transform: rotate(-90deg);
+}
+
+.volume-card.collapsed .volume-header {
+  margin-bottom: 0;
+}
+
+.volume-card.collapsed .volume-body {
+  display: none;
+}
+
 .volume-body {
   display: flex;
   flex-direction: column;

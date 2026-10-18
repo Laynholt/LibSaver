@@ -374,11 +374,16 @@ function createButtonsHost(doc, siteKey) {
 // Размер и радиус - как у «Начать читать»; в узкой сетке (две колонки) занимаем свою строку целиком
 function fitToAnchor(doc, host, anchor) {
   const own = doc.defaultView.getComputedStyle(anchor);
+  const columns = doc.defaultView.getComputedStyle(anchor.parentElement).gridTemplateColumns || '';
+  const wide = columns.trim().split(/\s+/).length > 1;
   host.style.setProperty('--ls-height', own.height);
   host.style.setProperty('--ls-radius', own.borderRadius);
-  host.style.setProperty('--ls-width', own.width);
-  const columns = doc.defaultView.getComputedStyle(anchor.parentElement).gridTemplateColumns || '';
-  host.style.gridColumn = columns.trim().split(/\s+/).length > 1 ? '1 / -1' : '';
+  host.style.setProperty('--ls-width', wide ? '100%' : own.width);
+  host.style.gridColumn = wide ? '1 / -1' : '';
+  // Телефонная вёрстка (проверено 2026-10-19): фон шапки (img, z-index 1) лежит поверх ряда, сайт поднимает над ним свои кнопки,
+  // а «Читать» сдвигает в конец (order). Без того же z-index наши кнопки невидимы, без order встают над рядом
+  host.style.order = own.order || '';
+  host.style.zIndex = own.zIndex && own.zIndex !== 'auto' ? own.zIndex : '';
 }
 
 // Идемпотентно: вызывается после каждого изменения страницы. Что открывать по клику, кнопки узнают в момент клика

@@ -64,8 +64,9 @@ function siteKeyOf(url) {
   return getSiteConfig(url)?.siteType || null;
 }
 
-// Сайт вкладки, если вызывающий не знает его заранее
+// Сайт вкладки, если вызывающий не знает его заранее. Окну расширения внутри страницы сайта Firefox не даёт chrome.tabs - спрашиваем фон
 async function siteKeyOfTab(tabId) {
+  if (!hasTabApi()) return viaServiceWorker({ action: 'pageCall:siteKey', tabId });
   return siteKeyOf((await chrome.tabs.get(tabId)).url);
 }
 

@@ -1458,7 +1458,7 @@ async function buildIssueUrl() {
 document.addEventListener('click', async (event) => {
   if (!event.target.closest('.issue-btn')) return;
   event.preventDefault();
-  chrome.tabs.create({ url: await buildIssueUrl() });
+  openTab(await buildIssueUrl());
 });
 
 window.addEventListener('beforeunload', () => {
