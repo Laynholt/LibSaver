@@ -1783,6 +1783,7 @@ test('the overlay host is recreated on the same address when the page detached i
   const log = [];
   ctx.addEventListener = (type) => log.push(['add', type]);
   ctx.removeEventListener = (type) => log.push(['remove', type]);
+  Object.assign(ctx, { setTimeout: () => 1, clearTimeout: () => {}, focus: () => {} });
   ctx.reviveOverlay(); // no overlay: nothing happens
   ctx.openOverlay('chrome-extension://id/html/downloads.html');
   const first = vm.runInContext('overlay', ctx);
@@ -1796,6 +1797,82 @@ test('the overlay host is recreated on the same address when the page detached i
   assert.equal(second.src, 'chrome-extension://id/html/downloads.html');
   assert.equal(second.host.parentElement, doc.documentElement);
   assert.deepEqual(log, [['remove', 'keydown'], ['remove', 'message'], ['add', 'keydown'], ['add', 'message']]); // the old listeners go, new ones come
+  assert.deepEqual(doc.documentElement.children, [second.host]); // the detached host is not kept for a delayed removal
+});
+
+// Fake page for the overlay: listeners by type, timers run by hand, focus calls counted
+function overlayContext() {
+  const ctx = siteUiContext();
+  const doc = fakeTitleDoc('mangalib');
+  doc.documentElement = new FakeEl('html');
+  ctx.document = doc;
+  const page = { doc, listeners: {}, timers: new Map(), nextTimer: 1, focused: 0 };
+  ctx.addEventListener = (type, fn) => { page.listeners[type] = fn; };
+  ctx.removeEventListener = type => { delete page.listeners[type]; };
+  ctx.setTimeout = (fn, ms) => { page.timers.set(page.nextTimer, { fn, ms }); return page.nextTimer++; };
+  ctx.clearTimeout = id => page.timers.delete(id);
+  ctx.focus = () => { page.focused++; };
+  page.hosts = () => doc.documentElement.children;
+  page.runTimers = () => { for (const [id, { fn }] of [...page.timers]) { page.timers.delete(id); fn(); } };
+  return { ctx, page };
+}
+
+test('closing the overlay hides it at once and removes the host 1.5 s later, so the editors can finish saving (R29)', () => {
+  const { ctx, page } = overlayContext();
+  const src = 'chrome-extension://id/html/panel.html?slug=x';
+  for (const close of [
+    () => page.listeners.keydown({ key: 'Escape', isTrusted: true, stopPropagation() {} }), // Esc
+    () => vm.runInContext('frameMessageHandlers', ctx).close() // ✕ in the window: postMessage 'close'
+  ]) {
+    ctx.openOverlay(src);
+    const { host } = vm.runInContext('overlay', ctx);
+    close();
+    assert.equal(vm.runInContext('overlay', ctx), null);
+    assert.deepEqual(page.hosts(), [host]); // still there: the frame lives on
+    assert.deepEqual([host.style.visibility, host.style.pointerEvents, host.inert], ['hidden', 'none', true]);
+    assert.equal(page.doc.documentElement.style.overflow, undefined); // the page scrolls again
+    assert.deepEqual(Object.keys(page.listeners), []);
+    assert.deepEqual([...page.timers.values()].map(timer => timer.ms), [1500]);
+    page.runTimers();
+    assert.deepEqual(page.hosts(), []);
+  }
+  assert.equal(page.focused, 2); // focus goes back to the page each time
+});
+
+test('reopening within 1.5 s reuses the closing window on the same address and replaces it on another, never two hosts', () => {
+  const { ctx, page } = overlayContext();
+  const src = 'chrome-extension://id/html/panel.html?slug=x';
+  ctx.openOverlay(src);
+  const { host } = vm.runInContext('overlay', ctx);
+  ctx.closeOverlay();
+  ctx.openOverlay(src);
+  const reopened = vm.runInContext('overlay', ctx);
+  assert.equal(reopened.host, host); // same frame, with its unsaved state
+  assert.deepEqual([host.style.visibility, host.style.pointerEvents, host.inert], ['', '', false]);
+  assert.equal(page.timers.size, 0); // the delayed removal is canceled
+  assert.deepEqual(page.hosts(), [host]);
+  assert.ok(page.listeners.keydown && page.listeners.message);
+
+  ctx.closeOverlay();
+  ctx.openOverlay(src + '&section=downloads');
+  const other = vm.runInContext('overlay', ctx);
+  assert.notEqual(other.host, host);
+  assert.deepEqual(page.hosts(), [other.host]);
+  assert.equal(page.timers.size, 0);
+});
+
+test('stopSiteUi removes a closing overlay at once', () => {
+  const { ctx, page } = overlayContext();
+  ctx.MutationObserver = class { observe() {} disconnect() {} };
+  page.doc.body = new FakeEl('body');
+  ctx.location.href = 'https://example.com/'; // not a LIB site: no engine link, just the page watcher
+  ctx.startSiteUi();
+  ctx.openOverlay('chrome-extension://id/html/panel.html');
+  ctx.closeOverlay();
+  assert.equal(page.hosts().length, 1);
+  vm.runInContext('stopSiteUi()', ctx);
+  assert.deepEqual(page.hosts(), []);
+  assert.equal(page.timers.size, 0);
 });
 
 test('an open «Скачать» popover closes when the page moves to another title and stays on the same one', () => {

@@ -49,13 +49,16 @@ async function cleanupOldTitles() {
 }
 
 // Текущим становится новый тайтл; данные прежнего удаляются (как в RanobeDL), если это не отключено.
-// getTitleStore отдаёт только один тайтл, поэтому ключи прежнего удаляем явно
+// getTitleStore отдаёт только один тайтл, поэтому ключи прежнего удаляем явно.
+// Тайтл, тронутый меньше часа назад (cacheTimestamp обновляют загрузка и редакторы), остаётся: его может править окно в другой вкладке
 async function switchCurrentTitle(newSlug) {
   const { currentSlug: oldSlug } = await chrome.storage.local.get(['currentSlug']);
 
   if (oldSlug && oldSlug !== newSlug) {
-    const { cleanupOnTitleChange } = await chrome.storage.local.get(['cleanupOnTitleChange']);
-    if (cleanupOnTitleChange !== false) {
+    const oldKey = titleStoreKey('titleData', oldSlug);
+    const { cleanupOnTitleChange, [oldKey]: oldTitle } = await chrome.storage.local.get(['cleanupOnTitleChange', oldKey]);
+    const recent = Date.now() - (oldTitle?.cacheTimestamp || 0) < 60 * 60 * 1000;
+    if (cleanupOnTitleChange !== false && !recent) {
       await chrome.storage.local.remove(TITLE_STORE_KINDS.map(kind => titleStoreKey(kind, oldSlug)));
     }
   }

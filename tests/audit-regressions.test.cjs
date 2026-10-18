@@ -103,7 +103,8 @@ test('EPUB assigns unique IDs and exactly one primary cover', () => {
 
 test('switching titles removes the previous title unless cleanup on title change is off', async () => {
   for (const cleanupOnTitleChange of [undefined, false]) {
-    const data = { currentSlug: 'old', 'titleData:old': { metadata: { titleRu: 'Edited' } }, 'originalTitleData:old': { chapters: [] }, 'titleData:new': { covers: ['local'] } };
+    const twoHoursAgo = Date.now() - 2 * 60 * 60 * 1000;
+    const data = { currentSlug: 'old', 'titleData:old': { metadata: { titleRu: 'Edited' }, cacheTimestamp: twoHoursAgo }, 'originalTitleData:old': { chapters: [] }, 'titleData:new': { covers: ['local'] } };
     if (cleanupOnTitleChange === false) data.cleanupOnTitleChange = false;
     const before = structuredClone(data);
     const context = vm.createContext({ chrome: { storage: { local: storageApi(data) } } });
@@ -115,6 +116,17 @@ test('switching titles removes the previous title unless cleanup on title change
     assert.deepEqual(data['titleData:new'], before['titleData:new']);
     assert.equal(data.currentSlug, 'new');
   }
+});
+
+test('switching titles keeps a previous title touched within the last hour (another tab may be editing it)', async () => {
+  const data = { currentSlug: 'old', 'titleData:old': { metadata: { titleRu: 'Edited' }, cacheTimestamp: Date.now() - 50 * 60 * 1000 }, 'originalTitleData:old': { chapters: [] } };
+  const before = structuredClone(data);
+  const context = vm.createContext({ chrome: { storage: { local: storageApi(data) } } });
+  vm.runInContext(titleStore + functionSource('src/core/title-loader.js', 'switchCurrentTitle'), context);
+  await context.switchCurrentTitle('new');
+  assert.deepEqual(data['titleData:old'], before['titleData:old']);
+  assert.deepEqual(data['originalTitleData:old'], before['originalTitleData:old']);
+  assert.equal(data.currentSlug, 'new');
 });
 
 test('loading a title removes titles older than 7 days unless that cleanup is off', async () => {

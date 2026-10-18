@@ -14,6 +14,8 @@ const SITE_ACCENT = { mangalib: 'manga', hentailib: 'hentai', shlib: 'slash', ra
 
 const OVERLAY_Z_INDEX = 2147483000;
 const ANCHOR_WAIT_MS = 10000;
+// Закрытое окно ещё столько живёт скрытым: редакторы успевают дописать автосохранение (400 мс), а не теряют его вместе с фреймом
+const OVERLAY_REMOVE_DELAY = 1500;
 
 const extensionBase = () => chrome.runtime.getURL('');
 
@@ -49,6 +51,7 @@ function accentFor(siteKey, forcedAccent, isDark) {
 // ---- Окно поверх сайта ----
 
 let overlay = null; // { src, host, frame, overflow, onKey, onMessage }
+let closingOverlay = null; // закрытое окно, пока фрейм доживает: { src, host, timer }
 
 // Сообщения iframe -> страница (протокол: { libsaver: true, type, ... }). Окошко «Скачать» понимает ещё 'resize' и 'openPanel' (popoverMessageHandlers)
 const frameMessageHandlers = { close: () => closeOverlay() };
@@ -68,10 +71,7 @@ function addStyles(doc, host, shadow) {
   shadow.append(link);
 }
 
-function openOverlay(src) {
-  if (!src.startsWith(extensionBase())) return;
-  closePopover();
-  closeOverlay();
+function createOverlayHost(src) {
   const host = document.createElement('div');
   host.style.cssText = `position:fixed;inset:0;z-index:${OVERLAY_Z_INDEX};`;
   const shadow = host.attachShadow({ mode: 'closed' });
@@ -84,6 +84,27 @@ function openOverlay(src) {
   frame.src = src;
   backdrop.append(frame);
   shadow.append(backdrop);
+  backdrop.addEventListener('click', event => {
+    if (event.target === backdrop && event.isTrusted) closeOverlay();
+  });
+  return { host, frame };
+}
+
+// Закрытое окно ещё живо и на том же адресе - открываем его же (с несохранённым состоянием), иначе убираем его сразу
+function openOverlay(src) {
+  if (!src.startsWith(extensionBase())) return;
+  closePopover();
+  closeOverlay();
+  const reused = closingOverlay?.src === src && closingOverlay.host.isConnected !== false ? closingOverlay : null;
+  if (reused) {
+    clearTimeout(reused.timer);
+    closingOverlay = null;
+  } else {
+    removeClosingOverlay();
+  }
+  const { host, frame } = reused || createOverlayHost(src);
+  Object.assign(host.style, { visibility: '', pointerEvents: '' });
+  host.inert = false;
 
   const onKey = event => {
     if (event.key !== 'Escape' || !event.isTrusted) return;
@@ -93,15 +114,12 @@ function openOverlay(src) {
   const onMessage = event => {
     if (isTrustedFrameMessage(event, frame)) frameMessageHandlers[event.data.type]?.(event.data);
   };
-  backdrop.addEventListener('click', event => {
-    if (event.target === backdrop && event.isTrusted) closeOverlay();
-  });
   window.addEventListener('keydown', onKey, true);
   window.addEventListener('message', onMessage);
 
   overlay = { src, host, frame, overflow: document.documentElement.style.overflow, onKey, onMessage };
   document.documentElement.style.overflow = 'hidden';
-  document.documentElement.append(host);
+  if (!reused) document.documentElement.append(host);
 }
 
 // Страница могла выбросить хост окна из документа: пересоздаём его на том же адресе
@@ -112,14 +130,28 @@ function reviveOverlay() {
   openOverlay(src);
 }
 
+// Все закрытия (Esc, фон, ✕ / postMessage 'close', SPA) идут сюда: окно пропадает сразу, а хост с фреймом удаляется через
+// OVERLAY_REMOVE_DELAY - автосохранение редактора (pagehide ждёт чтения storage) не обрывается вместе с фреймом
 function closeOverlay() {
   if (!overlay) return;
-  const { host, overflow, onKey, onMessage } = overlay;
+  const { src, host, overflow, onKey, onMessage } = overlay;
   overlay = null;
-  host.remove();
+  removeClosingOverlay();
+  Object.assign(host.style, { visibility: 'hidden', pointerEvents: 'none' });
+  host.inert = true;
+  window.focus(); // фокус из скрытого фрейма - обратно странице
+  closingOverlay = { src, host, timer: setTimeout(removeClosingOverlay, OVERLAY_REMOVE_DELAY) };
   window.removeEventListener('keydown', onKey, true);
   window.removeEventListener('message', onMessage);
   document.documentElement.style.overflow = overflow;
+}
+
+function removeClosingOverlay() {
+  if (!closingOverlay) return;
+  const { host, timer } = closingOverlay;
+  closingOverlay = null;
+  clearTimeout(timer);
+  host.remove();
 }
 
 // ---- Кнопки под «Начать читать» ----
@@ -690,6 +722,7 @@ function startSiteUi() {
     removePlaque();
     closePopover();
     closeOverlay();
+    removeClosingOverlay(); // остановка - всё сразу, без отложенного удаления
   };
 
   if (siteKeyByHost(location.href)) {
