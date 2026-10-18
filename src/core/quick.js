@@ -97,8 +97,9 @@ function startQuick() {
   const show = view => {
     for (const id of ['loading', 'error', 'form']) $(id).classList.toggle('hidden', id !== view);
   };
-  const showError = text => {
+  const showError = (text, canRetry = true) => {
     $('error-text').textContent = text;
+    $('retry').classList.toggle('hidden', !canRetry);
     show('error');
   };
   const range = () => [Number(fromSelect.value), Number(toSelect.value)];
@@ -130,6 +131,7 @@ function startQuick() {
   }
 
   async function load(force) {
+    if (!parentOrigin) return; // встроившего нас не опознали (whoami): ни storage, ни загрузки
     show('loading');
     try {
       info = await loadQuickTitle({ tabId, url, force });
@@ -181,8 +183,9 @@ function startQuick() {
   document.addEventListener('keydown', event => {
     if (event.key === 'Escape') post({ type: 'close' });
   });
-  // Высота окошка = высота содержимого (scrollHeight у html не уменьшается ниже высоты фрейма)
-  new ResizeObserver(() => post({ type: 'resize', height: Math.ceil(document.body.getBoundingClientRect().height) })).observe(document.body);
+  // Высота окошка = высота содержимого: body занимает весь фрейм и прокручивается, поэтому меряем обёртку внутри него
+  const content = $('quick-content');
+  new ResizeObserver(() => post({ type: 'resize', height: Math.ceil(content.getBoundingClientRect().height) })).observe(content);
 
   loadAndApplyTheme();
   (async () => {
@@ -192,7 +195,7 @@ function startQuick() {
     } catch (e) { /* расширение обновили */ }
     const embedder = quickEmbedder(me, params.get('tab'));
     if (!embedder) {
-      showError('Окошко работает только на странице тайтла.');
+      showError('Окошко работает только на странице тайтла.', false);
       return;
     }
     ({ tabId, url, parentOrigin } = embedder);

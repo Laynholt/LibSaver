@@ -1383,3 +1383,71 @@ test('startQuick learns the embedder before loading anything and never reads url
   assert.ok(start.indexOf("action: 'whoami'") > 0 && start.indexOf("action: 'whoami'") < start.indexOf('load(false)'));
   assert.match(start, /quickEmbedder\(me, params\.get\('tab'\)\)/);
 });
+
+// quick.js with a fake page: startQuick wired to fake elements, whoami answered by me
+function quickPage({ me, search = '?tab=7' }) {
+  const posted = [];
+  const data = {};
+  const loads = [];
+  const elements = {};
+  const element = id => elements[id] ||= (() => {
+    const el = { id, classes: new Set(), handlers: {}, children: [], value: '', textContent: '', disabled: false };
+    el.classList = { toggle: (name, on) => { if (on ?? !el.classes.has(name)) el.classes.add(name); else el.classes.delete(name); }, add: name => el.classes.add(name), remove: name => el.classes.delete(name) };
+    el.addEventListener = (type, handler) => { el.handlers[type] = handler; };
+    el.replaceChildren = (...nodes) => { el.children = nodes; };
+    el.getBoundingClientRect = () => ({ height: 50 });
+    return el;
+  })();
+  const ctx = vm.createContext({
+    URL, URLSearchParams, console: { error() {}, log() {} },
+    location: { search },
+    window: { parent: { postMessage: (message, origin) => posted.push([message, origin]) }, applySiteAccent: () => {} },
+    document: { getElementById: element, createElement: () => ({}), addEventListener() {} },
+    ResizeObserver: class { observe() {} },
+    loadAndApplyTheme: async () => {},
+    chrome: {
+      runtime: { sendMessage: async () => me },
+      storage: { local: { get: async () => ({}), set: async values => Object.assign(data, values), remove: async () => {} } }
+    }
+  });
+  vm.runInContext(['src/utils/title-store.js', 'src/utils/page-call.js', 'src/core/chapter-range.js', 'src/utils/formats.js', 'src/core/title-loader.js', 'src/core/quick.js'].map(source).join('\n'), ctx);
+  // startQuick is waiting for whoami: swap the loader before it answers
+  ctx.loadTitleData = async args => { loads.push(JSON.parse(JSON.stringify(args))); return { chapters: [] }; };
+  return { element, data, loads, posted, settle: () => new Promise(resolve => setTimeout(resolve, 5)) };
+}
+
+test('an embedder that whoami does not vouch for gets an error without «Повторить», and nothing can load or write', async () => {
+  const forged = 'https://evil.example/ru/manga/x?mangalib.me/ru/manga/x';
+  const page = quickPage({ me: { tabId: 7, url: forged }, search: '?tab=7&url=' + encodeURIComponent('https://mangalib.me/ru/manga/1--a') + '&parent=https%3A%2F%2Fevil.example' });
+  await page.settle();
+  assert.equal(page.element('error').classes.has('hidden'), false);
+  assert.match(page.element('error-text').textContent, /только на странице тайтла/);
+  assert.equal(page.element('retry').classes.has('hidden'), true);
+  page.element('retry').handlers.click(); // a clickjacked click on the hidden button, or a script
+  await page.settle();
+  assert.deepEqual(page.data, {});
+  assert.deepEqual(page.loads, []);
+  assert.deepEqual(page.posted, []);
+});
+
+test('a vouched embedder loads with the tab and URL from whoami, and «Повторить» reloads with force', async () => {
+  const url = 'https://mangalib.me/ru/manga/1--a';
+  const page = quickPage({ me: { tabId: 7, url }, search: '?tab=7&url=' + encodeURIComponent('https://evil.example/') });
+  await page.settle();
+  assert.deepEqual(page.loads, [{ tabId: 7, url, force: false }]);
+  assert.equal(page.data.sourceUrl, url);
+  assert.equal(page.element('retry').classes.has('hidden'), false); // empty title: an error that can be retried
+  page.element('retry').handlers.click();
+  await page.settle();
+  assert.deepEqual(page.loads[1], { tabId: 7, url, force: true });
+  assert.ok(page.posted.every(([, origin]) => origin === 'https://mangalib.me'));
+});
+
+test('quick.html scrolls the body inside a full-height frame and measures an inner wrapper', () => {
+  const html = source('src/html/quick.html');
+  assert.match(html, /html, body \{\s*height: 100%;/);
+  assert.match(html, /body \{\s*overflow-y: auto;/);
+  assert.equal(html.match(/\n    body \{/g).length, 1); // one body rule
+  assert.match(html, /<div id="quick-content">/);
+  assert.match(source('src/core/quick.js'), /observe\(content\)/);
+});

@@ -7,15 +7,20 @@
   <script src="../utils/title-store.js"></script>
   <link rel="stylesheet" href="../css/common.css">
   <style>
+    /* body - весь фрейм и прокручивается, если окошко урезано по высоте; высоту содержимого меряет #quick-content */
+    html, body {
+      height: 100%;
+      box-sizing: border-box;
+    }
     html {
       overflow: hidden;
     }
     body {
       overflow-y: auto;
-    }
-    body {
-      padding: var(--spacing-md);
       font-size: var(--font-size-md);
+    }
+    #quick-content {
+      padding: var(--spacing-md);
     }
     .q-msg {
       margin: 0;
@@ -67,6 +72,7 @@
   </style>
 </head>
 <body>
+  <div id="quick-content">
   <p class="q-msg" id="loading">Загружаю главы…</p>
 
   <div class="hidden" id="error">
@@ -84,6 +90,7 @@
     <p class="q-status" id="status" role="status"></p>
     <a href="#" id="more">Подробнее…</a>
   </form>
+  </div>
 
   <script src="../core/theme.js"></script>
   <script src="../utils/header.js"></script>
