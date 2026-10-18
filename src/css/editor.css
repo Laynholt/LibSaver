@@ -185,8 +185,9 @@ body {
   width: 100%;
 }
 
+/* Подпись поля на одной линии с его кнопками (общее правило label прижимает её к верху) */
 .field-header label {
-  align-self: flex-start;
+  align-self: center;
 }
 
 .field-header-buttons {
