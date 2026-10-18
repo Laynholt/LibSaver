@@ -37,6 +37,14 @@ body {
   flex-direction: column;
   gap: var(--spacing-xs);
   position: relative;
+  /* Тысячи глав: карточки за экраном не считают стили и раскладку, иначе окно замирает на секунды */
+  content-visibility: auto;
+  contain-intrinsic-size: auto 75px;
+}
+
+/* Сдерживание обрезало бы и сдвигало список переводчиков (position: fixed) */
+.chapter-item.menu-open {
+  content-visibility: visible;
 }
 
 .chapter-title {
