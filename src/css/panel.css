@@ -50,6 +50,67 @@ body {
   color: var(--text-secondary);
 }
 
+/* Загрузка тайтла: на тайтлах с тысячами глав длится заметно, поэтому спиннер и три шага (главы, метаданные, обложки) */
+.pn-loading {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-lg);
+  text-align: center;
+  color: var(--text-primary);
+}
+
+.pn-loading small {
+  max-width: 280px;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.pn-spinner {
+  width: 36px;
+  height: 36px;
+  margin-bottom: var(--spacing-xs);
+  border: 3px solid var(--border-color);
+  border-top-color: var(--accent-color);
+  border-radius: 50%;
+  animation: pn-spin 0.8s linear infinite;
+}
+
+@keyframes pn-spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pn-spinner { animation-duration: 2.4s; }
+}
+
+.pn-loading progress {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 200px;
+  height: 4px;
+  border: none;
+  border-radius: 2px;
+  overflow: hidden;
+  background: var(--bg-tertiary);
+}
+
+.pn-loading progress::-webkit-progress-bar {
+  background: var(--bg-tertiary);
+}
+
+.pn-loading progress::-webkit-progress-value {
+  background: var(--accent-color);
+  transition: width 0.3s ease;
+}
+
+.pn-loading progress::-moz-progress-bar {
+  background: var(--accent-color);
+}
+
 .pn-msg p {
   margin: 0 0 var(--spacing-sm);
   color: var(--text-primary);

@@ -1393,15 +1393,16 @@ test('quick settings keep the preparation window defaults for the image server a
   assert.equal(ctx.quickSettings({ textOnly: 'yes' }).textOnly, false);
 });
 
-test('the quick window writes siteType and sourceUrl before loading, like popup, and forwards force', async () => {
+test('the quick window writes siteType and sourceUrl before loading, like popup, and forwards force and onProgress', async () => {
   const data = {};
   const ctx = quickContext(data);
   const seen = [];
-  ctx.loadTitleData = async args => { seen.push([data.siteType, data.sourceUrl, args.tabId, args.url, args.force]); return { slug: 's' }; };
+  ctx.loadTitleData = async args => { seen.push([data.siteType, data.sourceUrl, args.tabId, args.url, args.force, args.onProgress]); return { slug: 's' }; };
   const url = 'https://ranobelib.me/ru/book/7--y';
+  const onProgress = () => {};
   assert.deepEqual(await ctx.loadQuickTitle({ tabId: 3, url }), { slug: 's' });
-  await ctx.loadQuickTitle({ tabId: 3, url, force: true });
-  assert.deepEqual(seen, [['ranobe', url, 3, url, false], ['ranobe', url, 3, url, true]]);
+  await ctx.loadQuickTitle({ tabId: 3, url, force: true, onProgress });
+  assert.deepEqual(seen, [['ranobe', url, 3, url, false, undefined], ['ranobe', url, 3, url, true, onProgress]]);
 });
 
 test('«Скачать N глав» snapshots the chosen range, fixes the saved range for the editors and enqueues once', async () => {
@@ -2198,20 +2199,13 @@ function panelLogic() {
   return ctx;
 }
 
-test('the section list follows the format: settings for CBZ/ZIP, PDF and TXT only, in the fixed order with «Загрузки» last', () => {
+test('the section list is fixed: «Форматы» holds the settings of every format whatever format is picked, «Загрузки» last', () => {
   const ctx = panelLogic();
-  const ids = format => Array.from(ctx.PANEL_SECTIONS(format), section => section.id);
-  const all = ['chapters', 'metadata', 'covers', 'images', 'toc', 'format', 'general', 'about', 'downloads'];
-  for (const hidden of ['epub', 'fb2', 'html', 'mkv', null]) assert.deepEqual(ids(hidden), all.filter(id => id !== 'format'), String(hidden));
-  for (const shown of ['cbz', 'zip', 'pdf', 'txt']) assert.deepEqual(ids(shown), all, shown);
-  const format = format => jsonCopy(ctx.PANEL_SECTIONS(format).find(section => section.id === 'format'));
-  assert.deepEqual(format('cbz'), { id: 'format', group: 'build', title: 'CBZ/ZIP', url: 'settings.html?group=cbz' });
-  assert.deepEqual([format('zip').title, format('zip').url], ['CBZ/ZIP', 'settings.html?group=cbz']);
-  assert.deepEqual([format('pdf').title, format('pdf').url], ['PDF', 'settings.html?group=pdf']);
-  assert.deepEqual([format('txt').title, format('txt').url], ['TXT', 'settings.html?group=txt']);
-  const urls = Object.fromEntries(Array.from(ctx.PANEL_SECTIONS('cbz'), section => [section.id, section.url]));
-  assert.deepEqual(urls, { chapters: 'chapters.html', metadata: 'metadata.html', covers: 'covers.html', images: 'settings.html?group=images', toc: 'settings.html?group=toc', format: 'settings.html?group=cbz', general: 'settings.html?group=general', about: 'settings.html?group=about', downloads: 'downloads.html' });
-  assert.equal(ctx.PANEL_SECTIONS('cbz').at(-1).group, null);
+  const sections = ctx.PANEL_SECTIONS();
+  const urls = Object.fromEntries(Array.from(sections, section => [section.id, section.url]));
+  assert.deepEqual(urls, { chapters: 'chapters.html', metadata: 'metadata.html', covers: 'covers.html', images: 'settings.html?group=images', toc: 'settings.html?group=toc', formats: 'settings.html?group=formats', general: 'settings.html?group=general', about: 'settings.html?group=about', downloads: 'downloads.html' });
+  assert.deepEqual(jsonCopy(sections.find(section => section.id === 'formats')), { id: 'formats', group: 'build', title: 'Форматы', url: 'settings.html?group=formats' });
+  assert.equal(sections.at(-1).group, null);
 });
 
 test('every section frame gets the title slug, after ? or &, and none when there is no title', () => {
@@ -2235,7 +2229,7 @@ test('phone subtitles: chapters, fields, covers, image quality, TOC format and t
   assert.equal(ctx.sectionSubtitle('images', { imageQuality: 'FHD' }, counts), '1080px');
   assert.equal(ctx.sectionSubtitle('toc', {}, counts), 'Том X. Глава Y. Название');
   assert.equal(ctx.sectionSubtitle('toc', { tocFormat: 'no_headers' }, counts), 'Без заголовков');
-  assert.equal(ctx.sectionSubtitle('format', { format: 'cbz' }, counts), 'CBZ');
+  assert.equal(ctx.sectionSubtitle('formats', { format: 'cbz' }, counts), 'CBZ');
   for (const id of ['general', 'about', 'downloads']) assert.equal(ctx.sectionSubtitle(id, {}, counts), '', id);
   assert.equal(ctx.sectionSubtitle('images', { imageQuality: 'bogus' }, counts), '');
 });
@@ -2329,6 +2323,7 @@ function panelPage({ me, search = '?tab=7', ancestorOrigins, width = 1000, store
   // startPanel is waiting for whoami: swap the loader before it answers
   ctx.loadTitleData = async args => {
     calls.loads.push(jsonCopy(args));
+    args.onProgress?.(3);
     return { slug: '123--title', siteKey: 'mangalib', siteType: 'manga', title: 'Морино (из API)', chapters: panelChapters, allChapters: panelChapters, covers: [] };
   };
   const page = {
@@ -2416,9 +2411,10 @@ test('a vouched title page loads with the tab and URL from whoami, writes siteTy
   assert.deepEqual(page.calls.loads, [{ tabId: 7, url: panelUrl, force: false }]);
   assert.deepEqual([page.data.siteType, page.data.sourceUrl], ['manga', panelUrl]);
   assert.deepEqual(page.frames(), [{ src: 'chapters.html?slug=123--title', active: true }]); // other sections are not created until opened
+  assert.equal(page.element('loading-progress').value, 3); // the loader's three parts move the loading bar
   assert.equal(page.element('title').textContent, 'Морино');
   const entries = page.menu().map(entry => [entry.title, entry.note, entry.on]);
-  assert.deepEqual(entries, [['Главы', '24', true], ['Метаданные', '15', false], ['Обложки', '3', false], ['Картинки', '', false], ['Оглавление', '', false], ['CBZ/ZIP', '', false], ['Общие', '', false], ['О LibSaver', '', false], ['Загрузки', '', false]]);
+  assert.deepEqual(entries, [['Главы', '24', true], ['Метаданные', '15', false], ['Обложки', '3', false], ['Картинки', '', false], ['Оглавление', '', false], ['Форматы', '', false], ['Общие', '', false], ['О LibSaver', '', false], ['Загрузки', '', false]]);
   assert.equal(page.element('download').textContent, 'Скачать 24 главы');
   assert.equal(page.element('download').disabled, false);
   assert.equal(page.element('format').value, 'cbz');
@@ -2442,22 +2438,19 @@ test('sections open lazily, keep their frame, and a section named in the address
   assert.equal(bogus.frames()[0].src, 'chapters.html?slug=123--title');
 });
 
-test('the format select is the stored format; a format without settings drops its section and a change reloads the format frame', async () => {
-  const page = panelPage({ me: { tabId: 7, url: panelUrl }, search: '?tab=7&section=format', stored: { selectedFormat_manga: 'pdf' } });
+test('the format select is the stored format; changing it keeps «Форматы» and its frame', async () => {
+  const page = panelPage({ me: { tabId: 7, url: panelUrl }, search: '?tab=7&section=formats', stored: { selectedFormat_manga: 'pdf' } });
   await page.settle();
   assert.equal(page.element('format').value, 'pdf');
-  assert.deepEqual(page.frames(), [{ src: 'settings.html?group=pdf&slug=123--title', active: true }]);
-  page.element('format').value = 'cbz';
-  page.element('format').fire('change');
-  await page.settle();
-  assert.equal(page.data.selectedFormat_manga, 'cbz');
-  assert.deepEqual(page.frames(), [{ src: 'settings.html?group=cbz&slug=123--title', active: true }]); // same frame, new address
-  page.element('format').value = 'epub';
-  page.element('format').fire('change');
-  await page.settle();
-  assert.equal(page.menu().some(entry => entry.title === 'CBZ/ZIP'), false);
-  assert.deepEqual(page.menu().filter(entry => entry.on).map(entry => entry.title), ['Главы']); // the open section vanished: back to the default
-  assert.deepEqual(page.frames().map(frame => frame.active), [false, true]);
+  assert.deepEqual(page.frames(), [{ src: 'settings.html?group=formats&slug=123--title', active: true }]);
+  for (const format of ['cbz', 'epub']) {
+    page.element('format').value = format;
+    page.element('format').fire('change');
+    await page.settle();
+    assert.equal(page.data.selectedFormat_manga, format);
+    assert.deepEqual(page.menu().filter(entry => entry.on).map(entry => entry.title), ['Форматы']);
+    assert.deepEqual(page.frames(), [{ src: 'settings.html?group=formats&slug=123--title', active: true }]); // the frame is not reloaded
+  }
 });
 
 test('«Скачать N глав» queues the selected chapters, leaves «Ускорить» to the snapshot, then opens «Загрузки»', async () => {
@@ -2736,22 +2729,10 @@ test('the popup closes after opening the window on a title page and otherwise sa
   assert.deepEqual([stale.calls.closed, stale.shown('btn-reload-page'), stale.shown('btn-mangalib'), stale.element('error-text').textContent], [0, true, false, 'Не удалось открыть окно LibSaver. Перезагрузите страницу.']);
 });
 
-test('the popup ⚙ on the screens off a title page opens the full settings page in a tab and closes the popup', async () => {
-  const handlers = {};
-  const calls = { tabs: [], closed: 0 };
-  const ctx = vm.createContext({
-    window: { close: () => { calls.closed++; } },
-    document: { getElementById: id => ({ addEventListener: (type, fn) => { handlers[id] = fn; } }) },
-    chrome: { tabs: { create: async options => { calls.tabs.push(options); } }, runtime: { getURL: file => 'chrome-extension://self/' + file } }
-  });
-  vm.runInContext(between('src/core/popup.js', "document.getElementById('btn-settings')", '// Кнопки открытия LIB сайтов'), ctx);
-  await handlers['btn-settings']();
-  assert.deepEqual(jsonCopy(calls), { tabs: [{ url: 'chrome-extension://self/html/settings.html' }], closed: 1 });
-  // the button sits in the error view, which every off-title screen shows, as its own row under the site logos (not over the text)
-  const html = source('src/html/popup.html');
-  const at = html.indexOf('id="btn-settings"');
-  assert.ok(at > html.indexOf('class="lib-buttons"') && at < html.indexOf('id="toast-container"'));
-  assert.doesNotMatch(source('src/css/popup.css'), /[.]btn-settings [{][^}]*position: absolute/);
+test('the popup off a title page only points to the sites: no settings button', () => {
+  assert.doesNotMatch(source('src/html/popup.html'), /btn-settings/);
+  assert.doesNotMatch(source('src/core/popup.js'), /btn-settings|settings[.]html/);
+  assert.doesNotMatch(source('src/css/popup.css'), /btn-settings/);
 });
 
 test('the settings tab (no ?group=) lists the sections on the left and shows only the panels of the one in the address', () => {
@@ -3073,6 +3054,7 @@ test('settings.html?group= lists panels by data-group; «general» is «general,
   assert.deepEqual(jsonCopy(ctx.settingsGroupsFromUrl('?group=general')), ['general', 'storage']);
   assert.deepEqual(jsonCopy(ctx.settingsGroupsFromUrl('?group=images&slug=1--a')), ['images']);
   assert.deepEqual(jsonCopy(ctx.settingsGroupsFromUrl('?group=toc,about')), ['toc', 'about']);
+  assert.deepEqual(jsonCopy(ctx.settingsGroupsFromUrl('?group=formats')), ['cbz', 'pdf', 'txt']);
 });
 
 test('group mode hides the panels outside the list and switches the page to one column without the toolbar', () => {
@@ -3095,11 +3077,9 @@ test('every settings group of the window has a panel, every panel is in some sec
   const ctx = settingsGroupsLogic();
   const panelCtx = panelLogic();
   const reachable = new Set();
-  for (const format of ['cbz', 'pdf', 'txt']) {
-    for (const section of panelCtx.PANEL_SECTIONS(format)) {
-      const group = new URL(section.url, 'chrome-extension://x/').searchParams.get('group');
-      if (group) for (const name of ctx.settingsGroupsFromUrl(`?group=${group}`)) reachable.add(name);
-    }
+  for (const section of panelCtx.PANEL_SECTIONS()) {
+    const group = new URL(section.url, 'chrome-extension://x/').searchParams.get('group');
+    if (group) for (const name of ctx.settingsGroupsFromUrl(`?group=${group}`)) reachable.add(name);
   }
   assert.deepEqual([...reachable].sort(), Object.keys(byGroup).sort());
   const outside = html.slice(0, html.indexOf('<div class="container">')) + html.slice(html.lastIndexOf('<div class="scroll-buttons"'));
@@ -3159,7 +3139,7 @@ test('a section of the window saves only the keys of its own groups, so a stale 
 
   const general = { imageQuality: 'HD' };
   await saveSettingsIn(['general', 'storage'], general);
-  assert.deepEqual(Object.keys(general).sort(), ['cleanupOldTitles', 'cleanupOnTitleChange', 'customSiteLinks', 'debugLogging', 'enablePagination', 'enableSiteMenu', 'imageQuality', 'initialChapters', 'loadMoreChapters', 'updateNotifications']);
+  assert.deepEqual(Object.keys(general).sort(), ['cleanupOldTitles', 'cleanupOnTitleChange', 'customSiteLinks', 'debugLogging', 'enableSiteMenu', 'imageQuality', 'initialChapters', 'loadMoreChapters', 'updateNotifications']);
   assert.equal(general.imageQuality, 'HD');
 
   const whole = {};
@@ -3240,7 +3220,7 @@ test('the TOC reformat wipes displayTitle once per committed change (change / le
   await flush();
   assert.equal(reformats(), 3);
 
-  emit('change', 'enable-pagination'); // other fields never reformat
+  emit('change', 'debug-logging'); // other fields never reformat
   await settle(450);
   assert.equal(reformats(), 3);
 });
@@ -3385,8 +3365,26 @@ test('the image server select lives in the images group with the preparation win
   const settings = source('src/core/settings.js');
   assert.match(settings, /images: \[[^\]]*'imageServer'/);
   const html = source('src/html/settings.html');
-  assert.match(html, /<div class="panel" data-group="images">[\s\S]*id="image-server-field"[\s\S]*<option value="normal">Оригиналы<\/option>\s*<option value="compressed" selected>JPEG<\/option>[\s\S]*data-group="toc"/);
-  assert.match(settings, /siteType === 'manga'/);
+  assert.match(html, /<div class="panel" data-group="images">[\s\S]*id="image-server-field"[\s\S]*<option value="normal">Оригиналы<\/option>\s*<option value="compressed" selected>Сжатые<\/option>[\s\S]*data-group="toc"/);
+  assert.match(html, /id="image-server-field" data-site-type="manga"/);
+});
+
+test('settings follow the site type: image server, same width and CBZ/ZIP for manga; PDF text and TXT for ranobe; all when the type is unknown', () => {
+  const html = source('src/html/settings.html');
+  const marked = type => [...html.matchAll(new RegExp(String.raw`data-site-type="${type}">[\s\S]*?(?:<label for="([\w-]+)"|id="([\w-]+)"|<span>([^<]+)</span>)`, 'g'))].map(m => m[1] || m[2] || m[3]);
+  assert.deepEqual(marked('manga'), ['image-server', 'same-width', 'CBZ/ZIP']);
+  assert.deepEqual(marked('ranobe'), ['pdf-font', 'pdf-font-size', 'pdf-page-size', 'pdf-line-spacing', 'pdf-paragraph-spacing', 'TXT']);
+  const els = ['manga', 'ranobe', 'manga'].map(siteType => ({ dataset: { siteType }, classes: new Set(['hidden']), classList: { toggle(name, on) { on ? this.owner.classes.add(name) : this.owner.classes.delete(name); } } }));
+  els.forEach(el => { el.classList.owner = el; });
+  const ctx = vm.createContext({ document: { querySelectorAll: selector => selector === '[data-site-type]' ? els : [] } });
+  vm.runInContext(functionSource('src/core/settings.js', 'applySiteFilter'), ctx);
+  ctx.applySiteFilter(undefined);
+  assert.deepEqual(els.map(el => el.classes.has('site-hidden')), [false, false, false]);
+  ctx.applySiteFilter('ranobe');
+  assert.deepEqual(els.map(el => [...el.classes]), [['hidden', 'site-hidden'], ['hidden'], ['hidden', 'site-hidden']]); // the section's own hidden is left alone
+  ctx.applySiteFilter('manga');
+  assert.deepEqual(els.map(el => el.classes.has('site-hidden')), [false, true, false]);
+  assert.match(source('src/css/settings.css'), /\.site-hidden \{\s*display: none !important;/);
 });
 
 test('saveCovers leaves out empty covers from «Новая обложка» until a URL or a file is set, and metadata.cover follows the saved ones', async () => {

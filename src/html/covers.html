@@ -12,7 +12,6 @@
   <script src="../utils/window-loader.js"></script>
   <link rel="stylesheet" href="../libs/fontawesome/css/all.min.css">
   <script src="../libs/Sortable.min.js"></script>
-  <link rel="stylesheet" href="../css/scale-subtle.css">
   <link rel="stylesheet" href="../css/editor.css">
   <style>
     body {
@@ -34,6 +33,7 @@
       grid-template-columns: repeat(auto-fit, minmax(200px, 230px));
       justify-content: center;
       gap: var(--spacing-sm);
+      padding-top: 2px; /* место под подъём карточки при наведении: список обрезает всё, что выше него */
     }
     .covers-list > .empty-state {
       grid-column: 1 / -1;
@@ -66,19 +66,16 @@
       display: flex;
       align-items: center;
       justify-content: center;
-      cursor: pointer;
       overflow: hidden;
       flex-shrink: 0;
       position: relative;
     }
-    .cover-preview.empty {
-      cursor: default;
+    /* Поля вокруг картинки другого соотношения сторон - цвета карточки; картинка прижата к верху, чтобы обложки ряда начинались на одной линии */
+    .cover-preview.has-image {
+      background-color: var(--bg-secondary);
     }
-    .cover-preview.error {
-      cursor: default;
-    }
-    .cover-preview.loading {
-      cursor: default;
+    .cover-preview.has-image .img-wrapper {
+      align-items: flex-start;
     }
     .cover-preview img {
       display: none;
@@ -98,7 +95,6 @@
       max-height: 100%;
       border-radius: 8px;
       overflow: hidden;
-      background-color: var(--bg-tertiary);
     }
     .cover-preview .img-wrapper .img-container img {
       max-width: 100%;
@@ -109,54 +105,16 @@
     }
     .cover-preview .img-wrapper .img-container img.loaded {
       display: block;
+      cursor: zoom-in; /* клик открывает обложку целиком в новой вкладке */
     }
-    .cover-preview .img-wrapper .img-container::after {
-      content: '';
-      position: absolute;
-      top: 0;
-      left: 0;
-      right: 0;
-      bottom: 0;
-      border-radius: 8px;
-      background-color: rgba(0, 0, 0, 0.4);
-      opacity: 0;
-      pointer-events: none;
-    }
-    .cover-preview:hover .img-wrapper.has-image .img-container::after {
-      opacity: 1;
-    }
-    /* Стили Tippy для соответствия дизайну */
-    .tippy-box[data-theme='dark'] {
-      background-color: rgba(10, 10, 10, 0.95);
-      border: 1px solid var(--border-color);
-      border-radius: 6px;
-      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
-    }
-    .tippy-box[data-theme='dark'] > .tippy-arrow::before {
-      border-top-color: var(--border-color);
-    }
-    .tippy-box[data-theme='dark'] > .tippy-arrow::after {
-      border-top-color: rgba(10, 10, 10, 0.95);
-    }
-    .tippy-box[data-theme='light'] {
-      background-color: var(--bg-secondary);
-      border: 1px solid var(--border-color);
-      border-radius: 6px;
-      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
-    }
-    .tippy-box[data-theme='light'] > .tippy-arrow::before {
-      border-top-color: var(--border-color);
-    }
-    .tippy-box[data-theme='light'] > .tippy-arrow::after {
-      border-top-color: var(--bg-secondary);
-    }
-    .tippy-content {
-      padding: 2px;
-    }
-    .sortable-ghost {
+    /* Рамка места вставки: без :hover-цвета и transition карточки, той же толщины - иначе мигает и прыгает (как в редакторе метаданных) */
+    .sortable-ghost,
+    .sortable-ghost:hover {
       opacity: 0.4;
       background-color: var(--bg-secondary);
-      border: 2px dashed var(--accent-color);
+      border: 1px dashed var(--accent-color);
+      transform: none;
+      transition: none;
       overflow: hidden;
     }
     .sortable-chosen {
@@ -289,18 +247,23 @@
     .cover-item {
       counter-increment: cover;
     }
-    .cover-item::after {
+    /* Метка на самой обложке: у картинки другого соотношения сторон угол карточки попадал на её край. Без картинки - в углу карточки */
+    .cover-item::after,
+    .img-container:has(> img.loaded)::before {
       content: counter(cover);
       position: absolute;
       top: 14px;
       left: 14px;
+      z-index: 1;
       min-width: 22px;
       height: 22px;
       padding: 0 6px;
+      box-sizing: border-box;
       border-radius: 11px;
-      background: rgba(10, 11, 14, 0.6);
+      background: rgba(10, 11, 14, 0.75);
       backdrop-filter: blur(6px);
-      border: 1px solid rgba(255, 255, 255, 0.12);
+      border: 1px solid rgba(255, 255, 255, 0.3);
+      box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
       color: #fff;
       font-size: 11px;
       font-weight: 600;
@@ -308,7 +271,15 @@
       text-align: center;
       pointer-events: none;
     }
-    .cover-item:first-child::after {
+    .img-container:has(> img.loaded)::before {
+      top: 8px;
+      left: 8px;
+    }
+    .cover-item:has(img.loaded)::after {
+      display: none;
+    }
+    .cover-item:first-child::after,
+    .cover-item:first-child .img-container:has(> img.loaded)::before {
       content: 'Основная';
       background: var(--accent-color);
       border-color: transparent;
@@ -372,8 +343,6 @@
   <script src="../libs/jszip.min.js"></script>
   <script src="../libs/FileSaver.min.js"></script>
   <script src="../libs/pica.min.js"></script>
-  <script src="../libs/popper.min.js"></script>
-  <script src="../libs/tippy-bundle.umd.min.js"></script>
   <script src="../core/theme.js"></script>
   <script src="../utils/autosave.js"></script>
   <script src="../editors/covers.js"></script>

@@ -181,12 +181,6 @@ document.getElementById('btn-reload-page').addEventListener('click', async () =>
   }
 });
 
-// Общие настройки вне страницы тайтла: полная страница настроек во вкладке (окно поверх сайта есть только на странице тайтла)
-document.getElementById('btn-settings').addEventListener('click', async () => {
-  await chrome.tabs.create({ url: chrome.runtime.getURL('html/settings.html') });
-  window.close();
-});
-
 // Кнопки открытия LIB сайтов
 document.getElementById('btn-mangalib').addEventListener('click', async () => {
   await chrome.tabs.create({ url: 'https://mangalib.me' });

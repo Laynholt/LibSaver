@@ -705,3 +705,60 @@ test('reload-page button waits for the tab to finish loading and reruns the titl
   assert.match(handler, /await loadTitle\(\);/);
   assert.doesNotMatch(handler, /setTimeout|loadCovers\(/);
 });
+
+test('cover editor has no Tippy previews: covers are already large and each one was fetched twice', () => {
+  assert.doesNotMatch(source('src/html/covers.html'), /tippy|popper|scale-subtle/);
+  assert.doesNotMatch(source('src/editors/covers.js'), /tippy/i);
+  assert.doesNotMatch(source('src/core/theme.js'), /tippy/i);
+});
+
+test('drag placeholder outline keeps one colour: :hover and transition of the card do not repaint it', () => {
+  for (const css of [source('src/css/editor.css'), source('src/html/covers.html')]) {
+    const rule = css.match(/\.sortable-ghost,\s*\.sortable-ghost:hover \{([^}]*)\}/);
+    assert.ok(rule, 'ghost rule covers :hover');
+    assert.match(rule[1], /border: 1px dashed var\(--accent-color\);/);
+    assert.match(rule[1], /transition: none;/);
+  }
+});
+
+test('chapter translator variants come from an index built once per chapter list, rebuilt for a new list', () => {
+  const ctx = vm.createContext({ Map });
+  vm.runInContext(functionSource('src/core/chapter-range.js', 'getTranslatorKey') + functionSource('src/core/chapter-range.js', 'getTranslatorName'), ctx);
+  vm.runInContext('let allChapters = [];\n' + between('src/editors/chapters.js', '// Переводы главы по id', '// Карточка «Перевод»') + '\nthis.setChapters = list => { allChapters = list; };', ctx);
+  const A = { branch_id: 1, teams: [{ id: 10, name: 'А' }] }, B = { branch_id: 2, teams: [{ id: 20, name: 'Б' }] };
+  ctx.setChapters([{ id: 1, branches: [A] }, { id: 2, branches: [A, B] }, { id: 2, branches: [B] }, { id: 3 }]);
+  assert.deepEqual([...ctx.getChapterVariantsById(2)], [['1_10', 'А'], ['2_20', 'Б']]);
+  assert.deepEqual([...ctx.getChapterVariantsById(3)], []);
+  ctx.getChapterVariantsById(1).set('x', 'y'); // a caller's copy does not touch the index
+  assert.deepEqual([...ctx.getChapterVariantsById(1)], [['1_10', 'А']]);
+  ctx.setChapters([{ id: 1, branches: [B] }]);
+  assert.deepEqual([...ctx.getChapterVariantsById(1)], [['2_20', 'Б']]);
+});
+
+test('chapter cards skip off-screen rendering, except the one whose translator list is open', () => {
+  const css = source('src/css/editor.css');
+  assert.match(css, /\.chapter-item \{[^}]*content-visibility: auto;[^}]*contain-intrinsic-size: auto 75px;/);
+  assert.match(css, /\.chapter-item\.menu-open \{\s*content-visibility: visible;/);
+  assert.match(source('src/editors/chapters.js'), /div\.classList\.add\('menu-open'\)/);
+});
+
+test('chapters are always shown in parts of 100 with "show more" / "show all", no pagination toggle', () => {
+  const js = source('src/editors/chapters.js');
+  assert.doesNotMatch(js, /enablePagination/);
+  assert.match(js, /initialChapterCount = result\.initialChapters \|\| 100;/);
+  assert.match(js, /loadMoreChapterCount = result\.loadMoreChapters \|\| 100;/);
+  assert.match(js, /const endIndex = loadAll \? chapters\.length : Math\.min\(startIndex \+ effectivePageSize, chapters\.length\);/);
+  assert.doesNotMatch(source('src/html/settings.html'), /enable-pagination/);
+  assert.doesNotMatch(source('src/core/settings.js'), /enablePagination|enable-pagination/);
+});
+
+test('cover previews: no inline background over the CSS one, badges sit on the loaded image, a click on it opens the cover', () => {
+  const js = source('src/editors/covers.js');
+  assert.doesNotMatch(js, /setPreviewBackground|preview\.style\.backgroundColor/);
+  assert.match(js, /img\.onclick = /);
+  const html = source('src/html/covers.html');
+  assert.match(html, /\.cover-preview\.has-image \{\s*background-color: var\(--bg-secondary\);/);
+  assert.match(html, /img\.loaded \{[^}]*cursor: zoom-in;/);
+  assert.match(html, /\.cover-item:has\(img\.loaded\)::after \{\s*display: none;/);
+  assert.match(html, /\.cover-item:first-child \.img-container:has\(> img\.loaded\)::before \{\s*content: 'Основная';/);
+});

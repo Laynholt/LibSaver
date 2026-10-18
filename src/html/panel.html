@@ -17,7 +17,12 @@
     <button type="button" class="pn-icon pn-close" id="close" aria-label="Закрыть"><i class="fa-solid fa-xmark"></i></button>
   </header>
 
-  <p class="pn-msg" id="loading">Загружаю тайтл…</p>
+  <div class="pn-loading" id="loading" role="status">
+    <span class="pn-spinner" aria-hidden="true"></span>
+    <b>Загружаю тайтл…</b>
+    <progress id="loading-progress" max="3" value="0" aria-label="Загружено частей"></progress>
+    <small>Главы, метаданные и обложки. Тайтлы с тысячами глав грузятся дольше</small>
+  </div>
   <div class="pn-msg hidden" id="error">
     <p id="error-text" role="alert"></p>
     <button type="button" id="retry">Повторить</button>

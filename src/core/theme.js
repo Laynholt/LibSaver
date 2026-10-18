@@ -201,29 +201,11 @@ function applySiteAccent(url) {
   });
 }
 
-// Функция для обновления темы в tippy (используется только в covers.js)
-function updateTippyTheme(tooltipContents, tippyInstances) {
-  const isDark = !document.documentElement.hasAttribute('data-theme');
-
-  // Обновляем backgroundColor всех tooltipContent
-  tooltipContents.forEach(tooltipContent => {
-    tooltipContent.style.backgroundColor = isDark ? 'rgba(10, 10, 10, 0.95)' : 'rgba(255, 255, 255, 0.95)';
-  });
-
-  // Обновляем theme всех tippy экземпляров
-  tippyInstances.forEach(instance => {
-    instance.setProps({ theme: isDark ? 'dark' : 'light' });
-  });
-}
-
 // Слушатель сообщений для обновления темы (универсальный)
-function setupThemeMessageListener(updateTippyCallback) {
+function setupThemeMessageListener() {
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message.action === 'updateTheme' && message.theme) {
       applyTheme(message.theme);
-      if (updateTippyCallback) {
-        updateTippyCallback();
-      }
       // Обновляем акцентный цвет после смены темы (из storage)
       chrome.storage.local.get(['sourceUrl'], (result) => {
         if (result.sourceUrl) {

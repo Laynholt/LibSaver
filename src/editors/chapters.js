@@ -13,11 +13,10 @@ let translatorPriority = [];
 
 // Переменные пагинации
 let currentPage = 0;
-let pageSize = 500;
-let initialChapterCount = 500;
-let loadMoreChapterCount = 500;
+let pageSize = 100;
+let initialChapterCount = 100;
+let loadMoreChapterCount = 100;
 let totalChaptersRendered = 0;
-let enablePagination = false;
 
 // Таймер отложенного применения приоритета (когда глав много)
 let priorityTimer = null;
@@ -34,6 +33,15 @@ function volumeState(chapters, selectedIds, volume) {
   return count === inVolume.length ? 'all' : 'some';
 }
 
+let checkboxIconsTemplate = null;
+function checkboxIcons() {
+  if (!checkboxIconsTemplate) {
+    checkboxIconsTemplate = document.createElement('template');
+    checkboxIconsTemplate.innerHTML = CHECKBOX_MARKUP; // статичная разметка, данных сайта в ней нет
+  }
+  return checkboxIconsTemplate.content;
+}
+
 function createCheckbox(className) {
   const label = document.createElement('label');
   label.className = 'checkbox-group';
@@ -43,7 +51,7 @@ function createCheckbox(className) {
   const indicator = document.createElement('span');
   indicator.className = 'control__indicator';
   indicator.dataset.type = 'checkbox';
-  indicator.innerHTML = CHECKBOX_MARKUP; // статичная разметка, данных сайта в ней нет
+  indicator.append(checkboxIcons().cloneNode(true)); // разметка разбирается один раз, а не для каждой из тысяч глав
   label.append(input, indicator);
   return { label, input };
 }
@@ -208,18 +216,19 @@ function extractBranches() {
   });
 }
 
+// Переводы главы по id: индекс строится один раз на список глав, а не обходом всех глав для каждой (на тысячах глав это секунды)
+let variantsIndex = { chapters: null, byId: new Map() };
 function getChapterVariantsById(chapterId) {
-  const variants = new Map();
-  allChapters.forEach(ch => {
-    if (ch.id === chapterId && ch.branches && Array.isArray(ch.branches)) {
-      ch.branches.forEach(branch => {
-        const key = getTranslatorKey(branch);
-        const name = getTranslatorName(branch);
-        variants.set(key, name);
-      });
-    }
-  });
-  return variants;
+  if (variantsIndex.chapters !== allChapters) {
+    const byId = new Map();
+    allChapters.forEach(ch => {
+      if (!ch.branches || !Array.isArray(ch.branches)) return;
+      if (!byId.has(ch.id)) byId.set(ch.id, new Map());
+      ch.branches.forEach(branch => byId.get(ch.id).set(getTranslatorKey(branch), getTranslatorName(branch)));
+    });
+    variantsIndex = { chapters: allChapters, byId };
+  }
+  return new Map(variantsIndex.byId.get(chapterId) || []);
 }
 
 // Карточка «Перевод»: приоритет переводчиков списком (по умолчанию - по числу глав)
@@ -236,7 +245,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   await loadAndApplyTheme();
 
   // Применяем акцентный цвет по сайту (из storage)
-  const result = await getTitleStore(['sourceUrl', 'titleData', 'originalTitleData', 'currentSlug', 'tocFormat', 'customTocFormat', 'hideChapterName', 'hideVolumeNumber', 'enablePagination', 'initialChapters', 'loadMoreChapters']);
+  const result = await getTitleStore(['sourceUrl', 'titleData', 'originalTitleData', 'currentSlug', 'tocFormat', 'customTocFormat', 'hideChapterName', 'hideVolumeNumber', 'initialChapters', 'loadMoreChapters']);
   const sourceUrl = result.sourceUrl;
   if (sourceUrl) {
     window.applySiteAccent(sourceUrl);
@@ -271,9 +280,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   // Применяем настройки пагинации
-  enablePagination = result.enablePagination === true;
-  initialChapterCount = result.initialChapters || 500;
-  loadMoreChapterCount = result.loadMoreChapters || 500;
+  // Главы всегда показываются частями: тысячи виджетов разом вешают окно
+  initialChapterCount = result.initialChapters || 100;
+  loadMoreChapterCount = result.loadMoreChapters || 100;
   pageSize = loadMoreChapterCount;
 
   // Общее количество глав на сайте (для пагинации используем реальное количество, а не отфильтрованное)
@@ -432,7 +441,7 @@ function renderChaptersList(chapters, originalChapters, startIndex = 0, append =
     currentPage = 0;
     totalChaptersRendered = 0;
     // Для первой загрузки используем initialChapterCount
-    if (enablePagination && startIndex === 0) {
+    if (startIndex === 0) {
       pageSize = initialChapterCount;
     } else {
       pageSize = loadMoreChapterCount;
@@ -442,8 +451,8 @@ function renderChaptersList(chapters, originalChapters, startIndex = 0, append =
   // Если передан overridePageSize - используем его (для loadMoreChapters)
   const effectivePageSize = overridePageSize || pageSize;
   
-  // Если пагинация отключена или loadAll=true - рендерим все главы до конца
-  const endIndex = (!enablePagination || loadAll) ? chapters.length : Math.min(startIndex + effectivePageSize, chapters.length);
+  // loadAll=true - рендерим все главы до конца
+  const endIndex = loadAll ? chapters.length : Math.min(startIndex + effectivePageSize, chapters.length);
   const chaptersToRender = chapters.slice(startIndex, endIndex);
   
   chaptersToRender.forEach((ch, i) => {
@@ -572,12 +581,7 @@ function renderChaptersList(chapters, originalChapters, startIndex = 0, append =
         dropdown.style.top = (rect.bottom + 2) + 'px';
         dropdown.style.left = rect.left + 'px';
         dropdown.style.display = dropdown.style.display !== 'none' ? 'none' : 'block';
-      });
-      
-      document.addEventListener('click', (e) => {
-        if (!translatorSelect.contains(e.target) && !dropdown.contains(e.target)) {
-          dropdown.style.display = 'none';
-        }
+        div.classList.add('menu-open');
       });
       
       inputWrapper.appendChild(translatorSelect);
@@ -595,6 +599,12 @@ function renderChaptersList(chapters, originalChapters, startIndex = 0, append =
   updateLoadMoreButton(chapters.length);
 }
 
+// Клик мимо списка переводчиков закрывает его: один обработчик на все главы (клики по самому списку до document не доходят)
+document.addEventListener('click', event => {
+  if (event.target.closest?.('.chapter-translator-dropdown')) return; // прокрутка или отступ внутри списка
+  document.querySelectorAll('.chapter-translator-dropdown').forEach(dropdown => { dropdown.style.display = 'none'; });
+});
+
 function updateTotalChapters(count) {
   const countElement = document.getElementById('total-chapters');
   if (countElement) {
@@ -610,18 +620,6 @@ function updateEditorChaptersCount(count) {
 }
 
 function updateLoadMoreButton(totalChapters) {
-  // Если пагинация отключена - не показываем кнопки
-  if (!enablePagination) {
-    const loadMoreBtn = document.getElementById('btn-load-more');
-    const loadAllBtn = document.getElementById('btn-load-all');
-    const buttonsContainer = document.getElementById('load-more-buttons');
-    
-    if (loadMoreBtn) loadMoreBtn.style.display = 'none';
-    if (loadAllBtn) loadAllBtn.style.display = 'none';
-    if (buttonsContainer) buttonsContainer.style.display = 'none';
-    return;
-  }
-  
   let loadMoreBtn = document.getElementById('btn-load-more');
   let loadAllBtn = document.getElementById('btn-load-all');
   let buttonsContainer = document.getElementById('load-more-buttons');
