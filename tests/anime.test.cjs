@@ -114,6 +114,27 @@ test('downloadAnime resolves each selected episode through Kodik and hands the M
   assert.deepEqual(progress.at(-1), [1, 2]);
 });
 
+test('only https Kodik hosts are requested: a foreign player, a //host endpoint and a non-https video link are refused', async () => {
+  const requested = [];
+  const fetch = async (url, options) => {
+    requested.push([String(url), options?.method || 'GET']);
+    if (String(url).endsWith('.js')) return { ok: true, text: async () => 'x({type:"POST",url:atob("' + btoa('//evil.test/steal') + '")})' };
+    if (options?.method === 'POST') return { ok: true, json: async () => ({ links: { 720: [{ src: encodeKodik('//cdn/720.mp4') }] } }) };
+    return { ok: true, text: async () => `<script src="/assets/js/app.player_single.x.js"></script> var urlParams = '{"d":"a","ref":""}'; vInfo.hash = 'h'; vInfo.id = '1';` };
+  };
+  const ctx = animeContext({ fetch });
+  for (const src of ['//127.0.0.1:8080/admin', 'http://kodikplayer.com/seria/1', 'https://kodikplayer.com.evil.test/x', 'javascript:alert(1)']) {
+    await assert.rejects(ctx.resolveKodik(src, 'max'), /Kodik: адрес не на kodikplayer\.com/, src);
+  }
+  assert.deepEqual(requested, []);
+  const video = await ctx.resolveKodik('//kodikplayer.com/seria/1/h/720p', 'max');
+  assert.equal(video.url, 'https://cdn/720.mp4');
+  assert.deepEqual(requested.map(([url, method]) => `${method} ${url}`), [
+    'GET https://kodikplayer.com/seria/1/h/720p', 'GET https://kodikplayer.com/assets/js/app.player_single.x.js', 'POST https://kodikplayer.com/ftor'
+  ]);
+  assert.throws(() => ctx.kodikMp4Url('http://cdn/720.mp4'), /не https/);
+});
+
 test('downloadAnime stops on cancel and fails when nothing was saved', async () => {
   const ctx = animeContext({ fetch: async () => { throw new Error('offline'); }, pageCall: async () => ({ success: true, data: { players: [{ player: 'Kodik', src: '//k/x' }] } }) });
   const snapshot = { title: 'T', stored: { animeSaveInfo: false }, downloadData: { chapters: [{ id: 1, volume: '1', number: '1' }] } };
