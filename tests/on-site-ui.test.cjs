@@ -3139,7 +3139,7 @@ test('a section of the window saves only the keys of its own groups, so a stale 
 
   const general = { imageQuality: 'HD' };
   await saveSettingsIn(['general', 'storage'], general);
-  assert.deepEqual(Object.keys(general).sort(), ['cleanupOldTitles', 'cleanupOnTitleChange', 'customSiteLinks', 'debugLogging', 'enablePagination', 'enableSiteMenu', 'imageQuality', 'initialChapters', 'loadMoreChapters', 'updateNotifications']);
+  assert.deepEqual(Object.keys(general).sort(), ['cleanupOldTitles', 'cleanupOnTitleChange', 'customSiteLinks', 'debugLogging', 'enableSiteMenu', 'imageQuality', 'initialChapters', 'loadMoreChapters', 'updateNotifications']);
   assert.equal(general.imageQuality, 'HD');
 
   const whole = {};
@@ -3220,7 +3220,7 @@ test('the TOC reformat wipes displayTitle once per committed change (change / le
   await flush();
   assert.equal(reformats(), 3);
 
-  emit('change', 'enable-pagination'); // other fields never reformat
+  emit('change', 'debug-logging'); // other fields never reformat
   await settle(450);
   assert.equal(reformats(), 3);
 });

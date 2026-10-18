@@ -742,6 +742,16 @@ test('chapter cards skip off-screen rendering, except the one whose translator l
   assert.match(source('src/editors/chapters.js'), /div\.classList\.add\('menu-open'\)/);
 });
 
+test('chapters are always shown in parts of 100 with "show more" / "show all", no pagination toggle', () => {
+  const js = source('src/editors/chapters.js');
+  assert.doesNotMatch(js, /enablePagination/);
+  assert.match(js, /initialChapterCount = result\.initialChapters \|\| 100;/);
+  assert.match(js, /loadMoreChapterCount = result\.loadMoreChapters \|\| 100;/);
+  assert.match(js, /const endIndex = loadAll \? chapters\.length : Math\.min\(startIndex \+ effectivePageSize, chapters\.length\);/);
+  assert.doesNotMatch(source('src/html/settings.html'), /enable-pagination/);
+  assert.doesNotMatch(source('src/core/settings.js'), /enablePagination|enable-pagination/);
+});
+
 test('cover previews: no inline background over the CSS one, badges sit on the loaded image, a click on it opens the cover', () => {
   const js = source('src/editors/covers.js');
   assert.doesNotMatch(js, /setPreviewBackground|preview\.style\.backgroundColor/);

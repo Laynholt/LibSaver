@@ -13,11 +13,10 @@ let translatorPriority = [];
 
 // Переменные пагинации
 let currentPage = 0;
-let pageSize = 500;
-let initialChapterCount = 500;
-let loadMoreChapterCount = 500;
+let pageSize = 100;
+let initialChapterCount = 100;
+let loadMoreChapterCount = 100;
 let totalChaptersRendered = 0;
-let enablePagination = false;
 
 // Таймер отложенного применения приоритета (когда глав много)
 let priorityTimer = null;
@@ -246,7 +245,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   await loadAndApplyTheme();
 
   // Применяем акцентный цвет по сайту (из storage)
-  const result = await getTitleStore(['sourceUrl', 'titleData', 'originalTitleData', 'currentSlug', 'tocFormat', 'customTocFormat', 'hideChapterName', 'hideVolumeNumber', 'enablePagination', 'initialChapters', 'loadMoreChapters']);
+  const result = await getTitleStore(['sourceUrl', 'titleData', 'originalTitleData', 'currentSlug', 'tocFormat', 'customTocFormat', 'hideChapterName', 'hideVolumeNumber', 'initialChapters', 'loadMoreChapters']);
   const sourceUrl = result.sourceUrl;
   if (sourceUrl) {
     window.applySiteAccent(sourceUrl);
@@ -281,9 +280,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   // Применяем настройки пагинации
-  enablePagination = result.enablePagination === true;
-  initialChapterCount = result.initialChapters || 500;
-  loadMoreChapterCount = result.loadMoreChapters || 500;
+  // Главы всегда показываются частями: тысячи виджетов разом вешают окно
+  initialChapterCount = result.initialChapters || 100;
+  loadMoreChapterCount = result.loadMoreChapters || 100;
   pageSize = loadMoreChapterCount;
 
   // Общее количество глав на сайте (для пагинации используем реальное количество, а не отфильтрованное)
@@ -442,7 +441,7 @@ function renderChaptersList(chapters, originalChapters, startIndex = 0, append =
     currentPage = 0;
     totalChaptersRendered = 0;
     // Для первой загрузки используем initialChapterCount
-    if (enablePagination && startIndex === 0) {
+    if (startIndex === 0) {
       pageSize = initialChapterCount;
     } else {
       pageSize = loadMoreChapterCount;
@@ -452,8 +451,8 @@ function renderChaptersList(chapters, originalChapters, startIndex = 0, append =
   // Если передан overridePageSize - используем его (для loadMoreChapters)
   const effectivePageSize = overridePageSize || pageSize;
   
-  // Если пагинация отключена или loadAll=true - рендерим все главы до конца
-  const endIndex = (!enablePagination || loadAll) ? chapters.length : Math.min(startIndex + effectivePageSize, chapters.length);
+  // loadAll=true - рендерим все главы до конца
+  const endIndex = loadAll ? chapters.length : Math.min(startIndex + effectivePageSize, chapters.length);
   const chaptersToRender = chapters.slice(startIndex, endIndex);
   
   chaptersToRender.forEach((ch, i) => {
@@ -621,18 +620,6 @@ function updateEditorChaptersCount(count) {
 }
 
 function updateLoadMoreButton(totalChapters) {
-  // Если пагинация отключена - не показываем кнопки
-  if (!enablePagination) {
-    const loadMoreBtn = document.getElementById('btn-load-more');
-    const loadAllBtn = document.getElementById('btn-load-all');
-    const buttonsContainer = document.getElementById('load-more-buttons');
-    
-    if (loadMoreBtn) loadMoreBtn.style.display = 'none';
-    if (loadAllBtn) loadAllBtn.style.display = 'none';
-    if (buttonsContainer) buttonsContainer.style.display = 'none';
-    return;
-  }
-  
   let loadMoreBtn = document.getElementById('btn-load-more');
   let loadAllBtn = document.getElementById('btn-load-all');
   let buttonsContainer = document.getElementById('load-more-buttons');

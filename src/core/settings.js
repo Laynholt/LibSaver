@@ -317,14 +317,10 @@ function applySettingsToUI(settings) {
   document.getElementById('same-width').checked = settings.sameWidth === true;
 
   // Chapters pagination settings
-  document.getElementById('enable-pagination').checked = settings.enablePagination === true;
-  document.getElementById('initial-chapters').value = settings.initialChapters || 500;
-  document.getElementById('initial-chapters-value').textContent = settings.initialChapters || 500;
-  document.getElementById('load-more-chapters').value = settings.loadMoreChapters || 500;
-  document.getElementById('load-more-chapters-value').textContent = settings.loadMoreChapters || 500;
-
-  // Show/hide pagination settings based on checkbox
-  updatePaginationSettingsVisibility();
+  document.getElementById('initial-chapters').value = settings.initialChapters || 100;
+  document.getElementById('initial-chapters-value').textContent = settings.initialChapters || 100;
+  document.getElementById('load-more-chapters').value = settings.loadMoreChapters || 100;
+  document.getElementById('load-more-chapters-value').textContent = settings.loadMoreChapters || 100;
 
   // Storage settings
   document.getElementById('cleanup-on-title-change').checked = settings.cleanupOnTitleChange !== false;
@@ -454,20 +450,6 @@ function updatePdfJpegQualityFieldVisibility() {
 function applySiteFilter(siteType) {
   if (siteType !== 'manga' && siteType !== 'ranobe') return;
   document.querySelectorAll('[data-site-type]').forEach(el => el.classList.toggle('site-hidden', el.dataset.siteType !== siteType));
-}
-
-// Показать/скрыть настройки пагинации в зависимости от чекбокса
-function updatePaginationSettingsVisibility() {
-  const enablePagination = document.getElementById('enable-pagination')?.checked;
-  const initialChaptersField = document.getElementById('initial-chapters-field');
-  const loadMoreChaptersField = document.getElementById('load-more-chapters-field');
-  
-  if (initialChaptersField) {
-    initialChaptersField.style.display = enablePagination ? 'flex' : 'none';
-  }
-  if (loadMoreChaptersField) {
-    loadMoreChaptersField.style.display = enablePagination ? 'flex' : 'none';
-  }
 }
 
 document.addEventListener('DOMContentLoaded', async () => {
@@ -664,7 +646,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     'customTocFormat',
     'hideChapterName',
     'hideVolumeNumber',
-    'enablePagination',
     'initialChapters',
     'loadMoreChapters',
     'txtImageMarker',
@@ -686,7 +667,6 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Инициализация видимости полей
   updateJpegQualityFieldVisibility();
   updatePdfJpegQualityFieldVisibility();
-  updatePaginationSettingsVisibility();
 
   // Обновление значения ползунка адаптивного соотношения
   document.getElementById('adaptive-ratio').addEventListener('input', (e) => {
@@ -711,9 +691,6 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('load-more-chapters').addEventListener('input', (e) => {
     document.getElementById('load-more-chapters-value').textContent = e.target.value;
   });
-
-  // Показать/скрыть настройки пагинации при изменении чекбокса
-  document.getElementById('enable-pagination').addEventListener('change', updatePaginationSettingsVisibility);
 
   document.getElementById('image-format').addEventListener('change', updateJpegQualityFieldVisibility);
   document.getElementById('pdf-image-format').addEventListener('change', updatePdfJpegQualityFieldVisibility);
@@ -876,7 +853,7 @@ function updateTocOptionTexts() {
 
 // Ключи storage по группам панелей. Раздел окна пишет только свои ключи: остальные разделы живут в соседних фреймах и могли изменить свои позже
 const SETTING_KEYS_BY_GROUP = {
-  general: ['enableSiteMenu', 'customSiteLinks', 'debugLogging', 'updateNotifications', 'enablePagination', 'initialChapters', 'loadMoreChapters'],
+  general: ['enableSiteMenu', 'customSiteLinks', 'debugLogging', 'updateNotifications', 'initialChapters', 'loadMoreChapters'],
   images: ['coverQuality', 'imageQuality', 'imageServer', 'resizeMethod', 'adaptiveRatio', 'jpegQuality', 'imageFormat', 'sameWidth'],
   toc: ['disableToc', 'tocFormat', 'customTocFormat', 'hideChapterName', 'hideVolumeNumber'],
   cbz: ['generateComicInfo'],
@@ -950,7 +927,6 @@ async function saveSettings() {
     pdfParagraphSpacing: parseFloat(document.getElementById('pdf-paragraph-spacing').value),
     pdfImageFormat: document.getElementById('pdf-image-format').value,
     pdfJpegQuality: parseFloat(document.getElementById('pdf-jpeg-quality').value),
-    enablePagination: document.getElementById('enable-pagination').checked,
     initialChapters: parseInt(document.getElementById('initial-chapters').value),
     loadMoreChapters: parseInt(document.getElementById('load-more-chapters').value),
     cleanupOnTitleChange: document.getElementById('cleanup-on-title-change').checked,
@@ -990,9 +966,8 @@ const DEFAULT_SETTINGS_BY_GROUP = {
     'enable-site-menu': true,
     'debug-logging': false,
     'update-notifications': true,
-    'enable-pagination': false,
-    'initial-chapters': 500,
-    'load-more-chapters': 500
+    'initial-chapters': 100,
+    'load-more-chapters': 100
   },
   images: {
     'cover-quality': 'ORIGINAL',
@@ -1131,9 +1106,6 @@ function resetGroupSettings(group) {
       }
     }
 
-    // Обновляем видимость полей пагинации после сброса
-    updatePaginationSettingsVisibility();
-
     // Сбрасываем кастомные ссылки сайтов (заполняем дефолтными значениями)
     document.getElementById('site-mangalib').value = defaultSiteLinks.mangalib;
     document.getElementById('site-hentailib').value = defaultSiteLinks.hentailib;
@@ -1237,9 +1209,8 @@ document.getElementById('btn-reset').addEventListener('click', async () => {
     hideVolumeNumber: false,
     pdfImageFormat: 'original-png',
     pdfJpegQuality: 1.0,
-    enablePagination: false,
-    initialChapters: 500,
-    loadMoreChapters: 500
+    initialChapters: 100,
+    loadMoreChapters: 100
   };
 
   // Сбрасываем тексты option'ов к оригинальным
@@ -1290,7 +1261,6 @@ document.getElementById('btn-reset').addEventListener('click', async () => {
   updateJpegQualityFieldVisibility();
   updatePdfJpegQualityFieldVisibility();
   updateTocOptionTexts();
-  updatePaginationSettingsVisibility();
 
   tocCommitted = true;
   notifyChanged(); // значения сброшены кодом, событий input нет
