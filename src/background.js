@@ -1,3 +1,7 @@
+// Вызовы в странице сайта (выбор вкладки, PAGE_CALLS). В Firefox background.js - часть фоновой страницы
+// engine/background-firefox.html: эти скрипты она грузит своими <script>, importScripts там нет
+if (typeof importScripts === 'function') importScripts('core/page-calls.js', 'utils/page-call.js');
+
 // Хранилище auth токенов с TTL
 const authTokens = {};
 const TOKEN_TTL = 3600000; // 1 час в миллисекундах
@@ -32,34 +36,35 @@ async function restoreLoggingIfNeeded() {
 restoreLoggingIfNeeded();
 
 // Логирование размера storage каждые 10 секунд
-function logStorageSize() {
-  chrome.storage.local.get(['currentOpenWindow'], async (result) => {
-    if (!result.currentOpenWindow) {
-      // Если нет открытых окон - проверяем время закрытия
-      const sessionResult = await chrome.storage.session.get(['lastWindowCloseTime']);
-      if (!sessionResult.lastWindowCloseTime) {
-        // Первое закрытие окна - записываем время
-        await chrome.storage.session.set({ lastWindowCloseTime: Date.now() });
-        return;
-      }
-
-      // Проверяем прошло ли 2 минуты (120000 мс)
-      const timeSinceClose = Date.now() - sessionResult.lastWindowCloseTime;
-      if (timeSinceClose > 120000) {
-        // Прошло больше 2 минут - выключаем логирование
-        disableLogging();
-        await chrome.storage.session.remove(['lastWindowCloseTime']);
-      }
+async function logStorageSize() {
+  // Окна расширения (popup, окно поверх сайта) показывает getContexts; без них идёт отсчёт до выключения.
+  // В Firefox getContexts нет: окна не видны, поэтому логирование не выключается само
+  const contexts = chrome.runtime.getContexts ? await chrome.runtime.getContexts({ contextTypes: ['TAB', 'POPUP'] }) : null;
+  if (contexts && contexts.length === 0) {
+    // Если нет открытых окон - проверяем время закрытия
+    const sessionResult = await chrome.storage.session.get(['lastWindowCloseTime']);
+    if (!sessionResult.lastWindowCloseTime) {
+      // Первое закрытие окна - записываем время
+      await chrome.storage.session.set({ lastWindowCloseTime: Date.now() });
       return;
     }
 
-    // Если есть открытое окно - сбрасываем таймер закрытия
-    await chrome.storage.session.remove(['lastWindowCloseTime']);
+    // Проверяем прошло ли 2 минуты (120000 мс)
+    const timeSinceClose = Date.now() - sessionResult.lastWindowCloseTime;
+    if (timeSinceClose > 120000) {
+      // Прошло больше 2 минут - выключаем логирование
+      disableLogging();
+      await chrome.storage.session.remove(['lastWindowCloseTime']);
+    }
+    return;
+  }
 
-    chrome.storage.local.getBytesInUse(null, (bytes) => {
-      const mb = (bytes / (1024 * 1024)).toFixed(2);
-      console.log(`[LibSaver] Storage size: ${mb} MB (${bytes} bytes)`);
-    });
+  // Если есть открытое окно - сбрасываем таймер закрытия
+  await chrome.storage.session.remove(['lastWindowCloseTime']);
+
+  chrome.storage.local.getBytesInUse(null, (bytes) => {
+    const mb = (bytes / (1024 * 1024)).toFixed(2);
+    console.log(`[LibSaver] Storage size: ${mb} MB (${bytes} bytes)`);
   });
 }
 
@@ -276,3 +281,79 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return true;
   }
 });
+
+// Вызовы в странице сайта для контекстов без chrome.tabs/scripting (см. utils/page-call.js)
+chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+  const run = request.action === 'pageCall:findTab' ? () => findSiteTab(request.siteKey, request.preferredTabId)
+    : request.action === 'pageCall:exec' ? () => execPageCall(request.tabId, request.name, request.args)
+    : null;
+  if (!run) return;
+  run().then(
+    result => sendResponse({ ok: true, result }),
+    error => sendResponse({ ok: false, error: error.message, tabGone: !!error.tabGone })
+  );
+  return true;
+});
+
+// Иконка расширения на странице тайтла: popup просит открыть окно настроек поверх сайта, а оно живёт в content script (content/site-ui.js).
+// true - вкладка приняла просьбу; false - не страница тайтла или скрипта в ней нет (popup тогда остаётся)
+async function openPanelOnActiveTab(section) {
+  try {
+    const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+    if (!tab?.url || !siteKeyByHost(tab.url) || !isTitlePage(tab.url)) return false;
+    await chrome.tabs.sendMessage(tab.id, { action: 'libsaver:openPanel', section });
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
+function handleOpenPanel(request, sender, sendResponse) {
+  if (request.action !== 'openPanel') return;
+  if (sender.tab) { // просит только popup; страница сайта окно по своей воле не открывает
+    sendResponse(false);
+    return;
+  }
+  openPanelOnActiveTab(typeof request.section === 'string' ? request.section : undefined).then(sendResponse);
+  return true;
+}
+chrome.runtime.onMessage.addListener(handleOpenPanel);
+
+// Фоновый движок загрузки (engine/engine.html). Одновременные вызовы делят одно создание документа.
+// В Firefox chrome.offscreen нет: движок уже работает в этой же фоновой странице, ответ сразу true
+let engineReady = null;
+function ensureEngine() {
+  engineReady ??= (async () => {
+    if (chrome.offscreen && !(await chrome.offscreen.hasDocument())) {
+      await chrome.offscreen.createDocument({ url: 'engine/engine.html', reasons: ['DOM_PARSER', 'BLOBS'], justification: 'Фоновая сборка файлов LibSaver' });
+    }
+    return true;
+  })().finally(() => { engineReady = null; });
+  return engineReady;
+}
+
+// Движку: поднять offscreen-документ; сохранить собранный им файл (в offscreen нет chrome.downloads)
+function handleEngineMessage(request, sender, sendResponse) {
+  if (request.action === 'ensureEngine') {
+    ensureEngine().then(sendResponse, error => { console.error('[LibSaver] ensureEngine', error); sendResponse(false); });
+    return true;
+  }
+  if (request.action === 'whoami') {
+    // Скрипту на странице сайта: в какой он вкладке (нужно окну расширения поверх сайта)
+    sendResponse({ tabId: sender.tab?.id, url: sender.tab?.url });
+    return;
+  }
+  if (request.action === 'saveFile') {
+    // Движок живёт в offscreen без вкладки; скрипт страницы сайта не должен тихо качать произвольный URL
+    if (sender.tab) {
+      sendResponse({ ok: false, error: 'saveFile доступен только фоновому движку' });
+      return;
+    }
+    chrome.downloads.download({ url: request.url, filename: request.filename, saveAs: false }).then(
+      () => sendResponse({ ok: true }),
+      error => sendResponse({ ok: false, error: error.message })
+    );
+    return true;
+  }
+}
+chrome.runtime.onMessage.addListener(handleEngineMessage);

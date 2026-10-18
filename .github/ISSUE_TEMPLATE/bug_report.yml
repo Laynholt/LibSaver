@@ -1,0 +1,88 @@
+name: Сообщить об ошибке
+description: Что-то не скачивается, не открывается или работает не так
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Спасибо, что сообщаете об ошибке! Если открыли форму из LibSaver («О LibSaver» → «Сообщить о проблеме» или кнопка «?» в настройках),
+        версия, страница и браузер уже заполнены — проверьте их и уберите из адреса страницы то, чем не хотите делиться.
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Что случилось
+      description: Коротко опишите проблему и текст ошибки, если он был (раздел «Загрузки» → лог).
+      placeholder: 'Например — «EPUB скачался, но глава 12 пустая; в логе: Ошибка загрузки главы: HTTP 403»'
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Как повторить
+      description: Шаги, после которых ошибка появляется снова.
+      placeholder: |
+        1. Открыть страницу тайтла …
+        2. Нажать «Скачать» под «Начать читать»
+        3. Выбрать главы 1–5, формат EPUB, нажать «Скачать 5 глав»
+        4. …
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Что ожидалось
+      placeholder: Файл со всеми выбранными главами.
+
+  - type: input
+    id: page
+    attributes:
+      label: Страница
+      description: Адрес тайтла, на котором воспроизводится ошибка.
+      placeholder: https://mangalib.me/ru/manga/…
+    validations:
+      required: true
+
+  - type: dropdown
+    id: format
+    attributes:
+      label: Формат файла
+      options: [EPUB, FB2, PDF, CBZ, TXT, HTML, Не связано со скачиванием]
+
+  - type: input
+    id: version
+    attributes:
+      label: Версия LibSaver
+      description: Видна в настройках, раздел «О LibSaver».
+      placeholder: 2.0.0
+    validations:
+      required: true
+
+  - type: input
+    id: browser
+    attributes:
+      label: Браузер и система
+      description: Например — «Chrome 141, Windows 11» или «Firefox 130, Android 14».
+    validations:
+      required: true
+
+  - type: dropdown
+    id: account
+    attributes:
+      label: Вход в аккаунт на сайте
+      options: [Не выполнен, Выполнен]
+
+  - type: textarea
+    id: screenshots
+    attributes:
+      label: Скриншоты
+      description: Перетащите сюда скриншоты окна LibSaver, раздела «Загрузки» и страницы — они очень помогают.
+
+  - type: textarea
+    id: log
+    attributes:
+      label: Лог загрузки (необязательно)
+      description: Раздел «Загрузки» → лог; для подробностей включите «Подробное логирование» в общих настройках.
+      render: text

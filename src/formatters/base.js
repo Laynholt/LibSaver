@@ -314,19 +314,19 @@ class BaseFormatter {
       }
       
       // Always use content script through tab context (like RanobeLIB)
-      const fetchImage = imageUrl => new Promise(resolve => chrome.runtime.sendMessage({ action: 'fetchImage', url: imageUrl }, resolve));
+      // В Firefox движок и background.js - одна фоновая страница, а своё сообщение страница не получает: directFetch зовём напрямую
+      const fetchImage = imageUrl => new Promise(resolve => typeof directFetch === 'function'
+        ? directFetch({ url: imageUrl }, resolve)
+        : chrome.runtime.sendMessage({ action: 'fetchImage', url: imageUrl }, resolve));
       let response = await fetchImage(url);
 
       // Сервер оригиналов бывает закрыт целиком (403 на любой файл или нет ответа) — тот же файл в полном размере,
       // но в JPEG, лежит на сервере «Сжатия»/«Скачивание» (с него же качает NekoShelf)
       const fallbackUrl = !response?.success ? this.compressedImageUrl(url) : null;
       if (fallbackUrl) {
+        // Только строка лога (раздел «Загрузки»): форматтеры работают в движке, showToast там нет
         if (!this.compressedFallbackLogged && this.options.addLog) {
-          this.options.addLog(`Сервер оригиналов ${new URL(url).hostname} недоступен (${response?.error || 'нет ответа'}) — картинки берутся с ${new URL(fallbackUrl).hostname}`, true);
-        }
-        // Пользователь должен увидеть смену формата и без открытых логов (showToast есть на странице подготовки)
-        if (!this.compressedFallbackLogged && typeof showToast === 'function') {
-          showToast('Сервер оригиналов недоступен.\nКартинки скачиваются в JPEG того же размера');
+          this.options.addLog(`Сервер оригиналов ${new URL(url).hostname} недоступен (${response?.error || 'нет ответа'}) — картинки берутся с ${new URL(fallbackUrl).hostname} в JPEG того же размера`, true);
         }
         this.compressedFallbackLogged = true;
         response = await fetchImage(fallbackUrl);
@@ -917,218 +917,10 @@ class BaseFormatter {
 
   async loadMangaChapterPages(tabId, chapterId, volume, number, slug, imageServer = 'normal', branchId = null, selectedTranslatorName = null) {
     try {
-      const result = await chrome.scripting.executeScript({
-        target: { tabId: tabId },
-        func: async (chapterId, volume, number, slug, serverSelection, branchId) => {
-          const pageUrl = window.location.href;
+      const siteKey = this.options.siteKey || await siteKeyOfTab(tabId);
+      const loaded = await pageCall(siteKey, 'mangaChapterPages', [chapterId, volume, number, slug, imageServer, branchId], tabId);
 
-          // Определяем конфигурацию сайта
-          function getSiteConfig(url) {
-            let hostname;
-            try {
-              hostname = new URL(url).hostname;
-            } catch (e) {
-              console.error('Invalid URL:', url, e);
-              return null;
-            }
-
-            if (url.includes('mangalib.me') || url.includes('mangalib.org')) {
-              return {
-                apiDomain: 'https://api.cdnlibs.org',
-                slugPattern: /\/ru\/manga\/([^-]+)(--[^?]+)?/,
-                siteId: '1',
-                serviceName: 'mangalib',
-                referer: `https://${hostname}/`
-              };
-            } else if (url.includes('hentailib.me') || url.includes('hentailib.org')) {
-              return {
-                apiDomain: 'https://hapi.hentaicdn.org',
-                slugPattern: /\/ru\/manga\/([^-]+)(--[^?]+)?/,
-                siteId: '4',
-                serviceName: 'hentailib',
-                referer: `https://${hostname}/`
-              };
-            } else if (url.includes('v2.shlib.life') || url.includes('shlib.life')) {
-              return {
-                apiDomain: 'https://hapi.hentaicdn.org',
-                slugPattern: /\/ru\/manga\/([^-]+)(--[^?]+)?/,
-                siteId: '2',
-                serviceName: 'shlib',
-                referer: `https://${hostname}/`
-              };
-            } else if (url.includes('animelib.org') || url.includes('anilib.me')) {
-              return {
-                apiDomain: 'https://hapi.hentaicdn.org',
-                slugPattern: /\/ru\/anime\/([^-]+)(--[^?]+)?/,
-                siteId: '5',
-                serviceName: 'animelib',
-                referer: `https://${hostname}/`
-              };
-            }
-            return null;
-          }
-
-          const config = getSiteConfig(pageUrl);
-          if (!config) {
-            return { success: false, error: 'Неизвестный сайт' };
-          }
-
-          const slugMatch = pageUrl.match(config.slugPattern);
-          const currentSlug = slugMatch ? slugMatch[1] + (slugMatch[2] || '') : '';
-
-          // Извлекаем JWT токен из localStorage/sessionStorage
-          const RE = /^eyJ[\w\-+=/]+\.eyJ[\w\-+=/]+\.[\w\-+=/]+$/;
-
-          function findJwt(val) {
-            if (typeof val !== 'string' || !val) return null;
-            if (RE.test(val)) return val;
-            const bare = val.startsWith('Bearer ') ? val.slice(7) : null;
-            if (bare && RE.test(bare)) return bare;
-            try { return scanObj(JSON.parse(val)); } catch { return null; }
-          }
-
-          function scanObj(o) {
-            if (!o || typeof o !== 'object') return null;
-            for (const v of Object.values(o)) {
-              if (typeof v === 'string' && RE.test(v)) return v;
-              if (typeof v === 'object') {
-                const found = scanObj(v);
-                if (found) return found;
-              }
-            }
-            return null;
-          }
-
-          let jwtToken = null;
-          try {
-            jwtToken = findJwt(localStorage.getItem('auth_token')) ||
-                       findJwt(localStorage.getItem('token')) ||
-                       findJwt(sessionStorage.getItem('auth_token')) ||
-                       findJwt(sessionStorage.getItem('token'));
-
-            // Проверяем все ключи в localStorage
-            if (!jwtToken) {
-              for (let i = 0; i < localStorage.length; i++) {
-                const key = localStorage.key(i);
-                const val = localStorage.getItem(key);
-                const found = findJwt(val);
-                if (found) {
-                  jwtToken = found;
-                  break;
-                }
-              }
-            }
-          } catch (e) {
-            // Ошибка при извлечении JWT - продолжаем без токена
-          }
-
-          // Формируем URL для API
-          // Добавляем branch_id если он указан и не равен null (для выбора перевода)
-          // Конвертируем строку 'null' обратно в null для корректного URL
-          const effectiveBranchId = (branchId === 'null' || branchId === null) ? null : branchId;
-          const branchParam = effectiveBranchId ? `&branch_id=${effectiveBranchId}` : '';
-          const apiUrl = `${config.apiDomain}/api/manga/${slug}/chapter?volume=${volume}&number=${number}${branchParam}`;
-
-          let lastError = null;
-          let data = null;
-
-          try {
-            const headers = {
-              'User-Agent': navigator.userAgent,
-              'Accept': '*/*',
-              'Accept-Language': 'ru,en-US;q=0.9,en;q=0.8',
-              'Site-Id': config.siteId,
-              'X-DL-Service': config.serviceName,
-              'Referer': config.referer,
-              'Origin': config.referer
-            };
-
-            if (jwtToken) {
-              headers['Authorization'] = `Bearer ${jwtToken}`;
-            }
-
-            const response = await fetch(apiUrl, { headers });
-
-            if (response.ok) {
-              const json = await response.json();
-
-              if (json && json.data) {
-                data = json;
-              }
-            }
-          } catch (e) {
-            lastError = e;
-          }
-
-          if (!data) {
-            return { success: false, error: lastError?.message || 'Failed to fetch chapter data' };
-          }
-
-          if (!data || !data.data) {
-            return { success: false, error: 'No data in response' };
-          }
-
-          // API возвращает массив данных
-          const chapterData = Array.isArray(data.data) ? data.data[0] : data.data;
-          const pages = chapterData.pages || [];
-
-          // Сохраняем информацию о переводчике для логирования
-          const downloadedTranslatorName = (chapterData.teams && chapterData.teams.length > 0)
-            ? chapterData.teams[0].name || 'Неизвестный'
-            : 'Неизвестный';
-          const downloadedBranchId = chapterData.branch_id;
-
-          // Определяем CDN домен на основе сервиса и выбора сервера
-          const effectiveServer = serverSelection || 'normal'; // normal = img2, compressed = img3
-
-          let cdnDomain;
-          if (config.serviceName === 'hentailib') {
-            // HentaiLIB использует img2h/img3h или img2/img3
-            const serverPrefix = effectiveServer === 'compressed' ? 'img3h' : 'img2h';
-            cdnDomain = `${serverPrefix}.hentaicdn.org`;
-          } else if (config.serviceName === 'shlib') {
-            // SlashLIB использует img2/img3 на hentaicdn.org или img2h/img3h (исторически)
-            const serverPrefix = effectiveServer === 'compressed' ? 'img3' : 'img2';
-            cdnDomain = `${serverPrefix}.hentaicdn.org`;
-          } else if (config.serviceName === 'animelib') {
-            const serverPrefix = effectiveServer === 'compressed' ? 'img3' : 'img2';
-            cdnDomain = `${serverPrefix}.animelib.org`;
-          } else {
-            // MangaLIB: normal = img2.imglib.info, compressed = img3.cdnlibs.org
-            if (effectiveServer === 'compressed') {
-              cdnDomain = 'img3.cdnlibs.org';
-            } else {
-              cdnDomain = 'img2.imglib.info';
-            }
-          }
-
-          // Формируем полные URL для изображений
-          const formattedPages = pages.map(page => {
-            let fullUrl = page.url;
-            // API отдаёт путь вида //manga/..., добавляем домен и схлопываем двойной слэш
-            if (fullUrl && fullUrl.startsWith('//')) {
-              fullUrl = `https://${cdnDomain}${fullUrl.replace(/^\/+/, '/')}`;
-            }
-            return {
-              ...page,
-              url: fullUrl
-            };
-          });
-
-          return {
-            success: true,
-            pages: formattedPages,
-            translatorInfo: {
-              downloadedTranslatorName,
-              downloadedBranchId
-            }
-          };
-        },
-        args: [chapterId, volume, number, slug, imageServer, branchId]
-      });
-
-      if (result && result[0] && result[0].result) {
-        const loaded = result[0].result;
+      if (loaded) {
         // «Одинаковая ширина страниц»: ширину берём из API первой главы, где она есть, и держим до конца загрузки
         if (this.options.sameWidth && !this.commonPageWidth && loaded.success) {
           this.commonPageWidth = mostCommonValue((loaded.pages || []).map(page => page.width).filter(width => width > 0));

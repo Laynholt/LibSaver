@@ -149,6 +149,7 @@ class HtmlFormatter extends BaseFormatter {
     // Обработка ранобэ (текст)
     for (let i = 0; i < chapters.length; i++) {
       const ch = chapters[i];
+      this.options.updateProgress?.(i, chapters.length); // HTML прежде не двигал шкалу вовсе
 
       if (this.options.addLog) {
         this.options.addLog('[' + (i + 1) + '/' + chapters.length + '] ОБРАБОТКА: ' + ch.displayTitle + '...');
@@ -233,6 +234,7 @@ class HtmlFormatter extends BaseFormatter {
 
     for (let i = 0; i < chapters.length; i++) {
       const ch = chapters[i];
+      this.options.updateProgress?.(i, chapters.length); // HTML прежде не двигал шкалу вовсе
       let chapterImagesDownloaded = 0;
       let chapterImagesFailed = 0;
 
@@ -321,7 +323,8 @@ class HtmlFormatter extends BaseFormatter {
           let mangaHtml = '<div class="manga-chapter">';
           let chapterImageIndex = 0;
 
-          for (const page of pagesResult.pages) {
+          for (const [pageIndex, page] of pagesResult.pages.entries()) {
+            this.options.updateImageProgress?.(pageIndex, pagesResult.pages.length);
             const imgUrl = page.url || page; // Обработка если это объект или строка
             try {
               const imageResult = await this.downloadAndResizeImage(imgUrl, imageQuality, this.options.imageFormat, 'картинка манги');

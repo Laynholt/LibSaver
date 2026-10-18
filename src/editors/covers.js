@@ -1,7 +1,6 @@
 let userCovers = [];
 let currentSlug = null;
 let originalCovers = [];
-let wasSaved = false;
 let tippyInstances = [];
 let tooltipContents = [];
 
@@ -170,15 +169,6 @@ function setupTippyPreview(preview, imageUrl) {
 let disableDragAnimations = false;
 
 document.addEventListener('DOMContentLoaded', async () => {
-  // Регистрируем окно редактора обложек
-  // Внутри окна с вкладками (iframe) регистрируется само окно
-  if (window === window.top) await chrome.storage.local.set({ currentOpenWindow: 'covers' });
-
-  // Очищаем регистрацию при закрытии
-  window.addEventListener('beforeunload', async () => {
-    await chrome.storage.local.remove('currentOpenWindow');
-  });
-
   // Загружаем и применяем тему
   await loadAndApplyTheme();
 
@@ -438,6 +428,7 @@ function createCoverItem(cover, index) {
   deleteBtn.onclick = () => {
     userCovers.splice(index, 1);
     removeCoverItem(index);
+    notifyChanged();
   };
   
   innerContainer.appendChild(deleteBtn);
@@ -472,6 +463,7 @@ function updateCoverItemHandlers(item, index) {
     deleteBtn.onclick = () => {
       userCovers.splice(index, 1);
       removeCoverItem(index);
+      notifyChanged();
     };
   }
 }
@@ -649,6 +641,7 @@ function initSortable(disableDragAnimations = false) {
     onEnd: function(evt) {
       // Обновляем массив userCovers в соответствии с новым порядком
       updateCoversOrder();
+      notifyChanged();
     }
   });
 }
@@ -684,6 +677,7 @@ function handleFileUpload(index) {
         userCovers[index].type = 'file';
         userCovers[index].url = file.name; // Добавляем название файла в поле URL
         updateCoverItem(index);
+        notifyChanged();
       };
       reader.readAsDataURL(file);
     }
@@ -706,8 +700,8 @@ document.getElementById('btn-add').addEventListener('click', () => {
   }
 });
 
-// Сохранение обложек
-document.getElementById('btn-save').addEventListener('click', async () => {
+// Сохранение обложек (автосохранение, enableAutosave)
+async function saveCovers() {
   if (!currentSlug) return;
   
   const titleDataResult = await getTitleStore(['titleData']);
@@ -718,26 +712,20 @@ document.getElementById('btn-save').addEventListener('click', async () => {
     titleData[currentSlug] = { chapters: null, metadata: {}, covers: [] };
   }
   
-  titleData[currentSlug].covers = userCovers;
+  // Пустая обложка из «Новая обложка» не сохраняется, пока не введён URL или не выбран файл
+  const covers = userCovers.filter(cover => cover.url || cover.dataUrl);
+  titleData[currentSlug].covers = covers;
   // Обновляем cover в metadata для совместимости
   if (!titleData[currentSlug].metadata) {
     titleData[currentSlug].metadata = {};
   }
-  titleData[currentSlug].metadata.cover = userCovers.length > 0 ? (userCovers[0].url || userCovers[0].dataUrl) : '';
+  titleData[currentSlug].metadata.cover = covers.length > 0 ? (covers[0].url || covers[0].dataUrl) : '';
 
   // Обновляем timestamp кэша (продлеваем срок действия на 10 минут)
   titleData[currentSlug].cacheTimestamp = Date.now();
 
   await setTitleStore({ titleData });
-  
-  // Отправляем toast уведомление в popup
-  chrome.runtime.sendMessage({ action: 'showToast', message: 'Сохранено!', type: 'success' });
-  
-  wasSaved = true;
-  if (window && window.close) {
-    window.close();
-  }
-});
+}
 
 // Сброс к значениям с сайта
 document.getElementById('btn-reset').addEventListener('click', async () => {
@@ -751,6 +739,7 @@ document.getElementById('btn-reset').addEventListener('click', async () => {
   }
 
   renderCovers();
+  notifyChanged();
 });
 
 // Удаление всех обложек с двухэтапным подтверждением
@@ -766,6 +755,7 @@ document.getElementById('btn-delete-all').addEventListener('click', () => {
     // Удаляем все обложки
     userCovers = [];
     renderCovers();
+    notifyChanged();
     
     // Сбрасываем кнопку
     btn.innerHTML = '<i class="fa-solid fa-trash"></i> Удалить все';
@@ -781,12 +771,7 @@ document.getElementById('btn-delete-all').addEventListener('click', () => {
   }
 });
 
-// Отправляем toast при закрытии без сохранения
-window.addEventListener('beforeunload', () => {
-  if (!wasSaved) {
-    chrome.runtime.sendMessage({ action: 'showToast', message: 'Отменено!', type: 'cancel' });
-  }
-});
+enableAutosave({ save: saveCovers });
 
 // Очистка tippy instances при закрытии окна
 window.addEventListener('beforeunload', () => {

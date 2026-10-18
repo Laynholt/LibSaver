@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <link rel="icon" href="../assets/icons/icon32.png">
+  <title>LibSaver - Загрузки</title>
+  <script src="../core/theme-init.js"></script>
+  <link rel="stylesheet" href="../css/common.css">
+  <link rel="stylesheet" href="../libs/fontawesome/css/all.min.css">
+  <link rel="stylesheet" href="../css/downloads.css">
+  <script src="../core/theme.js"></script>
+</head>
+<body>
+  <div class="dl-header">
+    <h2><i class="fa-solid fa-download"></i> Загрузки</h2>
+    <button class="dl-btn dl-clear" id="dl-clear-finished" hidden title="Убрать из списка готовые, отменённые и с ошибкой"><i class="fa-solid fa-broom"></i><span>Очистить завершённые</span></button>
+    <div class="speed-mode-toggle">
+      <label class="checkbox-group">
+        <input type="checkbox" id="speed-mode-checkbox">
+        <span class="control__indicator" data-type="checkbox">
+          <svg class="svg-inline--fa fa-square-check fa-fw" aria-hidden="true" focusable="false" data-prefix="fas" data-icon="square-check" role="img" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512" data-state="checked"><path fill="currentColor" d="M64 32C28.7 32 0 60.7 0 96L0 416c0 35.3 28.7 64 64 64l320 0c35.3 0 64-28.7 64-64l0-320c0-35.3-28.7-64-64-64L64 32zM337 209L209 337c-9.4 9.4-24.6 9.4-33.9 0l-64-64c-9.4-9.4-9.4-24.6 0-33.9s24.6-9.4 33.9 0l47 47L303 175c9.4-9.4 24.6-9.4 33.9 0s9.4 24.6 0 33.9z"></path></svg>
+          <svg class="svg-inline--fa fa-square fa-fw" aria-hidden="true" focusable="false" data-prefix="far" data-icon="square" role="img" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512" data-state="default"><path fill="currentColor" d="M384 80c8.8 0 16 7.2 16 16l0 320c0 8.8-7.2 16-16 16L64 432c-8.8 0-16-7.2-16-16L48 96c0-8.8 7.2-16 16-16l320 0zM64 32C28.7 32 0 60.7 0 96L0 416c0 35.3 28.7 64 64 64l320 0c35.3 0 64-28.7 64-64l0-320c0-35.3-28.7-64-64-64L64 32z"></path></svg>
+        </span>
+        <span>Ускорить</span>
+      </label>
+    </div>
+  </div>
+
+  <div class="dl-empty" id="dl-connection">Подключаюсь…</div>
+  <div class="dl-empty" id="dl-empty" hidden>Очередь пуста</div>
+  <div class="dl-list" id="dl-list"></div>
+
+  <!-- Лог и статистика текущего (или последнего) тайтла -->
+  <div class="dl-current" id="dl-current" hidden>
+    <details class="dl-zone" open>
+      <summary><i class="fa-solid fa-terminal"></i> Логи</summary>
+      <div class="logs-panel" id="dl-log-panel">
+        <div class="log" id="dl-log"></div>
+      </div>
+    </details>
+    <details class="dl-zone">
+      <summary><i class="fa-solid fa-chart-line"></i> Статистика</summary>
+      <div class="analysis-info" id="dl-stats"></div>
+    </details>
+  </div>
+
+  <script src="../utils/page-call.js"></script>
+  <script src="../core/downloads-view.js"></script>
+</body>
+</html>

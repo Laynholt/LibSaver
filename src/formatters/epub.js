@@ -573,6 +573,7 @@ class EpubFormatter extends BaseFormatter {
       let chapterHtml = '';
       let pageIndex = 0;
       while (pageIndex < pagesResult.pages.length) {
+        this.options.updateImageProgress?.(pageIndex, pagesResult.pages.length);
         const page = pagesResult.pages[pageIndex];
         try {
           const imgNum = String(globalImageCounter++).padStart(4, '0');

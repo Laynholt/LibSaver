@@ -35,12 +35,16 @@ async function migrateTitleStore(legacy) {
 }
 
 // Аналог chrome.storage.local.get(keys): titleData/originalTitleData возвращаются только для slug
-// (по умолчанию — сохранённый currentSlug)
+// (по умолчанию — currentSlug из ?slug= адреса страницы расширения, если он есть, иначе сохранённый currentSlug)
 async function getTitleStore(keys, slug) {
   const plainKeys = keys.filter(key => !TITLE_STORE_KINDS.includes(key));
   const kinds = keys.filter(key => TITLE_STORE_KINDS.includes(key));
   const base = await chrome.storage.local.get([...new Set([...plainKeys, 'currentSlug', ...TITLE_STORE_KINDS])]);
   await migrateTitleStore(base);
+  // ?slug= действует только на страницах расширения: у чужого сайта свой параметр slug не должен подменять тайтл
+  const isExtensionPage = typeof location !== 'undefined' && /^(chrome|moz)-extension:$/.test(location.protocol);
+  const urlSlug = isExtensionPage ? new URLSearchParams(location.search).get('slug') : null;
+  if (urlSlug) base.currentSlug = urlSlug;
 
   const result = {};
   for (const key of plainKeys) {

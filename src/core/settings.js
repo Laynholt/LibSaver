@@ -1,5 +1,23 @@
-// Загрузка сохраненных настроек
-let wasSaved = false;
+// Раздел окна LibSaver (?group=images|toc|cbz|pdf|txt|general|about): показываем только панели с data-group из списка (через запятую),
+// без тулбара и раскладки колонок. Без ?group= - вся страница с тулбаром (старое окно настроек)
+const GROUP_ALIASES = { general: ['general', 'storage'] };
+
+function settingsGroupsFromUrl(search = location.search) {
+  const value = new URLSearchParams(search).get('group');
+  return value ? value.split(',').flatMap(group => GROUP_ALIASES[group] ?? [group]) : null;
+}
+
+const settingsGroups = settingsGroupsFromUrl();
+
+function applyGroupMode() {
+  if (!settingsGroups) return;
+  document.body.classList.add('group-mode');
+  document.querySelectorAll('.panel[data-group]').forEach(panel => {
+    panel.classList.toggle('hidden', !settingsGroups.includes(panel.dataset.group));
+  });
+}
+
+applyGroupMode();
 
 // Дефолтные ссылки сайтов
 const defaultSiteLinks = {
@@ -10,13 +28,54 @@ const defaultSiteLinks = {
   animelib: 'https://animelib.org'
 };
 
+// Вкладка настроек (без ?group=): слева разделы, справа панели одного раздела. Раздел - в #адресе: ссылка и «назад» его помнят
+const TAB_SECTIONS = [
+  { id: 'general', title: 'Общие', icon: 'fa-sliders', groups: ['general', 'storage'] },
+  { id: 'images', title: 'Картинки', icon: 'fa-image', groups: ['images'] },
+  { id: 'toc', title: 'Оглавление', icon: 'fa-list-ol', groups: ['toc'] },
+  { id: 'formats', title: 'Форматы', icon: 'fa-file-export', groups: ['cbz', 'pdf', 'txt'] },
+  { id: 'about', title: 'О LibSaver', icon: 'fa-circle-info', groups: ['about'] }
+];
+
+function showTabSection(id) {
+  const section = TAB_SECTIONS.find(candidate => candidate.id === id) || TAB_SECTIONS[0];
+  document.querySelectorAll('.panel[data-group]').forEach(panel => {
+    panel.classList.toggle('hidden', !section.groups.includes(panel.dataset.group));
+  });
+  document.querySelectorAll('.settings-nav a').forEach(link => {
+    const on = link.dataset.section === section.id;
+    link.classList.toggle('on', on);
+    if (on) link.setAttribute('aria-current', 'page');
+    else link.removeAttribute('aria-current');
+  });
+  window.scrollTo(0, 0);
+}
+
+function applyTabMode() {
+  const nav = document.getElementById('settings-nav');
+  if (settingsGroups || !nav) return;
+  document.body.classList.add('tab-mode');
+  for (const section of TAB_SECTIONS) {
+    const link = document.createElement('a');
+    link.href = `#${section.id}`;
+    link.dataset.section = section.id;
+    const icon = document.createElement('i');
+    icon.className = `fa-solid ${section.icon}`;
+    link.append(icon, document.createTextNode(section.title));
+    nav.append(link);
+  }
+  window.addEventListener('hashchange', () => showTabSection(location.hash.slice(1)));
+  showTabSection(location.hash.slice(1));
+}
+
+applyTabMode();
+
 // Отображение версии расширения
 function displayVersion() {
   const manifest = chrome.runtime.getManifest();
   const versionElement = document.getElementById('extension-version');
   if (versionElement) {
     versionElement.textContent = `LibSaver v${manifest.version}`;
-    versionElement.onclick = checkForUpdates;
   }
 }
 
@@ -231,6 +290,8 @@ function resetSiteMenuOrder() {
 function applySettingsToUI(settings) {
   document.getElementById('cover-quality').value = settings.coverQuality || 'ORIGINAL';
   document.getElementById('image-quality').value = settings.imageQuality || 'ORIGINAL';
+  // Те же значения и умолчание (JPEG), что у загрузки с сайта
+  document.getElementById('image-server').value = ['normal', 'compressed'].includes(settings.imageServer) ? settings.imageServer : 'compressed';
   document.getElementById('resize-method').value = settings.resizeMethod || 'MIN_SIDE';
   document.getElementById('adaptive-ratio').value = settings.adaptiveRatio || 3;
   document.getElementById('adaptive-ratio-value').textContent = (settings.adaptiveRatio || 3) + ':1';
@@ -296,6 +357,7 @@ function applySettingsToUI(settings) {
 
   // TXT settings
   document.getElementById('txt-image-marker').value = settings.txtImageMarker || 'numbered';
+  document.getElementById('text-only').checked = settings.textOnly === true;
 
   // Show/hide custom format field and disable/enable checkboxes
   updateTocFormatFields();
@@ -417,16 +479,18 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Отображаем размер storage
   updateStorageSizeDisplay();
 
-  // Обработчик клика для очистки старых данных
-  document.getElementById('storage-size-display').addEventListener('click', cleanupOldTitles);
+  // Кнопка очистки старых данных
+  document.getElementById('btn-cleanup').addEventListener('click', cleanupOldTitles);
 
-  // Регистрируем окно настроек
-  // Внутри окна с вкладками (iframe) регистрируется само окно
-  if (window === window.top) await chrome.storage.local.set({ currentOpenWindow: 'settings' });
-
-  // Очищаем регистрацию при закрытии
-  window.addEventListener('beforeunload', async () => {
-    await chrome.storage.local.remove('currentOpenWindow');
+  // Проверка обновлений («О LibSaver»); во время проверки кнопка недоступна
+  const checkButton = document.getElementById('btn-check-updates');
+  checkButton.addEventListener('click', async () => {
+    checkButton.disabled = true;
+    try {
+      await checkForUpdates();
+    } finally {
+      checkButton.disabled = false;
+    }
   });
 
   // Загружаем и применяем тему
@@ -577,6 +641,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   const settings = await chrome.storage.local.get([
     'coverQuality',
     'imageQuality',
+    'imageServer',
     'resizeMethod',
     'adaptiveRatio',
     'jpegQuality',
@@ -596,6 +661,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     'initialChapters',
     'loadMoreChapters',
     'txtImageMarker',
+    'textOnly',
     'pdfFont',
     'pdfFontSize',
     'pdfPageSize',
@@ -607,6 +673,10 @@ document.addEventListener('DOMContentLoaded', async () => {
   
   // Применяем сохраненные настройки
   applySettingsToUI(settings);
+  // Сервер картинок есть только у манги (сайт - по siteType, как в быстром окошке)
+  const { siteType } = await chrome.storage.local.get('siteType');
+  document.getElementById('image-server-field').style.display = siteType === 'manga' ? '' : 'none';
+  appliedToc = tocSignature(readTocControls()); // по этому формату главы уже оформлены
 
   // Инициализация видимости полей
   updateJpegQualityFieldVisibility();
@@ -688,8 +758,14 @@ document.addEventListener('DOMContentLoaded', async () => {
     button.addEventListener('click', () => {
       const group = button.getAttribute('data-group');
       resetGroupSettings(group);
+      if (group === 'toc') tocCommitted = true; // сброс - подтверждённая правка формата
+      notifyChanged(); // значения сброшены кодом, событий input нет
     });
   });
+
+  // Автосохранение вместо кнопки «Сохранить»
+  watchTocCommit();
+  enableAutosave({ save: saveSettings });
 });
 
 // Show/hide custom format fields based on selection
@@ -793,11 +869,50 @@ function updateTocOptionTexts() {
   });
 }
 
-// Сохранение настроек
-document.getElementById('btn-save').addEventListener('click', async () => {
-  const settings = {
+// Ключи storage по группам панелей. Раздел окна пишет только свои ключи: остальные разделы живут в соседних фреймах и могли изменить свои позже
+const SETTING_KEYS_BY_GROUP = {
+  general: ['enableSiteMenu', 'customSiteLinks', 'debugLogging', 'updateNotifications', 'enablePagination', 'initialChapters', 'loadMoreChapters'],
+  images: ['coverQuality', 'imageQuality', 'imageServer', 'resizeMethod', 'adaptiveRatio', 'jpegQuality', 'imageFormat', 'sameWidth'],
+  toc: ['disableToc', 'tocFormat', 'customTocFormat', 'hideChapterName', 'hideVolumeNumber'],
+  cbz: ['generateComicInfo'],
+  pdf: ['pdfFont', 'pdfFontSize', 'pdfPageSize', 'pdfLineSpacing', 'pdfParagraphSpacing', 'pdfImageFormat', 'pdfJpegQuality'],
+  txt: ['txtImageMarker', 'textOnly'],
+  storage: ['cleanupOnTitleChange', 'cleanupOldTitles']
+};
+
+// Формат заголовков глав. Значение пишется автосохранением на каждую паузу ввода, а переформатирование глав (сброс displayTitle у всех тайтлов,
+// это стирает ручные правки) - один раз на подтверждённую правку: change поля (потеря фокуса, выбор в списке) или уход со страницы
+const TOC_CONTROLS = { tocFormat: 'toc-format', customTocFormat: 'custom-toc-format', hideChapterName: 'hide-chapter-name', hideVolumeNumber: 'hide-volume-number' };
+let tocCommitted = false; // правка формата подтверждена, но главы ещё не переформатированы
+let appliedToc = null; // подпись формата, по которому главы переформатированы в последний раз (null - неизвестно)
+
+const tocSignature = values => JSON.stringify(Object.keys(TOC_CONTROLS).map(key => values[key]));
+
+function readTocControls() {
+  return Object.fromEntries(Object.entries(TOC_CONTROLS).map(([key, id]) => {
+    const element = document.getElementById(id);
+    return [key, element.type === 'checkbox' ? element.checked : element.value];
+  }));
+}
+
+function watchTocCommit() {
+  document.addEventListener('change', event => {
+    if (Object.values(TOC_CONTROLS).includes(event.target?.id)) tocCommitted = true;
+  });
+  // Закрыли окно, пока поле формата в фокусе: change не было, а значение уже могло уйти в storage
+  window.addEventListener('pagehide', () => {
+    if (appliedToc === null || tocSignature(readTocControls()) === appliedToc) return;
+    tocCommitted = true;
+    saveSettings().catch(error => console.error('[LibSaver] settings', error));
+  });
+}
+
+// Сохранение настроек (автосохранение, enableAutosave)
+async function saveSettings() {
+  const all = {
     coverQuality: document.getElementById('cover-quality').value,
     imageQuality: document.getElementById('image-quality').value,
+    imageServer: document.getElementById('image-server').value,
     resizeMethod: document.getElementById('resize-method').value,
     adaptiveRatio: parseFloat(document.getElementById('adaptive-ratio').value),
     jpegQuality: parseFloat(document.getElementById('jpeg-quality').value),
@@ -822,6 +937,7 @@ document.getElementById('btn-save').addEventListener('click', async () => {
     hideChapterName: document.getElementById('hide-chapter-name').checked,
     hideVolumeNumber: document.getElementById('hide-volume-number').checked,
     txtImageMarker: document.getElementById('txt-image-marker').value,
+    textOnly: document.getElementById('text-only').checked,
     pdfFont: document.getElementById('pdf-font').value,
     pdfFontSize: parseInt(document.getElementById('pdf-font-size').value),
     pdfPageSize: document.getElementById('pdf-page-size').value,
@@ -835,18 +951,17 @@ document.getElementById('btn-save').addEventListener('click', async () => {
     cleanupOnTitleChange: document.getElementById('cleanup-on-title-change').checked,
     cleanupOldTitles: document.getElementById('cleanup-old-titles').checked
   };
+  const groups = settingsGroups ?? Object.keys(SETTING_KEYS_BY_GROUP);
+  const settings = Object.fromEntries(groups.flatMap(group => SETTING_KEYS_BY_GROUP[group] ?? []).map(key => [key, all[key]]));
 
-  // Если изменился формат заголовков - отправляем сообщение для переформатирования
-  const {
-    tocFormat: oldTocFormat,
-    customTocFormat: oldCustomTocFormat,
-    hideChapterName: oldHideChapterName,
-    hideVolumeNumber: oldHideVolumeNumber
-  } = await chrome.storage.local.get(['tocFormat', 'customTocFormat', 'hideChapterName', 'hideVolumeNumber']);
   await chrome.storage.local.set(settings);
 
-  if (oldTocFormat !== settings.tocFormat || oldCustomTocFormat !== settings.customTocFormat ||
-      oldHideChapterName !== settings.hideChapterName || oldHideVolumeNumber !== settings.hideVolumeNumber) {
+  // Если подтверждён другой формат заголовков - переформатируем главы (appliedToc обновляется до первого await: два сохранения подряд не задвоят проход)
+  if (tocCommitted && Object.keys(TOC_CONTROLS).every(key => key in settings)) {
+    tocCommitted = false;
+    const signature = tocSignature(settings);
+    if (signature === appliedToc) return;
+    appliedToc = signature;
     // Удаляем сохранённые displayTitle из titleData
     const titleData = await getAllTitleData();
     if (titleData) {
@@ -862,17 +977,7 @@ document.getElementById('btn-save').addEventListener('click', async () => {
     // Отправляем сообщение для переформатирования в открытых окнах
     chrome.runtime.sendMessage({ action: 'reformatChapters' });
   }
-
-  wasSaved = true;
-  
-  // Отправляем сообщение в popup для показа toast
-  chrome.runtime.sendMessage({ action: 'showToast', message: 'Сохранено!', type: 'success' });
-  
-  // Закрываем окно настроек
-  if (window && window.close) {
-    window.close();
-  }
-});
+}
 
 // Дефолтные значения по группам
 const DEFAULT_SETTINGS_BY_GROUP = {
@@ -887,6 +992,7 @@ const DEFAULT_SETTINGS_BY_GROUP = {
   images: {
     'cover-quality': 'ORIGINAL',
     'image-quality': 'ORIGINAL',
+    'image-server': 'compressed',
     'resize-method': 'MIN_SIDE',
     'adaptive-ratio': 3,
     'jpeg-quality': 1.0,
@@ -904,7 +1010,8 @@ const DEFAULT_SETTINGS_BY_GROUP = {
     'generate-comicinfo': true
   },
   txt: {
-    'txt-image-marker': 'numbered'
+    'txt-image-marker': 'numbered',
+    'text-only': false
   },
   pdf: {
     'pdf-font': 'merriweather',
@@ -961,16 +1068,15 @@ function resetGroupSettings(group) {
     // Обновляем видимость полей после сброса
     updateTocFormatFields();
     updateCustomFormatExample();
-
-    // Отправляем сообщение для обновления полей в редакторе оглавления
-    chrome.runtime.sendMessage({ action: 'tocSettingsReset', settings: defaults });
   } else if (group === 'txt') {
     // Сброс настроек TXT
     for (const [key, value] of Object.entries(defaults)) {
       const element = document.getElementById(key);
       if (!element) continue;
 
-      if (element.tagName === 'SELECT' || element.tagName === 'INPUT') {
+      if (element.type === 'checkbox') {
+        element.checked = value;
+      } else if (element.tagName === 'SELECT' || element.tagName === 'INPUT') {
         element.value = value;
       }
     }
@@ -1097,9 +1203,6 @@ function resetGroupSettings(group) {
       }
     }
   }
-
-  // Устанавливаем флаг, что изменения не сохранены
-  wasSaved = false;
 }
 
 // Сброс настроек к значениям по умолчанию
@@ -1184,8 +1287,8 @@ document.getElementById('btn-reset').addEventListener('click', async () => {
   updateTocOptionTexts();
   updatePaginationSettingsVisibility();
 
-  // Устанавливаем флаг, что изменения не сохранены
-  wasSaved = false;
+  tocCommitted = true;
+  notifyChanged(); // значения сброшены кодом, событий input нет
 });
 
 // Переопределяем слушатель сообщений для обновления темы
@@ -1195,114 +1298,51 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 });
 
-// Сравнение версий (semver)
-function compareVersions(v1, v2) {
-  const parts1 = v1.split('.').map(Number);
-  const parts2 = v2.split('.').map(Number);
-
-  const maxLength = Math.max(parts1.length, parts2.length);
-
-  for (let i = 0; i < maxLength; i++) {
-    const num1 = parts1[i] || 0;
-    const num2 = parts2[i] || 0;
-
-    if (num1 > num2) return 1;
-    if (num1 < num2) return -1;
-  }
-
-  return 0;
-}
-
-// Проверка обновлений
+// Проверка обновлений по последнему релизу на GitHub (utils/update-check.js)
 async function checkForUpdates() {
   const versionElement = document.getElementById('extension-version');
-  const manifest = chrome.runtime.getManifest();
-  const currentVersion = manifest.version;
+  const currentVersion = chrome.runtime.getManifest().version;
   const originalText = `LibSaver v${currentVersion}`;
+  const showBriefly = (text, color) => {
+    versionElement.textContent = text;
+    versionElement.style.color = color;
+    setTimeout(() => {
+      versionElement.textContent = originalText;
+      versionElement.style.color = '';
+    }, 4000);
+  };
 
   versionElement.textContent = 'Проверка...';
   versionElement.style.color = '#999';
-  versionElement.style.pointerEvents = 'none';
+  versionElement.onclick = null;
+  versionElement.classList.remove('clickable-version');
 
   try {
-    console.log('Текущая версия:', currentVersion);
-
-    // Таймаут 30 секунд для fetch
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 30000);
-
-    const response = await fetch('https://cdn.jsdelivr.net/gh/dfy-dpg/LibSaver@latest/src/manifest.json', {
-      signal: controller.signal
-    });
-    clearTimeout(timeoutId);
-
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}`);
-    }
-
-    const manifest = await response.json();
-    if (!manifest || !manifest.version) {
-      throw new Error('Нет версии в manifest');
-    }
-
-    const latestVersion = manifest.version;
-
-    console.log('Версия на GitHub:', latestVersion);
-
-    // Фейковая задержка 1 секунда после успешного ответа
-    await new Promise(resolve => setTimeout(resolve, 1000));
-
-    // Семантическое сравнение версий
-    if (compareVersions(latestVersion, currentVersion) > 0) {
-      // Обновление доступно - показываем постоянно, кликабельно
-      versionElement.textContent = `v${currentVersion} → v${latestVersion}`;
+    const release = await fetchLatestRelease();
+    if (compareVersions(release.version, currentVersion) > 0) {
+      // Обновление есть - надпись остаётся и по клику скачивает релиз
+      versionElement.textContent = `v${currentVersion} → v${release.version} · скачать`;
       versionElement.style.color = '#4CAF50';
-      versionElement.style.pointerEvents = 'auto';
-      console.log(`Доступно обновление: v${currentVersion} → v${latestVersion}`);
-
-      // При клике открываем GitHub releases (последний релиз)
-      versionElement.onclick = () => {
-        chrome.tabs.create({ url: 'https://github.com/dfy-dpg/LibSaver/releases/latest' });
-      };
+      versionElement.classList.add('clickable-version');
+      versionElement.onclick = () => openUpdate(release);
     } else {
-      // Актуальная версия - показываем 4 секунды, не кликабельно
-      versionElement.textContent = 'Актуальная версия';
-      versionElement.style.color = '#4CAF50';
-
-      setTimeout(() => {
-        versionElement.textContent = originalText;
-        versionElement.style.color = '';
-        versionElement.style.pointerEvents = 'auto';
-        versionElement.onclick = checkForUpdates;
-      }, 4000);
+      showBriefly('Актуальная версия', '#4CAF50');
     }
   } catch (error) {
-    // Определяем тип ошибки для более информативного сообщения
     let errorMessage = 'Ошибка';
     if (error.name === 'AbortError') {
       errorMessage = 'Таймаут';
     } else if (error.message.includes('Failed to fetch') || error.message.includes('NetworkError')) {
       errorMessage = 'Нет соединения';
-    } else if (error.message.includes('HTTP 4') || error.message.includes('HTTP 5')) {
-      errorMessage = 'CDN недоступен';
+    } else if (error.message === 'HTTP 404') {
+      errorMessage = 'Релизов пока нет';
+    } else if (error.message.startsWith('HTTP ')) {
+      errorMessage = 'GitHub недоступен';
     }
-
-    // Ошибка - показываем 4 секунды, не кликабельно (без задержки)
-    versionElement.textContent = errorMessage;
-    versionElement.style.color = '#f44336';
     console.error('Ошибка проверки обновлений:', error);
-
-    setTimeout(() => {
-      versionElement.textContent = originalText;
-      versionElement.style.color = '';
-      versionElement.style.pointerEvents = 'auto';
-      versionElement.onclick = checkForUpdates;
-    }, 4000);
+    showBriefly(errorMessage, '#f44336');
   }
 }
-
-// Клик по версии для проверки обновлений
-document.getElementById('extension-version').addEventListener('click', checkForUpdates);
 
 // Отображение размера storage
 async function updateStorageSizeDisplay() {
@@ -1324,15 +1364,15 @@ async function updateStorageSizeDisplay() {
 async function cleanupOldTitles() {
   try {
     const all = await chrome.storage.local.get(null);
-    const currentSlug = all.currentSlug;
+    // Не удаляем ни тайтл из окна LibSaver (?slug=), ни последний открытый
+    const keep = [all.currentSlug, new URLSearchParams(location.search).get('slug')];
 
     const titleKeys = Object.keys(all).filter(k => k.startsWith('titleData:'));
     const toDelete = [];
 
     for (const key of titleKeys) {
       const slug = key.split(':')[1];
-      // НЕ удаляем текущий тайтл
-      if (slug !== currentSlug) {
+      if (!keep.includes(slug)) {
         toDelete.push(key, `originalTitleData:${slug}`);
       }
     }
@@ -1427,31 +1467,16 @@ document.addEventListener('DOMContentLoaded', () => {
   initToolbarTippy();
 });
 
-// Ссылка на новый issue в репозитории автора с заранее заполненным шаблоном
+// Форма issue (.github/ISSUE_TEMPLATE/bug_report.yml): версия, страница тайтла и браузер подставляются по id полей формы
 async function buildIssueUrl() {
   const { sourceUrl } = await chrome.storage.local.get(['sourceUrl']);
-  const body = [
-    '### Что произошло',
-    '<!-- Кратко опишите проблему -->',
-    '',
-    '### Как повторить',
-    '1. ',
-    '2. ',
-    '3. ',
-    '',
-    '### Что ожидалось',
-    '',
-    '',
-    '### Скриншоты и логи',
-    '<!-- Перетащите сюда скриншоты. Логи можно скопировать из раздела «Логи» в окне загрузки -->',
-    '',
-    '### Окружение',
-    `- Версия LibSaver: ${chrome.runtime.getManifest().version}`,
-    `- Страница тайтла: ${sourceUrl || ''}`,
-    '- Формат файла: ',
-    `- Браузер: ${navigator.userAgent}`
-  ].join('\n');
-  return `https://github.com/dfy-dpg/LibSaver/issues/new?title=${encodeURIComponent('[Баг] ')}&body=${encodeURIComponent(body)}`;
+  const params = new URLSearchParams({
+    template: 'bug_report.yml',
+    version: chrome.runtime.getManifest().version,
+    page: sourceUrl || '',
+    browser: navigator.userAgent
+  });
+  return `https://github.com/${LIBSAVER_REPO}/issues/new?${params}`;
 }
 
 // Подсказка tippy вставляется в body, поэтому клик ловим делегированием
@@ -1461,12 +1486,8 @@ document.addEventListener('click', async (event) => {
   chrome.tabs.create({ url: await buildIssueUrl() });
 });
 
-// Отправляем toast при закрытии без сохранения
 window.addEventListener('beforeunload', () => {
   if (tippyInstance) {
     tippyInstance.destroy();
-  }
-  if (!wasSaved) {
-    chrome.runtime.sendMessage({ action: 'showToast', message: 'Отменено!', type: 'cancel' });
   }
 });

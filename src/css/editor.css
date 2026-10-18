@@ -83,6 +83,83 @@ body {
   border: none !important;
 }
 
+/* Карточки раздела «Главы»: диапазон, перевод, тома */
+.chapters-card,
+.volume-card {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  padding: var(--spacing-sm) var(--spacing-md);
+  margin-bottom: var(--spacing-sm);
+}
+
+.chapters-card h4,
+.volume-header {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  margin: 0 0 var(--spacing-xs);
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+}
+
+.chapters-card h4 span:last-child,
+.volume-count {
+  margin-left: auto;
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
+.range-row {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-xs) 0;
+  font-size: var(--font-size-md);
+  color: var(--text-secondary);
+}
+
+.range-row select {
+  flex: 1;
+  min-width: 0;
+}
+
+.volume-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+}
+
+.volume-card .chapter-header {
+  gap: var(--spacing-sm);
+  justify-content: flex-start;
+}
+
+.volume-card .chapter-reset-btn {
+  margin-left: auto;
+}
+
+/* Часть глав тома отмечена: акцентный квадрат с чертой (цвет акцента виден в обеих темах) */
+.volume-checkbox:indeterminate ~ .control__indicator {
+  position: relative;
+}
+
+.volume-checkbox:indeterminate ~ .control__indicator svg[data-state="default"] {
+  color: var(--accent-color);
+}
+
+.volume-checkbox:indeterminate ~ .control__indicator::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 8px;
+  height: 2px;
+  margin: -1px 0 0 -4px;
+  border-radius: 1px;
+  background: var(--accent-color);
+}
+
 .chapter-input {
   background-color: var(--bg-tertiary);
   color: var(--text-primary);

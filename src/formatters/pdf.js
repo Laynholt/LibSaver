@@ -10,6 +10,9 @@ function loadPdfLibs() {
   return loadPdfLibs.promise;
 }
 
+// Глифов корейского, китайского и японского в шрифтах из assets/fonts нет: такие символы берутся из первого запасного, где они есть
+const PDF_FALLBACK_FONTS = ['assets/fonts/NanumGothic-Regular.ttf', 'assets/fonts/DroidSansFallbackFull.ttf']; // корейский; китайский и японский
+
 class PdfFormatter extends BaseFormatter {
   constructor(options) {
     super(options);
@@ -34,6 +37,8 @@ class PdfFormatter extends BaseFormatter {
 
     // Создаём PDF документ
     const pdfDoc = await PDFDocument.create();
+    this.fallbackFonts = PDF_FALLBACK_FONTS.map(path => ({ path })); // + bytes и chars после чтения, font - после встраивания; chars: null - не загрузился
+    this.fontChars = new Map();
 
     // Регистрируем fontkit для поддержки кастомных шрифтов
     if (typeof fontkit !== 'undefined') {
@@ -448,6 +453,7 @@ class PdfFormatter extends BaseFormatter {
       // Добавляем каждую картинку как отдельную страницу
       let pageIndex = 0;
       while (pageIndex < pages.length) {
+        this.options.updateImageProgress?.(pageIndex, pages.length);
         const pageUrl = pages[pageIndex].url || pages[pageIndex];
 
         try {
@@ -661,6 +667,7 @@ class PdfFormatter extends BaseFormatter {
       // Парсим HTML и извлекаем текст и картинки
       const parser = new DOMParser();
       const doc = parser.parseFromString(htmlContent, 'text/html');
+      await this.loadFallbackFontsFor(pdfDoc, `${ch.displayTitle || ''}${doc.body.textContent}`, [font, boldFont], addLog);
 
       // Сохраняем индекс страницы начала главы
       const startPageIndex = pdfDoc.getPageCount();
@@ -676,7 +683,7 @@ class PdfFormatter extends BaseFormatter {
         const chapterTitle = ch.displayTitle || `Глава ${i + 1}`;
         const titleLines = this.wrapText(chapterTitle, maxLineWidth, fontSize + 2, boldFont);
         for (const line of titleLines) {
-          page.drawText(line, {
+          this.drawTextRuns(page, line, {
             x: textMargin,
             y: y,
             size: fontSize + 2,
@@ -807,7 +814,7 @@ class PdfFormatter extends BaseFormatter {
                 page = pdfDoc.addPage([pageWidth, pageHeight]);
                 y = pageHeight - margin;
               }
-              page.drawText(line, {
+              this.drawTextRuns(page, line, {
                 x: textMargin,
                 y: y,
                 size: fontSize,
@@ -1173,7 +1180,7 @@ class PdfFormatter extends BaseFormatter {
 
     for (const word of words) {
       const testLine = currentLine ? `${currentLine} ${word}` : word;
-      const width = font.widthOfTextAtSize(testLine, fontSize);
+      const width = this.textWidth(testLine, fontSize, font);
 
       if (width < maxWidth) {
         currentLine = testLine;
@@ -1190,5 +1197,66 @@ class PdfFormatter extends BaseFormatter {
     }
 
     return lines;
+  }
+
+  charsOf(font) {
+    if (!this.fontChars.has(font)) this.fontChars.set(font, new Set(font.getCharacterSet()));
+    return this.fontChars.get(font);
+  }
+
+  // Запасной шрифт (~2 МБ в PDF) встраивается, только если в тексте есть его символы, которых нет в выбранном шрифте.
+  // Целиком: subset теряет у Droid Sans Fallback японские глифы
+  async loadFallbackFontsFor(pdfDoc, text, fonts, addLog) {
+    const missing = new Set();
+    for (const char of text) {
+      const code = char.codePointAt(0);
+      if (fonts.some(font => !this.charsOf(font).has(code))) missing.add(code);
+    }
+    for (const entry of this.fallbackFonts) {
+      if (!missing.size) return;
+      if (entry.chars === null) continue;
+      try {
+        if (!entry.chars) {
+          const response = await fetch(chrome.runtime.getURL(entry.path));
+          if (!response.ok) throw new Error(`HTTP ${response.status}`);
+          entry.bytes = new Uint8Array(await response.arrayBuffer());
+          entry.chars = new Set(fontkit.create(entry.bytes).characterSet);
+        }
+        if (!entry.font && [...missing].some(code => entry.chars.has(code))) entry.font = await pdfDoc.embedFont(entry.bytes);
+      } catch (error) {
+        entry.chars = null;
+        addLog(`Не загрузился шрифт ${entry.path}, часть иероглифов может не отобразиться: ${error.message}`, true);
+        continue;
+      }
+      for (const code of missing) if (entry.chars.has(code)) missing.delete(code);
+    }
+  }
+
+  // Строка -> куски одного шрифта: символ без глифа в основном шрифте берётся из первого запасного, где он есть
+  textRuns(text, font) {
+    const extras = this.fallbackFonts.filter(entry => entry.font).map(entry => entry.font);
+    if (!extras.length) return [{ text, font }];
+    const own = this.charsOf(font);
+    const runs = [];
+    for (const char of text) {
+      const code = char.codePointAt(0);
+      const runFont = own.has(code) ? font : extras.find(extra => this.charsOf(extra).has(code)) || font;
+      const last = runs[runs.length - 1];
+      if (last?.font === runFont) last.text += char;
+      else runs.push({ text: char, font: runFont });
+    }
+    return runs;
+  }
+
+  textWidth(text, size, font) {
+    return this.textRuns(text, font).reduce((width, run) => width + run.font.widthOfTextAtSize(run.text, size), 0);
+  }
+
+  drawTextRuns(page, text, options) {
+    let x = options.x;
+    for (const run of this.textRuns(text, options.font)) {
+      page.drawText(run.text, { ...options, x, font: run.font });
+      x += run.font.widthOfTextAtSize(run.text, options.size);
+    }
   }
 }

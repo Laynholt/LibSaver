@@ -103,12 +103,13 @@ test('EPUB assigns unique IDs and exactly one primary cover', () => {
 
 test('switching titles removes the previous title unless cleanup on title change is off', async () => {
   for (const cleanupOnTitleChange of [undefined, false]) {
-    const data = { currentSlug: 'old', 'titleData:old': { metadata: { titleRu: 'Edited' } }, 'originalTitleData:old': { chapters: [] }, 'titleData:new': { covers: ['local'] } };
+    const twoHoursAgo = Date.now() - 2 * 60 * 60 * 1000;
+    const data = { currentSlug: 'old', 'titleData:old': { metadata: { titleRu: 'Edited' }, cacheTimestamp: twoHoursAgo }, 'originalTitleData:old': { chapters: [] }, 'titleData:new': { covers: ['local'] } };
     if (cleanupOnTitleChange === false) data.cleanupOnTitleChange = false;
     const before = structuredClone(data);
-    const context = vm.createContext({ chaptersResult: { slug: 'new' }, currentSlug: 'old', chrome: { storage: { local: storageApi(data) } } });
-    vm.runInContext(titleStore, context);
-    await vm.runInContext('(async () => {' + between('src/core/popup.js', '    const newSlug = chaptersResult.slug;', '    // Загружаем приоритет переводчиков') + '})()', context);
+    const context = vm.createContext({ chrome: { storage: { local: storageApi(data) } } });
+    vm.runInContext(titleStore + functionSource('src/core/title-loader.js', 'switchCurrentTitle'), context);
+    await context.switchCurrentTitle('new');
     const kept = cleanupOnTitleChange === false;
     assert.deepEqual(data['titleData:old'], kept ? before['titleData:old'] : undefined);
     assert.deepEqual(data['originalTitleData:old'], kept ? before['originalTitleData:old'] : undefined);
@@ -117,15 +118,25 @@ test('switching titles removes the previous title unless cleanup on title change
   }
 });
 
-test('opening popup removes titles older than 7 days unless that cleanup is off', async () => {
+test('switching titles keeps a previous title touched within the last hour (another tab may be editing it)', async () => {
+  const data = { currentSlug: 'old', 'titleData:old': { metadata: { titleRu: 'Edited' }, cacheTimestamp: Date.now() - 50 * 60 * 1000 }, 'originalTitleData:old': { chapters: [] } };
+  const before = structuredClone(data);
+  const context = vm.createContext({ chrome: { storage: { local: storageApi(data) } } });
+  vm.runInContext(titleStore + functionSource('src/core/title-loader.js', 'switchCurrentTitle'), context);
+  await context.switchCurrentTitle('new');
+  assert.deepEqual(data['titleData:old'], before['titleData:old']);
+  assert.deepEqual(data['originalTitleData:old'], before['originalTitleData:old']);
+  assert.equal(data.currentSlug, 'new');
+});
+
+test('loading a title removes titles older than 7 days unless that cleanup is off', async () => {
   for (const cleanupOldTitles of [undefined, false]) {
     const data = { 'titleData:old': { cacheTimestamp: 1 }, 'originalTitleData:old': {}, 'titleData:fresh': { cacheTimestamp: Date.now() } };
     if (cleanupOldTitles === false) data.cleanupOldTitles = false;
     const before = structuredClone(data);
     const context = vm.createContext({ console, chrome: { storage: { local: storageApi(data) } } });
-    const cleanup = between('src/core/popup.js', '// Очистка старых titleData', '// Запуск при открытии всплывающего окна');
-    const init = between('src/core/popup.js', '  // Удаляем старый downloadData', '  // Проверка обновлений при открытии popup');
-    await vm.runInContext(cleanup + '(async () => {' + init + '})()', context);
+    vm.runInContext(functionSource('src/core/title-loader.js', 'cleanupOldTitles'), context);
+    await context.cleanupOldTitles();
     const kept = cleanupOldTitles === false;
     assert.deepEqual(data['titleData:old'], kept ? before['titleData:old'] : undefined);
     assert.deepEqual(data['originalTitleData:old'], kept ? before['originalTitleData:old'] : undefined);
@@ -134,18 +145,24 @@ test('opening popup removes titles older than 7 days unless that cleanup is off'
 });
 
 test('saving title format clears stale generated titles and notifies consumers', async () => {
-  let save;
+  const listeners = {};
+  const timers = [];
   const messages = [];
   const data = { tocFormat: 'default', 'titleData:title': { chapters: [{ displayTitle: 'Old' }] } };
   const context = vm.createContext({
-    defaultSiteLinks: {}, wasSaved: false,
-    document: { getElementById: id => id === 'btn-save' ? { addEventListener: (_, fn) => save = fn } : { value: id === 'toc-format' ? 'custom' : '1', checked: false } },
-    chrome: { storage: { local: storageApi(data) }, runtime: { sendMessage: message => messages.push(message) } },
-    window: { close() {} }
+    defaultSiteLinks: {}, settingsGroups: null, console: { error() {} },
+    setTimeout: fn => timers.push(fn), clearTimeout() {},
+    document: { getElementById: id => ({ value: id === 'toc-format' ? 'custom' : '1', checked: false }), addEventListener: (type, fn) => (listeners[type] ||= []).push(fn) },
+    window: { addEventListener() {} },
+    chrome: { storage: { local: storageApi(data) }, runtime: { sendMessage: message => { messages.push(message); return Promise.resolve(); } } }
   });
-  vm.runInContext(titleStore, context);
-  vm.runInContext(between('src/core/settings.js', "document.getElementById('btn-save').addEventListener", '\n});') + '\n});', context);
-  await save();
+  vm.runInContext(titleStore + source('src/utils/autosave.js'), context);
+  vm.runInContext(between('src/core/settings.js', 'const SETTING_KEYS_BY_GROUP', '// Дефолтные значения по группам'), context);
+  vm.runInContext('watchTocCommit(); enableAutosave({ save: saveSettings })', context);
+  for (const fn of listeners.change) fn({ target: { id: 'toc-format' } }); // сохранение срабатывает от изменения поля, кнопки нет
+  assert.equal(timers.length, 1);
+  timers[0]();
+  await new Promise(resolve => setImmediate(resolve));
   assert.equal(data.tocFormat, 'custom');
   assert.equal(data['titleData:title'].chapters[0].displayTitle, undefined);
   assert.ok(messages.some(message => message.action === 'reformatChapters'));
@@ -186,7 +203,7 @@ test('title store reads and writes only the requested title', async () => {
 });
 
 test('title data is only accessed through the title store, which every page using it loads', () => {
-  const scripts = ['src/core/popup.js', 'src/core/prepare.js', 'src/core/download.js', 'src/core/settings.js',
+  const scripts = ['src/core/popup.js', 'src/core/panel.js', 'src/core/quick.js', 'src/core/download.js', 'src/core/settings.js',
     'src/editors/chapters.js', 'src/editors/covers.js', 'src/editors/metadata.js', 'src/formatters/cbz.js'];
   for (const file of scripts) {
     assert.doesNotMatch(source(file), /chrome\.storage\.local\.(get|set)\([^;]*\b(titleData|originalTitleData)\b/, file);
@@ -202,178 +219,168 @@ test('title data is only accessed through the title store, which every page usin
   }
 });
 
-test('popup requests chapters, metadata and covers together without artificial waits', () => {
-  const start = between('src/core/popup.js', "document.addEventListener('DOMContentLoaded'", '// Функция для открытия popup окна');
-  assert.match(start, /Promise\.all\(\[\s*trackProgress\(loadChapters\(activeTab\.id\)\),\s*trackProgress\(loadMetadata\(activeTab\.id\)\),\s*trackProgress\(loadCovers\(activeTab\.id, urlSlug\)\)/);
-  assert.doesNotMatch(start, /await (loadChapters|loadMetadata|loadCovers)\(|setTimeout\(resolve|\b(fast|slowSmooth|ready|animate)Progress\(/);
+test('title loader requests chapters, metadata and covers together without artificial waits', () => {
+  const loader = source('src/core/title-loader.js');
+  assert.match(loader, /Promise\.all\(\[\s*trackProgress\(loadChapters\(tabId\)\),\s*trackProgress\(loadMetadata\(tabId\)\),\s*trackProgress\(loadCovers\(tabId, urlSlug\)\)/);
+  assert.doesNotMatch(loader, /await (loadChapters|loadMetadata|loadCovers)\(|setTimeout\(resolve|\b(fast|slowSmooth|ready|animate)Progress\(/);
+  assert.doesNotMatch(source('src/core/popup.js'), /\b(loadChapters|loadMetadata|loadCovers)\(/);
 });
 
-test('window detection ignores unrelated websites and recognizes own page', async () => {
-  const data = {};
-  let url = 'https://example.org/settings.html';
-  const context = vm.createContext({ chrome: {
-    windows: { getAll: async () => [{ tabs: [{ url }] }] },
-    runtime: { getURL: file => 'chrome-extension://self/' + file },
-    storage: { local: storageApi(data) }
-  } });
-  vm.runInContext(functionSource('src/core/popup.js', 'syncOpenWindows'), context);
-  await context.syncOpenWindows();
-  assert.equal(data.currentOpenWindow, undefined);
-  url = 'chrome-extension://self/html/settings.html';
-  await context.syncOpenWindows();
-  assert.equal(data.currentOpenWindow, 'settings');
-});
-
-test('tabbed editor window is detected and embedded editors leave registration and closing to it', async () => {
-  const data = {};
-  const context = vm.createContext({ chrome: {
-    windows: { getAll: async () => [{ tabs: [{ url: 'chrome-extension://self/html/workspace.html?title=0#settings' }] }] },
-    runtime: { getURL: file => 'chrome-extension://self/' + file },
-    storage: { local: storageApi(data) }
-  } });
-  vm.runInContext(functionSource('src/core/popup.js', 'syncOpenWindows'), context);
-  await context.syncOpenWindows();
-  assert.equal(data.currentOpenWindow, 'workspace');
-  for (const file of ['src/editors/chapters.js', 'src/editors/covers.js', 'src/editors/metadata.js', 'src/core/settings.js']) {
-    assert.match(source(file), /if \(window === window\.top\) await chrome\.storage\.local\.set\(\{ currentOpenWindow:/, file);
-    assert.doesNotMatch(source(file), /chrome\.windows\.remove/, file);
-  }
-});
-
-function errorHandlers() {
-  const buttons = {};
-  const context = vm.createContext({
-    currentErrorChapter: null, currentError: null, isWaitingForUser: false,
-    shouldRetryChapter: false, isPaused: false, skippedChapters: [], addLog() {}, window: {}, btnDownloadFile: null,
-    document: { getElementById: id => buttons[id] = { style: {}, addEventListener: (_, fn) => buttons[id].click = fn } }
-  });
-  vm.runInContext(between('src/core/download.js', '// Обработчик кнопки Пауза/Возобновить', '// Функции для статистики') + '\n' + source('src/core/download.js').slice(source('src/core/download.js').indexOf('async function handleChapterError')), context);
-  return { context, buttons };
+// download.js целиком: он не трогает DOM, ход загрузки уходит событиями в listener
+function downloadEvents() {
+  const events = [];
+  const context = vm.createContext({ console: { error() {}, log() {} }, window: {} });
+  vm.runInContext(source('src/core/download.js') + '\nthis.downloadControl = downloadControl;', context);
+  context.setDownloadListener(event => events.push(event));
+  return { context, events };
 }
 
 for (const action of ['retry', 'skip']) {
   test(`image ${action} after a chapter error targets the image`, async () => {
-    const { context, buttons } = errorHandlers();
+    const { context } = downloadEvents();
     let decision = context.handleChapterError({ number: 1 }, new Error('chapter'), 0);
-    buttons['btn-retry'].click();
+    context.downloadControl.retry();
     assert.equal((await decision).shouldRetry, true);
     decision = context.handleImageError({ number: 2 }, new Error('image'), 1, 'image');
-    buttons['btn-' + action].click();
+    context.downloadControl[action]();
     assert.equal((await decision).shouldRetry, action === 'retry');
-    assert.equal(context.skippedChapters.length, 0);
+    assert.equal(vm.runInContext('skippedChapters.length', context), 0);
     decision = context.handleChapterError({ number: 3 }, new Error('chapter'), 2);
-    buttons['btn-retry'].click();
+    context.downloadControl.retry();
     assert.equal((await decision).shouldRetry, true);
   });
 }
 
-function downloadHarness({ fail = false, partial = false, storageFailure = false } = {}) {
+function downloadHarness({ fail = false, partial = false, noDownloadData = false } = {}) {
   const timers = new Set();
-  const elements = {};
-  const element = id => elements[id] ||= { style: {}, disabled: true, textContent: '', classList: { remove() {} } };
-  const checkboxes = [element('chapter'), element('volume')];
-  checkboxes.forEach(box => box.closest = () => null);
-  let pending;
-  let stopped = false;
-  let restored = false;
+  const logs = [];
   let saved = 0;
   const noop = () => {};
-  const data = { downloadData: { slug: 'test', chapters: [{ id: 1 }, { id: 2 }], metadata: {}, selectedFormat: 'epub' } };
+  // Снимок загрузки; без downloadData startDownload обязан упасть
+  const snapshot = { stored: {}, titleExtras: {} };
+  if (!noDownloadData) snapshot.downloadData = { slug: 'test', chapters: [{ id: 1 }, { id: 2 }], metadata: {}, selectedFormat: 'epub' };
+  let thrown = null;
   const context = vm.createContext({
-    console: { error: noop }, progressText: element('progress-text'), progressBar: element('progress-bar'),
-    btnDownloadFile: element('btn-download-file'), btnNewDownload: element('btn-new-download'), btnPauseElement: element('btn-pause'), btnRetryElement: element('btn-retry'), btnSkipElement: element('btn-skip'),
-    statsUpdateInterval: null, skippedChapters: [],
-    document: { getElementById: element, querySelectorAll: () => checkboxes },
+    console: { error: noop }, statsUpdateInterval: null, skippedChapters: [],
     resetDownloadState: noop, calculateInitialSpeed: () => 60, updateStatisticsDisplay: noop,
-    formatChapterTitle: () => 'Test', trackRequest: noop, updateProgress: noop, getTitleStore: async () => ({ titleData: {} }),
+    formatChapterTitle: () => 'Test', trackRequest: noop, updateProgress: noop, updateImageProgress: noop, progressSamples: [], throwIfCanceled: noop,
     handleChapterError: noop, handleImageError: noop, onTranslatorSelected: noop,
-    addLog: noop, setExactFileSize: noop, saveAs: () => saved++,
+    addLog: line => logs.push(line), setExactFileSize: noop, saveAs: () => saved++,
     setInterval: () => { const id = timers.size + 1; timers.add(id); return id; }, clearInterval: id => timers.delete(id),
     getFormatter: () => ({ format: async () => {
       if (fail) throw new Error('Synthetic formatter failure');
       if (partial) context.skippedChapters.push({ number: 1 });
       return { blob: { size: 12 }, filename: 'test.epub' };
     } }),
-    chrome: { storage: { local: {
-      get: (_keys, callback) => {
-        if (storageFailure) throw new Error('Storage unavailable');
-        if (callback) { pending = callback(data); return; }
-        return Promise.resolve(data);
-      }, set: noop
-    } } },
     window: {
       setDownloadStartTime: noop,
-      stopStatisticsUpdate: () => stopped = true,
-      restoreDownloadControls: () => { restored = true; },
       getStatisticsValue: name => partial && name === 'skippedImagesCount' ? 1 : 0
     }
   });
-  vm.runInContext(functionSource('src/core/download.js', 'startDownload'), context);
-  return { context, timers, elements, run: async () => { await context.startDownload(); await pending; }, status: () => ({ stopped, restored, saved }) };
+  vm.runInContext(functionSource('src/core/download.js', 'completionText') + functionSource('src/core/download.js', 'startDownload'), context);
+  let result;
+  return { timers, logs, run: async () => { try { result = await context.startDownload(snapshot); } catch (err) { thrown = err; } }, result: () => result, thrown: () => thrown, saved: () => saved };
 }
 
-for (const storageFailure of [false, true]) {
-  test(`failed download cleans up and offers another attempt (${storageFailure ? 'storage' : 'formatter'})`, async () => {
-    const harness = downloadHarness({ fail: true, storageFailure });
+for (const noDownloadData of [false, true]) {
+  test(`failed download cleans up and rethrows without saving (${noDownloadData ? 'no snapshot data' : 'formatter'})`, async () => {
+    const harness = downloadHarness({ fail: true, noDownloadData });
     await harness.run();
+    assert.ok(harness.thrown());
     assert.equal(harness.timers.size, 0);
-    assert.equal(harness.status().stopped, true);
-    assert.equal(harness.status().restored, true);
-    assert.equal(harness.status().saved, 0);
-    assert.match(harness.elements['progress-text'].textContent, /Ошибка/);
+    assert.equal(harness.saved(), 0);
+    assert.ok(harness.logs.some(line => /Критическая ошибка/.test(line)));
   });
 }
 
-test('partial completion reports skipped content instead of unconditional success', async () => {
+test('partial completion reports skipped content and leaves saving to the caller', async () => {
   const harness = downloadHarness({ partial: true });
   await harness.run();
-  assert.equal(harness.status().saved, 1);
+  assert.equal(harness.saved(), 0);
   assert.equal(harness.timers.size, 0);
-  assert.match(harness.elements['progress-text'].textContent, /пропуск/i);
-  assert.match(harness.elements['progress-text'].textContent, /1.*2/);
-  // После загрузки можно скачать ещё раз в другом формате, не закрывая окно
-  assert.equal(harness.elements['btn-new-download'].style.display, 'flex');
+  const { downloaded, total, skippedImages, filename } = harness.result();
+  assert.deepEqual([downloaded, total, skippedImages, filename], [1, 2, 1, 'test.epub']);
+  assert.ok(harness.logs.includes('Готово с пропусками: 1 / 2 глав; пропущено картинок: 1'));
 });
 
-test('new download button returns the format and chapter choice in the same window', () => {
-  const handler = between('src/core/download.js', "btnNewDownload.addEventListener('click'", '});');
-  assert.match(handler, /download-toolbar'\)\.style\.display = 'none'/);
-  assert.match(handler, /restoreDownloadControls/);
-  assert.match(source('src/html/prepare.html'), /id="btn-new-download"/);
+// Раздел «Загрузки»: чистая разметка downloads-view.js (ход загрузки приходит из движка состоянием очереди)
+function downloadsView() {
+  const context = vm.createContext({ console, chrome: {} });
+  vm.runInContext(source('src/utils/page-call.js') + source('src/core/downloads-view.js'), context);
+  return context;
+}
+const queued = (over = {}) => ({ id: 'a', slug: 's', siteKey: 'mangalib', title: 'T', format: 'epub', status: 'running', progress: { current: 1, total: 4 }, ...over });
+const commandsOf = html => [...html.matchAll(/data-cmd="([^"]+)"/g)].map(match => match[1]);
+
+test('failed download shows exactly one error and offers only removal', () => {
+  const html = downloadsView().renderQueueItem(queued({ status: 'error', error: 'boom' }));
+  assert.equal((html.match(/Ошибка/g) || []).length, 1);
+  assert.match(html, /Ошибка: boom/);
+  assert.deepEqual(commandsOf(html), ['remove']); // ни паузы, ни повтора, ни пропуска у завершённой с ошибкой загрузки
 });
 
-test('recovery restores chapter selection and the download button', () => {
-  const elements = {};
-  const element = id => elements[id] ||= { disabled: true, style: { display: 'none' }, classList: { remove() {} }, closest: () => null };
-  const chapters = [element('chapter')];
-  const volumes = [element('volume')];
-  const context = vm.createContext({ document: {
-    getElementById: element,
-    querySelectorAll: selector => selector === '.chapter-checkbox' ? chapters : volumes
-  } });
-  for (const name of ['enableControls', 'enableVolumeCheckboxes', 'restoreDownloadControls']) {
-    vm.runInContext(functionSource('src/core/prepare.js', name), context);
-  }
-  context.restoreDownloadControls();
-  for (const id of ['chapter', 'volume', 'btn-start-download', 'format-select', 'server-select', 'text-only-checkbox']) {
-    assert.equal(element(id).disabled, false, id);
-  }
-  assert.notEqual(element('btn-start-download').style.display, 'none');
+test('partial completion reports skipped content instead of unconditional success', () => {
+  const view = downloadsView();
+  const html = view.renderQueueItem(queued({ status: 'done', progress: { current: 1, total: 2 }, filename: 'a.epub' }));
+  assert.match(html, /Готово с пропусками: 1 \/ 2 глав/);
+  assert.match(html, /a\.epub/);
+  assert.match(view.renderStats({ skippedChapters: 1, skippedImages: 3 }), /Пропущено картинок:<\/span>\s*<span class="analysis-value">3</);
+  // полная загрузка пропусков не заявляет
+  assert.doesNotMatch(view.renderQueueItem(queued({ status: 'done', progress: { current: 2, total: 2 } })), /с пропусками/);
+});
+
+test('downloads view draws download events: log, progress, stats, decision buttons, pause', () => {
+  const view = downloadsView();
+  assert.match(view.renderLog([{ line: '[t] hi', isError: true, color: null }]), /<div class="log-entry error">\[t\] hi<\/div>/);
+  const progress = view.renderQueueItem(queued({ progress: { current: 1, total: 4 } }));
+  assert.match(progress, /width: 25%/);
+  assert.match(progress, /1 \/ 4 глав/);
+  const stats = view.renderStats({ elapsed: '5 сек', requestsPerMinute: 7, maxRequestsPerMinute: 75, errors: 2 });
+  assert.match(stats, /Запросов в минуту:<\/span>\s*<span class="analysis-value">7 \(75\)</);
+  assert.match(stats, /Ошибки:<\/span>\s*<span class="analysis-value">2</);
+  const decision = view.renderQueueItem(queued({ status: 'waiting-decision', decision: { kind: 'chapter', chapterTitle: 'Г', message: 'm' } }));
+  assert.deepEqual(commandsOf(decision), ['retry', 'skip', 'cancel']);
+  assert.deepEqual(commandsOf(view.renderQueueItem(queued())), ['pause', 'cancel']);
+  const paused = view.renderQueueItem(queued({ status: 'paused' }));
+  assert.deepEqual(commandsOf(paused), ['resume', 'cancel']);
+  assert.match(paused, /title="Продолжить"/);
+});
+
+test('a finished download can be saved again and downloaded again from the same window', () => {
+  const html = downloadsView().renderQueueItem(queued({ status: 'done', progress: { current: 4, total: 4 }, filename: 'a.epub', canSaveAgain: true }));
+  assert.match(html, /data-cmd="saveAgain"[^>]*title="Сохранить файл ещё раз"/);
+  // движок отпустил файл (готов более новый тайтл): кнопки нет, а не молчаливый отказ
+  const released = downloadsView().renderQueueItem(queued({ status: 'done', progress: { current: 4, total: 4 }, filename: 'a.epub' }));
+  assert.doesNotMatch(released, /saveAgain/);
+  // «Скачать N глав» остаётся в низу окна (формат и главы можно выбрать заново), отдельной кнопки возврата нет
+  const handler = between('src/core/panel.js', "downloadButton.addEventListener('click'", 'backButton.addEventListener');
+  assert.doesNotMatch(handler, /style\.display = 'none'|hidden/);
+  assert.doesNotMatch(source('src/html/panel.html') + source('src/html/downloads.html'), /btn-new-download/);
+});
+
+test('recovery restores the download button and keeps the chapter selection', () => {
+  // после отказа очереди и после исключения кнопка снова доступна: busy и disabled сбрасываются вне try/catch
+  const handler = between('src/core/panel.js', "downloadButton.addEventListener('click'", 'backButton.addEventListener');
+  const tail = handler.slice(handler.lastIndexOf('} catch'));
+  assert.match(tail, /busy = false;\s*downloadButton\.disabled = counts\.selected === 0;/);
+  // выбор глав окно не стирает: берёт сохранённый, а кнопка гаснет только при пустом выборе
+  assert.match(handler, /selectedChapterIds: selectedIds\(titleData\[slug\]\)/);
+  assert.doesNotMatch(handler, /selectedChapterIds[^;]*=\s*(\[\]|null)/);
 });
 
 test('format selector exposes selectable native options for each site', () => {
-  const select = { options: [], value: '', appendChild(option) { this.options.push(option); },
-    set innerHTML(_value) { this.options = []; } };
-  const context = vm.createContext({ document: {
-    getElementById: id => id === 'format-select' ? select : null,
-    createElement: tag => ({ tagName: tag.toUpperCase(), value: '', textContent: '', classList: { add() {} } })
-  } });
-  vm.runInContext(functionSource('src/core/prepare.js', 'populateFormatSelector'), context);
-  assert.equal(context.populateFormatSelector('manga'), 'cbz');
-  assert.ok(select.options.some(option => option.tagName === 'OPTION' && option.value === 'pdf'));
-  assert.equal(select.value, 'cbz');
-  assert.equal(context.populateFormatSelector('ranobe'), 'epub');
-  assert.ok(select.options.some(option => option.value === 'fb2'));
+  const context = vm.createContext({});
+  vm.runInContext(source('src/utils/formats.js'), context);
+  const values = siteType => Array.from(context.formatOptionsFor(siteType), option => option.value);
+  assert.equal(context.defaultFormatFor('manga'), 'cbz');
+  assert.ok(values('manga').includes('pdf') && context.formatOptionsFor('manga').every(option => option.label));
+  assert.equal(context.defaultFormatFor('ranobe'), 'epub');
+  assert.ok(values('ranobe').includes('fb2'));
+  // окно и быстрое окошко строят настоящие <option> из этого списка
+  for (const file of ['src/core/panel.js', 'src/core/quick.js']) {
+    assert.match(source(file), /createElement\('option'\)/, file);
+    assert.match(source(file), /Options(For)?\(/, file);
+  }
 });
 
 // --- Second audit pass: chapter HTML in EPUB/HTML/FB2 and 4xx retries ---
@@ -538,12 +545,12 @@ for (const status of [403, 404]) {
   }
 }
 
-// api.js keeps a copy of fetchWithRetry inside every function injected into the site tab
-const apiRetryCopies = source('src/core/api.js').match(/async function fetchWithRetry\(url, options = \{\}, maxRetries = 3[\s\S]*?throw lastError \|\| new Error\('Max retries exceeded'\);\s*\}/g);
-test('api.js has four injected retry loops', () => assert.equal(apiRetryCopies.length, 4));
+// page-calls.js keeps a copy of fetchWithRetry inside every function injected into the site tab
+const apiRetryCopies = source('src/core/page-calls.js').match(/async function fetchWithRetry\(url, options = \{\}, maxRetries = 3[\s\S]*?throw lastError \|\| new Error\('Max retries exceeded'\);\s*\}/g);
+test('page-calls has four injected retry loops', () => assert.equal(apiRetryCopies.length, 4));
 apiRetryCopies.forEach((copy, index) => {
   for (const [status, expectedRequests] of [[404, 1], [403, 1], [503, 4]]) {
-    test(`api.js retry loop #${index + 1}: HTTP ${status} makes ${expectedRequests} request(s)`, async () => {
+    test(`page-calls retry loop #${index + 1}: HTTP ${status} makes ${expectedRequests} request(s)`, async () => {
       let requests = 0;
       const context = vm.createContext({
         fetch: async () => { requests++; return { ok: false, status }; },
@@ -616,9 +623,10 @@ test('same-width option scales manga pages to the most common width of the first
   const context = vm.createContext({
     URL,
     chrome: {
-      runtime: { sendMessage: (message, reply) => reply({ success: true, data: 'data:image/png;base64,' }) },
-      scripting: { executeScript: async () => [{ result: { success: true, pages: pageWidths.map(width => ({ width })) } }] }
+      runtime: { sendMessage: (message, reply) => reply({ success: true, data: 'data:image/png;base64,' }) }
     },
+    siteKeyOfTab: async () => 'mangalib',
+    pageCall: async () => ({ success: true, pages: pageWidths.map(width => ({ width })) }),
     Image: class { set src(value) { this.width = 1000; this.height = 1500; this.onload(); } },
     fetch: async () => ({ blob: async () => ({ size: 1000, type: 'image/png' }) }),
     document: { createElement: () => {
@@ -646,7 +654,8 @@ test('same-width option scales manga pages to the most common width of the first
 });
 
 test('PDF libraries load lazily and fonts are embedded whole', () => {
-  assert.doesNotMatch(source('src/html/prepare.html'), /pdf-lib|fontkit/);
+  assert.doesNotMatch(source('src/html/panel.html'), /pdf-lib|fontkit/);
+  assert.doesNotMatch(source('src/engine/engine.html'), /pdf-lib|fontkit/);
   const pdf = source('src/formatters/pdf.js');
   assert.match(between('src/formatters/pdf.js', '  async format(chapters, metadata) {', 'const { PDFDocument'), /await loadPdfLibs\(\);/);
   // subset в pdf-lib/fontkit рисует кириллицу Merriweather, Inter и Crimson Text пустыми местами

@@ -4,8 +4,8 @@ let currentSlug = null;
 let userMetadata = {}; // Пользовательские метаданные
 let originalMetadata = {}; // Оригинальные метаданные с API (для сброса)
 let metadataFields = {}; // Состояние чекбоксов полей из настроек
-let wasSaved = false;
-let tempFieldLabels = {}; // Временные изменения названий полей (сохраняются только при нажатии Сохранить)
+let fieldLabelsLoaded = false; // до загрузки fieldLabels из storage их нельзя записывать: пустой tempFieldLabels затёр бы сохранённые
+let tempFieldLabels = {}; // Изменения названий полей, ещё не записанные в storage (пишет saveMetadata)
 let originalFieldLabels = {}; // Оригинальные названия полей из storage (для отмены)
 
 // Слушатель сообщений для обновления темы
@@ -13,15 +13,6 @@ setupThemeMessageListener();
 
 // Загрузка метаданных при открытии страницы
 document.addEventListener('DOMContentLoaded', async () => {
-  // Регистрируем окно редактора метаданных
-  // Внутри окна с вкладками (iframe) регистрируется само окно
-  if (window === window.top) await chrome.storage.local.set({ currentOpenWindow: 'metadata' });
-
-  // Очищаем регистрацию при закрытии
-  window.addEventListener('beforeunload', async () => {
-    await chrome.storage.local.remove('currentOpenWindow');
-  });
-
   // Загружаем и применяем тему
   await loadAndApplyTheme();
 
@@ -67,6 +58,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     chrome.storage.local.get(['fieldLabels'], (labelResult) => {
       originalFieldLabels = { ...(labelResult.fieldLabels || {}) };
       tempFieldLabels = { ...originalFieldLabels };
+      fieldLabelsLoaded = true;
     });
 
     // Загружаем сохраненные метаданные пользователя из titleData
@@ -248,8 +240,9 @@ function applyFieldOrder(fieldOrder) {
   });
 }
 
-// Сохранение метаданных
-document.getElementById('btn-save').addEventListener('click', () => {
+// Сохранение метаданных (автосохранение, enableAutosave)
+async function saveMetadata() {
+  if (!currentSlug) return; // тайтл ещё не загружен
   const metadata = {};
   
   // Добавляем только включенные поля из настроек
@@ -299,36 +292,27 @@ document.getElementById('btn-save').addEventListener('click', () => {
     metadata.tags = document.getElementById('tags').value;
   }
 
-  getTitleStore(['titleData']).then((result) => {
-    const titleData = result.titleData || {};
-    // Инициализируем структуру если нет
-    if (!titleData[currentSlug]) {
-      titleData[currentSlug] = { chapters: null, metadata: {}, covers: [] };
-    }
-    
-    // Сохраняем существующие covers, чтобы не потерять обложки
-    const existingData = titleData[currentSlug] || {};
-    metadata.covers = existingData.covers || [];
+  const result = await getTitleStore(['titleData']);
+  const titleData = result.titleData || {};
+  // Инициализируем структуру если нет
+  if (!titleData[currentSlug]) {
+    titleData[currentSlug] = { chapters: null, metadata: {}, covers: [] };
+  }
 
-    titleData[currentSlug].metadata = metadata;
+  // Сохраняем существующие covers, чтобы не потерять обложки
+  const existingData = titleData[currentSlug] || {};
+  metadata.covers = existingData.covers || [];
+  // metadata.cover приходит с сайта или из редактора обложек, у поля метаданных его нет
+  if (existingData.metadata?.cover !== undefined) metadata.cover = existingData.metadata.cover;
 
-    // Обновляем timestamp кэша (продлеваем срок действия на 10 минут)
-    titleData[currentSlug].cacheTimestamp = Date.now();
+  titleData[currentSlug].metadata = metadata;
 
-    // Сохраняем временные изменения названий полей в storage
-    setTitleStore({
-      titleData,
-      fieldLabels: tempFieldLabels
-    }).then(() => {
-      // Отправляем toast уведомление в popup
-      chrome.runtime.sendMessage({ action: 'showToast', message: 'Сохранено!', type: 'success' });
-      
-      wasSaved = true;
-      // Закрываем окно после сохранения
-      window.close(); // внутри окна с вкладками (iframe) ничего не делает
-    });
-  });
-});
+  // Обновляем timestamp кэша (продлеваем срок действия на 10 минут)
+  titleData[currentSlug].cacheTimestamp = Date.now();
+
+  // Сохраняем названия полей в storage (когда они уже загружены)
+  await setTitleStore(fieldLabelsLoaded ? { titleData, fieldLabels: tempFieldLabels } : { titleData });
+}
 
 // Сброс к данным с сайта
 document.getElementById('btn-reset').addEventListener('click', () => {
@@ -367,6 +351,7 @@ document.getElementById('btn-reset').addEventListener('click', () => {
       
       // Сбрасываем все названия полей к дефолтным
       resetAllFieldLabels();
+      notifyChanged();
     } else {
       // Fallback: если originalTitleData нет, пробуем из titleData
       getTitleStore(['titleData', 'currentSlug']).then((result) => {
@@ -403,6 +388,7 @@ document.getElementById('btn-reset').addEventListener('click', () => {
           
           // Сбрасываем все названия полей к дефолтным
           resetAllFieldLabels();
+          notifyChanged();
         }
       });
     }
@@ -480,6 +466,7 @@ document.getElementById('btn-clear-all').addEventListener('click', () => {
     
     // Сбрасываем кнопку
     btn.innerHTML = '<i class="fa-solid fa-eraser"></i> Очистить всё';
+    notifyChanged();
   } else {
     // Первый клик - показываем подтверждение
     btn.innerHTML = '<i class="fa-solid fa-eraser"></i> Уверены?';
@@ -566,6 +553,7 @@ function initFieldResetButtons() {
             autosize.update(element);
           }
         }
+        notifyChanged();
       }
     });
   });
@@ -612,6 +600,7 @@ function initFieldRenameButtons() {
           label.textContent = originalLabel;
           delete tempFieldLabels[fieldId];
         }
+        notifyChanged();
       };
       
       // Обработчик для клавиш
@@ -652,8 +641,9 @@ function initFieldVisibilityButtons() {
         field.classList.remove('disabled');
       }
 
-      // Сохраняем в storage (синхронизируем с настройками)
+      // Сохраняем в storage (синхронизируем с настройками); из этого ключа панель считает «Метаданные: N полей»
       chrome.storage.local.set({ metadataFields });
+      notifyChanged(); // отключённое поле не попадает в сохранённые метаданные
     });
   });
 }
@@ -711,9 +701,4 @@ function resetAllFieldLabels() {
   chrome.storage.local.remove(['fieldLabels']);
 }
 
-// Отправляем toast при закрытии без сохранения
-window.addEventListener('beforeunload', () => {
-  if (!wasSaved) {
-    chrome.runtime.sendMessage({ action: 'showToast', message: 'Отменено!', type: 'cancel' });
-  }
-});
+enableAutosave({ save: saveMetadata });

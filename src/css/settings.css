@@ -25,15 +25,51 @@ body {
 }
 
 .storage-size-display {
-  cursor: pointer;
   font-size: 12px;
   color: var(--text-secondary);
-  margin-right: 8px;
-  transition: color 0.2s ease;
 }
 
-.storage-size-display:hover {
+/* Значение слева, кнопка справа: размер хранилища, версия */
+.storage-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.panel .btn-secondary {
+  background-color: var(--bg-tertiary);
   color: var(--text-primary);
+  border: 1px solid var(--border-color);
+  padding: 6px 12px;
+  font-size: var(--font-size-sm);
+}
+
+.panel .btn-secondary:hover {
+  background-color: var(--bg-secondary);
+  border-color: var(--border-hover);
+}
+
+.about-links {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.about-links a {
+  color: var(--text-primary);
+  text-decoration: none;
+  font-size: 13px;
+}
+
+.about-links a:hover {
+  color: var(--accent-color);
+}
+
+.about-links i {
+  width: 18px;
+  text-align: center;
+  color: var(--text-secondary);
 }
 
 .container {
@@ -291,7 +327,6 @@ body {
   gap: var(--spacing-xs);
   font-size: 12px;
   color: #ffa726;
-  margin-left: auto;
 }
 
 .reload-warning i {
@@ -607,4 +642,163 @@ body {
 [data-theme="light"] .site-menu-links input[data-site-color="anime"]:focus {
   border-color: #5e35b1 !important;
   box-shadow: 0 0 0 2px rgba(94, 53, 177, 0.2) !important;
+}
+
+/* ?group= (раздел окна LibSaver, `settings.js`): только выбранные панели, одна колонка на всю ширину, без тулбара */
+body.group-mode {
+  min-width: 0;
+  min-height: 0;
+}
+
+body.group-mode .toolbar {
+  display: none;
+}
+
+body.group-mode .container {
+  display: flex;
+  flex-direction: column;
+  max-width: none;
+  gap: var(--spacing-sm);
+}
+
+body.group-mode .settings-column {
+  display: contents;
+}
+
+/* Подзаголовки внутри длинной панели («Общие»): отделяют группы полей, не путаясь с подписями полей */
+.subsection-title {
+  font-size: 13px;
+  font-weight: 650;
+  color: var(--text-primary);
+  padding-top: 10px;
+  border-top: 1px dashed var(--border-color);
+}
+
+.section-title + .subsection-title {
+  padding-top: 0;
+  border-top: 0;
+}
+
+/* Вкладка настроек (без ?group=, settings.js): слева разделы, справа панели одного раздела */
+.settings-nav {
+  display: none;
+}
+
+body.tab-mode .settings-layout {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--spacing-lg);
+  max-width: 1000px;
+  margin: 0 auto;
+  padding: 0 12px 12px;
+}
+
+body.tab-mode .settings-nav {
+  position: sticky;
+  top: 68px; /* под липким тулбаром (52px) с отступом */
+  flex: 0 0 200px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.settings-nav a {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 12px;
+  border-radius: var(--border-radius);
+  color: var(--text-secondary);
+  font-size: 14px;
+  font-weight: 500;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.settings-nav a:hover {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+}
+
+.settings-nav a.on {
+  background: color-mix(in srgb, var(--accent-color) 16%, transparent);
+  color: var(--text-primary);
+}
+
+.settings-nav i {
+  width: 18px;
+  text-align: center;
+}
+
+.settings-nav a.on i {
+  color: var(--accent-color);
+}
+
+body.tab-mode .container {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch; /* на окне от 1000px .container - сетка с align-items: start, панели бы сжались по содержимому */
+  flex: 1;
+  min-width: 0;
+  max-width: none;
+  margin: 0;
+  padding: 0;
+  gap: var(--spacing-sm);
+}
+
+body.tab-mode .settings-column {
+  display: contents;
+}
+
+/* Узкое окно: разделы - строкой над панелями */
+@media (max-width: 720px) {
+  body.tab-mode .settings-layout {
+    flex-direction: column;
+  }
+
+  body.tab-mode .settings-nav {
+    position: static;
+    flex: none;
+    flex-direction: row;
+    width: 100%;
+    overflow-x: auto;
+  }
+}
+
+/* «О LibSaver»: авторы - аватар и ник, подпись роли под ником */
+.about-authors {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-sm);
+}
+
+.about-author {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 12px 6px 6px;
+  border: 1px solid var(--border-color);
+  border-radius: 999px;
+  color: var(--text-primary);
+  text-decoration: none;
+}
+
+.about-author:hover {
+  border-color: var(--accent-color);
+}
+
+.about-author img {
+  border-radius: 50%;
+  background: var(--bg-tertiary);
+}
+
+.about-author span {
+  display: flex;
+  flex-direction: column;
+  font-size: 13px;
+}
+
+.about-author small {
+  color: var(--text-secondary);
+  font-size: 12px;
 }
