@@ -3480,34 +3480,44 @@ test('«Сообщить о проблеме» opens the issue form of the 2.x r
   for (const id of ['version', 'page', 'browser']) assert.match(form, new RegExp(`id: ${id}\n`));
 });
 
-test('ranobe PDF draws characters missing from the chosen font (Korean, Chinese) with the fallback font, loaded only when needed', async () => {
-  const ctx = vm.createContext({ BaseFormatter: class { constructor(options) { this.options = options; } }, chrome: { runtime: { getURL: p => p } } });
+test('ranobe PDF draws characters missing from the chosen font with the first fallback font that has them, embedding only the fonts it needs', async () => {
+  const charsets = { 'assets/fonts/NanumGothic-Regular.ttf': '아나도,', 'assets/fonts/DroidSansFallbackFull.ttf': '中文,' };
+  const fakeFont = chars => ({ chars, getCharacterSet: () => [...chars].map(char => char.codePointAt(0)), widthOfTextAtSize: (text, size) => [...text].length * size });
+  const decode = bytes => new TextDecoder().decode(bytes);
+  const encoded = async url => ({ ok: true, arrayBuffer: async () => new TextEncoder().encode(url).buffer });
+  const fetched = [];
+  const embedded = [];
+  const ctx = vm.createContext({
+    BaseFormatter: class { constructor(options) { this.options = options; } }, Uint8Array, chrome: { runtime: { getURL: p => p } },
+    fontkit: { create: bytes => ({ characterSet: fakeFont(charsets[decode(bytes)]).getCharacterSet() }) },
+    fetch: url => { fetched.push(url); return encoded(url); }
+  });
   vm.runInContext(source('src/formatters/pdf.js') + ';this.Formatter = PdfFormatter;', ctx);
   const formatter = new ctx.Formatter({});
-  const fakeFont = chars => ({ getCharacterSet: () => [...chars].map(char => char.codePointAt(0)), widthOfTextAtSize: (text, size) => [...text].length * size });
   const main = fakeFont('Ах ты~(),! ');
-  const cjk = fakeFont('아나도,');
-  const fetched = [];
-  ctx.fetch = async url => { fetched.push(url); return { ok: true, arrayBuffer: async () => 'bytes' }; };
-  const pdfDoc = { embedFont: async (bytes, options) => { assert.equal(options, undefined); return cjk; } /* whole font: subset loses its Japanese glyphs */ };
-  formatter.fallbackFont = undefined;
+  /* whole font, no options: subset loses Droid's Japanese glyphs */
+  const pdfDoc = { embedFont: async (bytes, options) => { assert.equal(options, undefined); embedded.push(decode(bytes)); return fakeFont(charsets[decode(bytes)]); } };
+  formatter.fallbackFonts = vm.runInContext('PDF_FALLBACK_FONTS', ctx).map(path => ({ path }));
   formatter.fontChars = new Map();
-  await formatter.loadFallbackFontFor(pdfDoc, 'Ах ты~', [main], () => {});
-  assert.deepEqual([fetched, formatter.fallbackFont], [[], undefined]); // nothing missing - no extra font in the PDF
-  assert.deepEqual(jsonCopy(formatter.textRuns('Ах (아)', main)), [{ text: 'Ах (아)', font: jsonCopy(main) }]);
-  await formatter.loadFallbackFontFor(pdfDoc, 'Ах (아, 나도!)', [main], () => {});
-  assert.deepEqual(fetched, ['assets/fonts/DroidSansFallbackFull.ttf']);
-  const runs = formatter.textRuns('Ах (아, 나도!) 中', main);
-  assert.deepEqual(jsonCopy(runs.map(run => [run.text, run.font === cjk])), [['Ах (', false], ['아', true], [', ', false], ['나도', true], ['!) 中', false]]); // the comma stays in the main font; 中 is in neither
+  await formatter.loadFallbackFontsFor(pdfDoc, 'Ах ты~', [main], () => {});
+  assert.deepEqual(fetched, []); // nothing missing - no extra font in the PDF
+  await formatter.loadFallbackFontsFor(pdfDoc, 'Ах (아, 나도!)', [main], () => {});
+  assert.deepEqual([fetched, embedded], [['assets/fonts/NanumGothic-Regular.ttf'], ['assets/fonts/NanumGothic-Regular.ttf']]); // Korean only: Droid is not even read
+  await formatter.loadFallbackFontsFor(pdfDoc, 'Ах 中文 \u{1F600}', [main], () => {});
+  assert.deepEqual(embedded, ['assets/fonts/NanumGothic-Regular.ttf', 'assets/fonts/DroidSansFallbackFull.ttf']);
+  const runs = formatter.textRuns('Ах (아, 中文!) \u{1F600}', main);
+  assert.deepEqual(jsonCopy(runs.map(run => [run.text, run.font.chars === main.chars ? 'main' : run.font.chars])), [['Ах (', 'main'], ['아', '아나도,'], [', ', 'main'], ['中文', '中文,'], ['!) \u{1F600}', 'main']]); // the emoji is in no font
   const drawn = [];
   formatter.drawTextRuns({ drawText: (text, options) => drawn.push([text, options.x]) }, 'Ах 아', { x: 10, size: 2, font: main });
   assert.deepEqual(jsonCopy(drawn), [['Ах ', 10], ['아', 16]]);
   assert.equal(formatter.textWidth('Ах 아', 2, main), 8);
-  // a missing font file leaves the old behaviour and says so in the log
+  // a missing font file leaves those characters as before, says so in the log once, and the next font is still tried
   const logs = [];
-  formatter.fallbackFont = undefined;
-  ctx.fetch = async () => ({ ok: false, status: 404 });
-  await formatter.loadFallbackFontFor(pdfDoc, '아', [main], message => logs.push(message));
-  assert.equal(formatter.fallbackFont, null);
-  assert.match(logs[0], /HTTP 404/);
+  formatter.fallbackFonts = [{ path: 'gone.ttf' }, { path: 'assets/fonts/DroidSansFallbackFull.ttf' }];
+  ctx.fetch = url => url === 'gone.ttf' ? Promise.resolve({ ok: false, status: 404 }) : encoded(url);
+  await formatter.loadFallbackFontsFor(pdfDoc, '아中', [main], message => logs.push(message));
+  await formatter.loadFallbackFontsFor(pdfDoc, '아', [main], message => logs.push(message));
+  assert.equal(logs.length, 1);
+  assert.match(logs[0], /gone\.ttf.*HTTP 404/);
+  assert.deepEqual(jsonCopy(formatter.textRuns('아中', main).map(run => run.text)), ['아', '中']);
 });

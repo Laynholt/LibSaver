@@ -10,8 +10,8 @@ function loadPdfLibs() {
   return loadPdfLibs.promise;
 }
 
-// Глифов корейского, китайского и японского в шрифтах из assets/fonts нет: такие символы рисуются этим шрифтом
-const PDF_FALLBACK_FONT = 'assets/fonts/DroidSansFallbackFull.ttf';
+// Глифов корейского, китайского и японского в шрифтах из assets/fonts нет: такие символы берутся из первого запасного, где они есть
+const PDF_FALLBACK_FONTS = ['assets/fonts/NanumGothic-Regular.ttf', 'assets/fonts/DroidSansFallbackFull.ttf']; // корейский; китайский и японский
 
 class PdfFormatter extends BaseFormatter {
   constructor(options) {
@@ -37,7 +37,7 @@ class PdfFormatter extends BaseFormatter {
 
     // Создаём PDF документ
     const pdfDoc = await PDFDocument.create();
-    this.fallbackFont = undefined; // undefined - ещё не нужен, null - не загрузился
+    this.fallbackFonts = PDF_FALLBACK_FONTS.map(path => ({ path })); // + bytes и chars после чтения, font - после встраивания; chars: null - не загрузился
     this.fontChars = new Map();
 
     // Регистрируем fontkit для поддержки кастомных шрифтов
@@ -667,7 +667,7 @@ class PdfFormatter extends BaseFormatter {
       // Парсим HTML и извлекаем текст и картинки
       const parser = new DOMParser();
       const doc = parser.parseFromString(htmlContent, 'text/html');
-      await this.loadFallbackFontFor(pdfDoc, `${ch.displayTitle || ''}${doc.body.textContent}`, [font, boldFont], addLog);
+      await this.loadFallbackFontsFor(pdfDoc, `${ch.displayTitle || ''}${doc.body.textContent}`, [font, boldFont], addLog);
 
       // Сохраняем индекс страницы начала главы
       const startPageIndex = pdfDoc.getPageCount();
@@ -1204,31 +1204,43 @@ class PdfFormatter extends BaseFormatter {
     return this.fontChars.get(font);
   }
 
-  // Запасной шрифт (~2 МБ в PDF) встраивается только в PDF с символами без глифа в выбранном шрифте; целиком - subset теряет у него японские глифы
-  async loadFallbackFontFor(pdfDoc, text, fonts, addLog) {
-    if (this.fallbackFont !== undefined) return;
-    const missing = [...text].some(char => fonts.some(font => !this.charsOf(font).has(char.codePointAt(0))));
-    if (!missing) return;
-    this.fallbackFont = null;
-    try {
-      const response = await fetch(chrome.runtime.getURL(PDF_FALLBACK_FONT));
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      this.fallbackFont = await pdfDoc.embedFont(await response.arrayBuffer());
-    } catch (error) {
-      addLog(`Не загрузился шрифт для иероглифов, они могут не отобразиться: ${error.message}`, true);
+  // Запасной шрифт (~2 МБ в PDF) встраивается, только если в тексте есть его символы, которых нет в выбранном шрифте.
+  // Целиком: subset теряет у Droid Sans Fallback японские глифы
+  async loadFallbackFontsFor(pdfDoc, text, fonts, addLog) {
+    const missing = new Set();
+    for (const char of text) {
+      const code = char.codePointAt(0);
+      if (fonts.some(font => !this.charsOf(font).has(code))) missing.add(code);
+    }
+    for (const entry of this.fallbackFonts) {
+      if (!missing.size) return;
+      if (entry.chars === null) continue;
+      try {
+        if (!entry.chars) {
+          const response = await fetch(chrome.runtime.getURL(entry.path));
+          if (!response.ok) throw new Error(`HTTP ${response.status}`);
+          entry.bytes = new Uint8Array(await response.arrayBuffer());
+          entry.chars = new Set(fontkit.create(entry.bytes).characterSet);
+        }
+        if (!entry.font && [...missing].some(code => entry.chars.has(code))) entry.font = await pdfDoc.embedFont(entry.bytes);
+      } catch (error) {
+        entry.chars = null;
+        addLog(`Не загрузился шрифт ${entry.path}, часть иероглифов может не отобразиться: ${error.message}`, true);
+        continue;
+      }
+      for (const code of missing) if (entry.chars.has(code)) missing.delete(code);
     }
   }
 
-  // Строка -> куски одного шрифта: символ без глифа в основном шрифте берётся из запасного, если там он есть
+  // Строка -> куски одного шрифта: символ без глифа в основном шрифте берётся из первого запасного, где он есть
   textRuns(text, font) {
-    const fallback = this.fallbackFont;
-    if (!fallback) return [{ text, font }];
+    const extras = this.fallbackFonts.filter(entry => entry.font).map(entry => entry.font);
+    if (!extras.length) return [{ text, font }];
     const own = this.charsOf(font);
-    const extra = this.charsOf(fallback);
     const runs = [];
     for (const char of text) {
       const code = char.codePointAt(0);
-      const runFont = own.has(code) || !extra.has(code) ? font : fallback;
+      const runFont = own.has(code) ? font : extras.find(extra => this.charsOf(extra).has(code)) || font;
       const last = runs[runs.length - 1];
       if (last?.font === runFont) last.text += char;
       else runs.push({ text: char, font: runFont });
