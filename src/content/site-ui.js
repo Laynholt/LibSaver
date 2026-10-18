@@ -51,7 +51,8 @@ function accentFor(siteKey, forcedAccent, isDark) {
 // ---- Окно поверх сайта ----
 
 let overlay = null; // { src, host, frame, overflow, onKey, onMessage }
-let closingOverlay = null; // закрытое окно, пока фрейм доживает: { src, host, timer }
+let closingOverlay = null; // последнее закрытое окно, пока фрейм доживает: { src, host, timer } (его можно открыть снова)
+const closingHosts = new Set(); // все закрытые и ещё не удалённые окна: каждое удаляет свой таймер
 
 // Сообщения iframe -> страница (протокол: { libsaver: true, type, ... }). Окошко «Скачать» понимает ещё 'resize' и 'openPanel' (popoverMessageHandlers)
 const frameMessageHandlers = { close: () => closeOverlay() };
@@ -98,10 +99,10 @@ function openOverlay(src) {
   const reused = closingOverlay?.src === src && closingOverlay.host.isConnected !== false ? closingOverlay : null;
   if (reused) {
     clearTimeout(reused.timer);
+    closingHosts.delete(reused);
     closingOverlay = null;
-  } else {
-    removeClosingOverlay();
   }
+  // Другое закрытое окно не трогаем: его фрейм дописывает автосохранение и удалится по своему таймеру
   const { host, frame } = reused || createOverlayHost(src);
   Object.assign(host.style, { visibility: '', pointerEvents: '' });
   host.inert = false;
@@ -136,22 +137,31 @@ function closeOverlay() {
   if (!overlay) return;
   const { src, host, overflow, onKey, onMessage } = overlay;
   overlay = null;
-  removeClosingOverlay();
   Object.assign(host.style, { visibility: 'hidden', pointerEvents: 'none' });
   host.inert = true;
   window.focus(); // фокус из скрытого фрейма - обратно странице
-  closingOverlay = { src, host, timer: setTimeout(removeClosingOverlay, OVERLAY_REMOVE_DELAY) };
+  if (host.isConnected !== false) { // хост, снятый самой страницей, доживать не может
+    const entry = { src, host };
+    entry.timer = setTimeout(() => dropClosingOverlay(entry), OVERLAY_REMOVE_DELAY);
+    closingHosts.add(entry);
+    closingOverlay = entry;
+  } else {
+    host.remove();
+  }
   window.removeEventListener('keydown', onKey, true);
   window.removeEventListener('message', onMessage);
   document.documentElement.style.overflow = overflow;
 }
 
+function dropClosingOverlay(entry) {
+  clearTimeout(entry.timer);
+  closingHosts.delete(entry);
+  if (closingOverlay === entry) closingOverlay = null;
+  entry.host.remove();
+}
+
 function removeClosingOverlay() {
-  if (!closingOverlay) return;
-  const { host, timer } = closingOverlay;
-  closingOverlay = null;
-  clearTimeout(timer);
-  host.remove();
+  for (const entry of [...closingHosts]) dropClosingOverlay(entry);
 }
 
 // ---- Кнопки под «Начать читать» ----

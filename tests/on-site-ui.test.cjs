@@ -1937,7 +1937,7 @@ test('closing the overlay hides it at once and removes the host 1.5 s later, so 
   assert.equal(page.focused, 2); // focus goes back to the page each time
 });
 
-test('reopening within 1.5 s reuses the closing window on the same address and replaces it on another, never two hosts', () => {
+test('reopening within 1.5 s reuses the closing window on the same address; on another address the old one lives out its delay', () => {
   const { ctx, page } = overlayContext();
   const src = 'chrome-extension://id/html/panel.html?slug=x';
   ctx.openOverlay(src);
@@ -1955,8 +1955,19 @@ test('reopening within 1.5 s reuses the closing window on the same address and r
   ctx.openOverlay(src + '&section=downloads');
   const other = vm.runInContext('overlay', ctx);
   assert.notEqual(other.host, host);
+  assert.deepEqual(page.hosts(), [host, other.host]); // the hidden old frame finishes its autosave
+  assert.equal(host.style.visibility, 'hidden');
+  assert.equal(page.timers.size, 1);
+  page.runTimers();
   assert.deepEqual(page.hosts(), [other.host]);
-  assert.equal(page.timers.size, 0);
+
+  ctx.closeOverlay(); // two closes in a row: each hidden frame keeps its own delay
+  ctx.openOverlay(src);
+  ctx.closeOverlay();
+  assert.equal(page.hosts().length, 2);
+  assert.equal(page.timers.size, 2);
+  page.runTimers();
+  assert.deepEqual(page.hosts(), []);
 });
 
 test('stopSiteUi removes a closing overlay at once', () => {
