@@ -33,6 +33,7 @@
       grid-template-columns: repeat(auto-fit, minmax(200px, 230px));
       justify-content: center;
       gap: var(--spacing-sm);
+      padding-top: 2px; /* место под подъём карточки при наведении: список обрезает всё, что выше него */
     }
     .covers-list > .empty-state {
       grid-column: 1 / -1;
@@ -65,19 +66,13 @@
       display: flex;
       align-items: center;
       justify-content: center;
-      cursor: pointer;
       overflow: hidden;
       flex-shrink: 0;
       position: relative;
     }
-    .cover-preview.empty {
-      cursor: default;
-    }
-    .cover-preview.error {
-      cursor: default;
-    }
-    .cover-preview.loading {
-      cursor: default;
+    /* Поля вокруг картинки другого соотношения сторон - цвета карточки */
+    .cover-preview.has-image {
+      background-color: var(--bg-secondary);
     }
     .cover-preview img {
       display: none;
@@ -97,7 +92,6 @@
       max-height: 100%;
       border-radius: 8px;
       overflow: hidden;
-      background-color: var(--bg-tertiary);
     }
     .cover-preview .img-wrapper .img-container img {
       max-width: 100%;
@@ -108,21 +102,6 @@
     }
     .cover-preview .img-wrapper .img-container img.loaded {
       display: block;
-    }
-    .cover-preview .img-wrapper .img-container::after {
-      content: '';
-      position: absolute;
-      top: 0;
-      left: 0;
-      right: 0;
-      bottom: 0;
-      border-radius: 8px;
-      background-color: rgba(0, 0, 0, 0.4);
-      opacity: 0;
-      pointer-events: none;
-    }
-    .cover-preview:hover .img-wrapper.has-image .img-container::after {
-      opacity: 1;
     }
     /* Рамка места вставки: без :hover-цвета и transition карточки, той же толщины - иначе мигает и прыгает (как в редакторе метаданных) */
     .sortable-ghost,
