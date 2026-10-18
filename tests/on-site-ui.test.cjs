@@ -1248,6 +1248,7 @@ test('«Скачать N глав» snapshots the chosen range, fixes the saved 
   assert.ok(!('speedMode' in ctx.calls.snapshot[0]));
   assert.deepEqual(ctx.calls.enqueue, [{ id: 'snap' }]);
   assert.deepEqual(data['titleData:7--y'].filteredChapters.map(ch => ch.id), [2, 3]);
+  assert.deepEqual([data['titleData:7--y'].fromIdx, data['titleData:7--y'].toIdx], [1, 2]);
 });
 
 test('an already queued title is reported in words, other rejections are errors', async () => {
@@ -1255,7 +1256,7 @@ test('an already queued title is reported in words, other rejections are errors'
   const args = { info, fromIdx: 0, toIdx: 0, tabId: 1, url: 'https://mangalib.me/ru/manga/s', format: 'cbz' };
   const queued = await quickContext({}, { enqueueResult: { ok: false, reason: 'already-queued' } }).startQuickDownload(args);
   assert.deepEqual(JSON.parse(JSON.stringify(queued)), { ok: false, message: 'Этот тайтл уже в очереди' });
-  await assert.rejects(quickContext({}, { enqueueResult: { ok: false, reason: 'queue-full' } }).startQuickDownload(args), /queue-full/);
+  await assert.rejects(quickContext({}, { enqueueResult: { ok: false, reason: 'queue-full' } }).startQuickDownload(args), /^Error: Очередь не приняла тайтл$/);
 });
 
 test('load errors have the texts popup shows', () => {
@@ -1353,4 +1354,32 @@ test('a button row that left the page stops listening to storage', () => {
   doc.grid.children[1].isConnected = false;
   for (const listener of [...ctx.listeners]) listener({ theme: { newValue: 'light' } }, 'local');
   assert.equal(ctx.listeners.size, 0);
+});
+
+test('quick.js takes the tab and URL from whoami and refuses forged or foreign embedders', () => {
+  const ctx = quickContext();
+  const embedder = (me, tab) => JSON.parse(JSON.stringify(ctx.quickEmbedder(me, tab)));
+  const title = 'https://mangalib.me/ru/manga/123--title';
+  assert.deepEqual(embedder({ tabId: 5, url: title }, '5'), { tabId: 5, url: title, parentOrigin: 'https://mangalib.me' });
+  assert.deepEqual(embedder({ tabId: 5, url: title }, null), { tabId: 5, url: title, parentOrigin: 'https://mangalib.me' });
+  assert.equal(embedder({ tabId: 5, url: 'https://sub.ranobelib.me/ru/book/7--y' }).parentOrigin, 'https://sub.ranobelib.me');
+  // forged tab, forged host (LIB name only in the query/path/lookalike domain), non-title pages, missing answers
+  assert.equal(embedder({ tabId: 5, url: title }, '6'), null);
+  assert.equal(embedder({ tabId: 5, url: 'https://evil.example/ru/manga/x?mangalib.me/ru/manga/x' }, '5'), null);
+  assert.equal(embedder({ tabId: 5, url: 'https://mangalib.me.evil.example/ru/manga/x' }, '5'), null);
+  assert.equal(embedder({ tabId: 5, url: 'https://evilmangalib.me/ru/manga/x' }, '5'), null);
+  assert.equal(embedder({ tabId: 5, url: 'http://mangalib.me/ru/manga/x' }, '5'), null);
+  assert.equal(embedder({ tabId: 5, url: 'https://mangalib.me/ru/catalog' }, '5'), null);
+  assert.equal(embedder({ tabId: 5, url: 'chrome-extension://id/html/quick.html' }, '5'), null);
+  assert.equal(embedder({ tabId: undefined, url: title }, null), null);
+  assert.equal(embedder(null, null), null);
+  assert.equal(embedder(undefined, '5'), null);
+});
+
+test('startQuick learns the embedder before loading anything and never reads url or parent from the address', () => {
+  const text = source('src/core/quick.js');
+  const start = text.slice(text.indexOf('function startQuick'));
+  assert.doesNotMatch(start, /params\.get\('(url|parent)'\)/);
+  assert.ok(start.indexOf("action: 'whoami'") > 0 && start.indexOf("action: 'whoami'") < start.indexOf('load(false)'));
+  assert.match(start, /quickEmbedder\(me, params\.get\('tab'\)\)/);
 });

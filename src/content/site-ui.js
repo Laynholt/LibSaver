@@ -17,15 +17,6 @@ const ANCHOR_WAIT_MS = 10000;
 
 const extensionBase = () => chrome.runtime.getURL('');
 
-// Страница тайтла: /ru/manga/<slug> или /ru/book/<slug>, без /read/ и других вложенных путей
-function isTitlePage(url) {
-  try {
-    return /^\/ru\/(?:manga|book)\/[^/]+\/?$/.test(new URL(url).pathname);
-  } catch (e) {
-    return false;
-  }
-}
-
 // Тот же slug, что берёт title-loader.js (slugPattern сайта)
 function titleSlug(url) {
   const config = getSiteConfig(url);

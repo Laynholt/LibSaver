@@ -78,6 +78,31 @@ const SITE_TAB_PATTERNS = {
   animelib: ['https://animelib.org/*', 'https://*.animelib.org/*', 'https://anilib.me/*', 'https://*.anilib.me/*']
 };
 
+// Сайт по точному имени хоста (https, домен или его поддомен из SITE_TAB_PATTERNS); null - чужой адрес.
+// В отличие от siteKeyOf, не принимает адрес, где имя сайта лишь в пути или параметрах (https://evil.example/?mangalib.me/)
+function siteKeyByHost(url) {
+  let parsed;
+  try {
+    parsed = new URL(url);
+  } catch (e) {
+    return null;
+  }
+  if (parsed.protocol !== 'https:') return null;
+  return Object.keys(SITE_TAB_PATTERNS).find(siteKey => SITE_TAB_PATTERNS[siteKey].some(pattern => {
+    const host = pattern.slice('https://'.length, -2);
+    return host.startsWith('*.') ? parsed.hostname.endsWith(host.slice(1)) : parsed.hostname === host;
+  })) || null;
+}
+
+// Страница тайтла: /ru/manga/<slug> или /ru/book/<slug>, без /read/ и других вложенных путей
+function isTitlePage(url) {
+  try {
+    return /^\/ru\/(?:manga|book)\/[^/]+\/?$/.test(new URL(url).pathname);
+  } catch (e) {
+    return false;
+  }
+}
+
 // Ссылки на главные страницы сайта: https://<домен> (без поддоменных шаблонов)
 function siteLinks(siteKey) {
   return (SITE_TAB_PATTERNS[siteKey] || []).filter(pattern => !pattern.includes('*.')).map(pattern => pattern.slice(0, -2));

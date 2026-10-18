@@ -32,6 +32,15 @@ function quickSettings(stored) {
   };
 }
 
+// Окошко открыто на странице тайтла LIB-сайта? Кто встроил нас, знает только фон (sender.tab); параметры адреса
+// подделывает любая страница, потому что html/quick.html доступна всем сайтам. null - отказ.
+function quickEmbedder(me, tabParam) {
+  if (typeof me?.tabId !== 'number' || typeof me.url !== 'string') return null;
+  if (tabParam != null && tabParam !== String(me.tabId)) return null;
+  if (!siteKeyByHost(me.url) || !isTitlePage(me.url)) return null;
+  return { tabId: me.tabId, url: me.url, parentOrigin: new URL(me.url).origin };
+}
+
 function loadErrorText(error) {
   switch (error.code) {
     case 'unsupported-site': return 'Перейдите на один из поддерживаемых сайтов.';
@@ -56,6 +65,8 @@ async function startQuickDownload({ info, fromIdx, toIdx, tabId, url, format }) 
   if (titleData[info.slug]) {
     const chosen = new Set(selectedChapterIds);
     titleData[info.slug].filteredChapters = info.allChapters.filter(chapter => chosen.has(chapter.id));
+    titleData[info.slug].fromIdx = info.allChapters.findIndex(chapter => chosen.has(chapter.id));
+    titleData[info.slug].toIdx = info.allChapters.findLastIndex(chapter => chosen.has(chapter.id));
     await setTitleStore({ titleData });
   }
 
@@ -65,19 +76,17 @@ async function startQuickDownload({ info, fromIdx, toIdx, tabId, url, format }) 
   const result = await enqueueSnapshot(snapshot);
   if (result.ok) return { ok: true };
   if (result.reason === 'already-queued') return { ok: false, message: QUICK_ALREADY_QUEUED };
-  throw new Error(result.reason || 'Очередь отклонила тайтл');
+  throw new Error('Очередь не приняла тайтл');
 }
 
 // ---- Страница ----
 
 function startQuick() {
   const params = new URLSearchParams(location.search);
-  const tabId = Number(params.get('tab'));
-  const url = params.get('url') || '';
+  // Вкладка, адрес и origin страницы - от фона (whoami), не из параметров адреса
+  let tabId = null;
+  let url = '';
   let parentOrigin = null;
-  try {
-    parentOrigin = new URL(params.get('parent')).origin;
-  } catch (e) { /* без страницы сайта сообщать некому */ }
   const post = message => {
     if (parentOrigin) window.parent.postMessage({ libsaver: true, ...message }, parentOrigin);
   };
@@ -176,8 +185,20 @@ function startQuick() {
   new ResizeObserver(() => post({ type: 'resize', height: Math.ceil(document.body.getBoundingClientRect().height) })).observe(document.body);
 
   loadAndApplyTheme();
-  window.applySiteAccent(url);
-  load(false);
+  (async () => {
+    let me = null;
+    try {
+      me = await chrome.runtime.sendMessage({ action: 'whoami' });
+    } catch (e) { /* расширение обновили */ }
+    const embedder = quickEmbedder(me, params.get('tab'));
+    if (!embedder) {
+      showError('Окошко работает только на странице тайтла.');
+      return;
+    }
+    ({ tabId, url, parentOrigin } = embedder);
+    window.applySiteAccent(url);
+    load(false);
+  })();
 }
 
 if (typeof document !== 'undefined') startQuick();
