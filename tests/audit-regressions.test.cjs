@@ -140,13 +140,14 @@ test('saving title format clears stale generated titles and notifies consumers',
   const context = vm.createContext({
     defaultSiteLinks: {}, settingsGroups: null, console: { error() {} },
     setTimeout: fn => timers.push(fn), clearTimeout() {},
-    document: { getElementById: id => ({ value: id === 'toc-format' ? 'custom' : '1', checked: false }), addEventListener: (type, fn) => listeners[type] = fn },
+    document: { getElementById: id => ({ value: id === 'toc-format' ? 'custom' : '1', checked: false }), addEventListener: (type, fn) => (listeners[type] ||= []).push(fn) },
+    window: { addEventListener() {} },
     chrome: { storage: { local: storageApi(data) }, runtime: { sendMessage: message => { messages.push(message); return Promise.resolve(); } } }
   });
   vm.runInContext(titleStore + source('src/utils/autosave.js'), context);
   vm.runInContext(between('src/core/settings.js', 'const SETTING_KEYS_BY_GROUP', '// Дефолтные значения по группам'), context);
-  vm.runInContext('enableAutosave({ save: saveSettings })', context);
-  listeners.change(); // сохранение срабатывает от изменения поля, кнопки нет
+  vm.runInContext('watchTocCommit(); enableAutosave({ save: saveSettings })', context);
+  for (const fn of listeners.change) fn({ target: { id: 'toc-format' } }); // сохранение срабатывает от изменения поля, кнопки нет
   assert.equal(timers.length, 1);
   timers[0]();
   await new Promise(resolve => setImmediate(resolve));

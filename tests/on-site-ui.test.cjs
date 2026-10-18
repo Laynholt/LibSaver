@@ -2739,3 +2739,140 @@ test('about: the version is from the manifest and the update check is the one th
   assert.match(settings, /cdn[.]jsdelivr[.]net[/]gh[/]dfy-dpg[/]LibSaver@latest[/]src[/]manifest[.]json/);
   assert.match(settings, /getElementById[(]'btn-check-updates'[)]/);
 });
+
+// ---- Task 11, fix round: guards against data loss in autosave ----
+
+test('the TOC reformat wipes displayTitle once per committed change (change / leaving the page), never on typing', async () => {
+  const clock = fakeClock();
+  const listeners = {};
+  const windowListeners = {};
+  const messages = [];
+  const data = { 'titleData:a': { chapters: [{ displayTitle: 'Renamed by hand' }] } };
+  const controls = { 'toc-format': { value: 'custom' }, 'custom-toc-format': { value: '[{num}]' }, 'hide-chapter-name': { checked: false }, 'hide-volume-number': { checked: false } };
+  const ctx = vm.createContext({
+    defaultSiteLinks: {}, settingsGroups: null, console,
+    setTimeout: clock.setTimeout, clearTimeout: clock.clearTimeout, Date: { now: clock.now },
+    CustomEvent: class { constructor(type) { this.type = type; } },
+    window: { addEventListener: (type, fn) => { (windowListeners[type] ||= []).push(fn); } },
+    document: { getElementById: id => controls[id] || { value: '1', checked: false }, addEventListener: (type, fn) => { (listeners[type] ||= []).push(fn); } },
+    chrome: {
+      storage: { local: {
+        get: async keys => structuredClone(keys === null ? data : Object.fromEntries([].concat(keys).filter(key => key in data).map(key => [key, data[key]]))),
+        set: async values => { Object.assign(data, structuredClone(values)); },
+        remove: async () => {}
+      } },
+      runtime: { sendMessage: message => { messages.push(message); return Promise.resolve(); } }
+    }
+  });
+  vm.runInContext(source('src/utils/title-store.js') + source('src/utils/autosave.js') + between('src/core/settings.js', 'const SETTING_KEYS_BY_GROUP', '// Дефолтные значения по группам'), ctx);
+  vm.runInContext('appliedToc = tocSignature(readTocControls()); watchTocCommit(); enableAutosave({ save: saveSettings });', ctx);
+  const emit = (type, id) => { for (const fn of listeners[type]) fn({ type, target: { id } }); };
+  const reformats = () => messages.filter(message => message.action === 'reformatChapters').length;
+  const settle = async ms => { clock.advance(ms); await flush(); };
+
+  for (const typed of ['[{num}]a', '[{num}]ab', '[{num}]abc', '[{num}]abcd', '[{num}]abcde']) {
+    controls['custom-toc-format'].value = typed;
+    emit('input', 'custom-toc-format');
+    await settle(450); // a pause: autosave writes the value
+  }
+  assert.equal(data.customTocFormat, '[{num}]abcde');
+  assert.equal(reformats(), 0);
+  assert.equal(data['titleData:a'].chapters[0].displayTitle, 'Renamed by hand');
+
+  emit('change', 'custom-toc-format'); // blur
+  await settle(450);
+  assert.equal(reformats(), 1);
+  assert.equal(data['titleData:a'].chapters[0].displayTitle, undefined);
+
+  data['titleData:a'].chapters[0].displayTitle = 'Renamed again';
+  emit('change', 'custom-toc-format'); // committed again, nothing changed since the last pass
+  await settle(450);
+  assert.equal(reformats(), 1);
+  assert.equal(data['titleData:a'].chapters[0].displayTitle, 'Renamed again');
+
+  controls['hide-chapter-name'].checked = true; // a checkbox commits with change alone
+  emit('change', 'hide-chapter-name');
+  await settle(450);
+  assert.equal(reformats(), 2);
+
+  controls['custom-toc-format'].value = 'last'; // closing the window with the field still focused
+  emit('input', 'custom-toc-format');
+  windowListeners.pagehide.forEach(fn => fn());
+  await flush();
+  assert.equal(reformats(), 3);
+  assert.equal(data.customTocFormat, 'last');
+  clock.advance(1000);
+  await flush();
+  assert.equal(reformats(), 3);
+
+  emit('change', 'enable-pagination'); // other fields never reformat
+  await settle(450);
+  assert.equal(reformats(), 3);
+});
+
+// saveChapters / saveCovers / saveMetadata над фейковым хранилищем: что и когда они пишут
+function chaptersSaveContext({ slug = 's', allChapters = [{ id: 1 }] } = {}) {
+  const writes = [];
+  const ctx = vm.createContext({
+    allChapters, displayChapters: allChapters, originalChapters: allChapters, chapterBranchOverrides: {}, translatorPriority: [],
+    tocFormat: 'default', customTocFormat: '', hideChapterName: false, hideVolumeNumber: false,
+    document: { querySelectorAll: () => [] },
+    getUniqueChapters: list => list, formatChapterTitle: () => 'T',
+    getTitleStore: async () => ({ titleData: {}, currentSlug: slug }),
+    setTitleStore: async items => { writes.push(items); }
+  });
+  vm.runInContext(functionSource('src/editors/chapters.js', 'saveChapters') + '\nthis.saveChapters = saveChapters;', ctx);
+  return { ctx, writes };
+}
+
+test('saveChapters writes nothing without a slug (no titleData:undefined) and nothing when no chapters were loaded', async () => {
+  const noSlug = chaptersSaveContext({ slug: '' });
+  await noSlug.ctx.saveChapters();
+  assert.deepEqual(noSlug.writes, []);
+  const noChapters = chaptersSaveContext({ allChapters: [] }); // «Сбросить всё» / «Очистить всё» fire libsaver:changed with zero inputs
+  await noChapters.ctx.saveChapters();
+  assert.deepEqual(noChapters.writes, []);
+  const loaded = chaptersSaveContext();
+  await loaded.ctx.saveChapters();
+  assert.equal(loaded.writes.length, 1);
+  assert.deepEqual(Object.keys(loaded.writes[0].titleData), ['s']);
+  assert.equal(loaded.writes[0].titleData.s.chapters.length, 1);
+});
+
+test('saveCovers leaves out empty covers from «Новая обложка» until a URL or a file is set, and metadata.cover follows the saved ones', async () => {
+  const writes = [];
+  const stored = { s: { metadata: { cover: 'old' }, covers: [] } };
+  const ctx = vm.createContext({
+    currentSlug: 's',
+    userCovers: [{ url: 'https://x/a.jpg', type: 'url' }, { url: '', type: 'url' }, { url: 'b.png', dataUrl: 'data:image/png;base64,AA', type: 'file' }, { url: '', dataUrl: null, type: 'url' }],
+    getTitleStore: async () => ({ titleData: structuredClone(stored) }),
+    setTitleStore: async items => { writes.push(items); }
+  });
+  vm.runInContext(functionSource('src/editors/covers.js', 'saveCovers') + '\nthis.saveCovers = saveCovers;', ctx);
+  await ctx.saveCovers();
+  assert.deepEqual(jsonCopy(writes[0].titleData.s.covers.map(cover => cover.url)), ['https://x/a.jpg', 'b.png']);
+  assert.equal(writes[0].titleData.s.metadata.cover, 'https://x/a.jpg');
+  vm.runInContext("userCovers = [{ url: '', dataUrl: 'data:image/png;base64,AA', type: 'file' }, { url: '', type: 'url' }];", ctx);
+  await ctx.saveCovers();
+  assert.equal(writes[1].titleData.s.covers.length, 1);
+  assert.equal(writes[1].titleData.s.metadata.cover, 'data:image/png;base64,AA');
+});
+
+test('saveMetadata does not write fieldLabels until they have been loaded, so a save in between cannot wipe the saved ones', async () => {
+  const writes = [];
+  const ctx = vm.createContext({
+    currentSlug: 's', metadataFields: {}, tempFieldLabels: {}, fieldLabelsLoaded: false,
+    document: { getElementById: () => ({ value: 'v' }) },
+    getTitleStore: async () => ({ titleData: { s: { metadata: { cover: 'c' }, covers: [] } } }),
+    setTitleStore: async items => { writes.push(items); }
+  });
+  vm.runInContext(functionSource('src/editors/metadata.js', 'saveMetadata') + '\nthis.saveMetadata = saveMetadata;', ctx);
+  await ctx.saveMetadata();
+  assert.equal(writes[0].titleData.s.metadata.titleRu, 'v'); // the typed value is still saved
+  assert.equal(writes[0].titleData.s.metadata.cover, 'c');
+  assert.ok(!('fieldLabels' in writes[0]));
+  vm.runInContext("fieldLabelsLoaded = true; tempFieldLabels = { author: 'Автор книги' };", ctx);
+  await ctx.saveMetadata();
+  assert.deepEqual(jsonCopy(writes[1].fieldLabels), { author: 'Автор книги' });
+  assert.match(source('src/editors/metadata.js'), /originalFieldLabels = [{] [.][.][.]\(labelResult[.]fieldLabels \|\| {}\) [}];\s*tempFieldLabels = [{] [.][.][.]originalFieldLabels [}];\s*fieldLabelsLoaded = true;/);
+});

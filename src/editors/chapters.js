@@ -631,6 +631,7 @@ function saveCurrentPageChanges() {
 
 // Сохранение глав (автосохранение, enableAutosave)
 async function saveChapters() {
+  if (allChapters.length === 0) return; // главы не загружены: не затираем сохранённые пустым списком
   const inputs = document.querySelectorAll('.chapter-input');
   const uniqueDisplayChapters = getUniqueChapters(displayChapters);
   const uniqueAllChapters = getUniqueChapters(allChapters);
@@ -671,6 +672,7 @@ async function saveChapters() {
   const result = await getTitleStore(['titleData', 'currentSlug']);
   const titleData = result.titleData || {};
   const currentSlug = result.currentSlug;
+  if (!currentSlug) return; // иначе запись уйдёт в titleData:undefined
 
   if (!titleData[currentSlug]) {
     titleData[currentSlug] = { chapters: null, metadata: {}, covers: [] };

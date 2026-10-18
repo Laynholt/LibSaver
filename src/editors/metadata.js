@@ -4,6 +4,7 @@ let currentSlug = null;
 let userMetadata = {}; // Пользовательские метаданные
 let originalMetadata = {}; // Оригинальные метаданные с API (для сброса)
 let metadataFields = {}; // Состояние чекбоксов полей из настроек
+let fieldLabelsLoaded = false; // до загрузки fieldLabels из storage их нельзя записывать: пустой tempFieldLabels затёр бы сохранённые
 let tempFieldLabels = {}; // Изменения названий полей, ещё не записанные в storage (пишет saveMetadata)
 let originalFieldLabels = {}; // Оригинальные названия полей из storage (для отмены)
 
@@ -66,6 +67,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     chrome.storage.local.get(['fieldLabels'], (labelResult) => {
       originalFieldLabels = { ...(labelResult.fieldLabels || {}) };
       tempFieldLabels = { ...originalFieldLabels };
+      fieldLabelsLoaded = true;
     });
 
     // Загружаем сохраненные метаданные пользователя из titleData
@@ -317,11 +319,8 @@ async function saveMetadata() {
   // Обновляем timestamp кэша (продлеваем срок действия на 10 минут)
   titleData[currentSlug].cacheTimestamp = Date.now();
 
-  // Сохраняем названия полей в storage
-  await setTitleStore({
-    titleData,
-    fieldLabels: tempFieldLabels
-  });
+  // Сохраняем названия полей в storage (когда они уже загружены)
+  await setTitleStore(fieldLabelsLoaded ? { titleData, fieldLabels: tempFieldLabels } : { titleData });
 }
 
 // Сброс к данным с сайта

@@ -721,12 +721,14 @@ async function saveCovers() {
     titleData[currentSlug] = { chapters: null, metadata: {}, covers: [] };
   }
   
-  titleData[currentSlug].covers = userCovers;
+  // Пустая обложка из «Новая обложка» не сохраняется, пока не введён URL или не выбран файл
+  const covers = userCovers.filter(cover => cover.url || cover.dataUrl);
+  titleData[currentSlug].covers = covers;
   // Обновляем cover в metadata для совместимости
   if (!titleData[currentSlug].metadata) {
     titleData[currentSlug].metadata = {};
   }
-  titleData[currentSlug].metadata.cover = userCovers.length > 0 ? (userCovers[0].url || userCovers[0].dataUrl) : '';
+  titleData[currentSlug].metadata.cover = covers.length > 0 ? (covers[0].url || covers[0].dataUrl) : '';
 
   // Обновляем timestamp кэша (продлеваем срок действия на 10 минут)
   titleData[currentSlug].cacheTimestamp = Date.now();

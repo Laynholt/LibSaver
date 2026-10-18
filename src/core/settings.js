@@ -635,6 +635,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   
   // Применяем сохраненные настройки
   applySettingsToUI(settings);
+  appliedToc = tocSignature(readTocControls()); // по этому формату главы уже оформлены
 
   // Инициализация видимости полей
   updateJpegQualityFieldVisibility();
@@ -716,11 +717,13 @@ document.addEventListener('DOMContentLoaded', async () => {
     button.addEventListener('click', () => {
       const group = button.getAttribute('data-group');
       resetGroupSettings(group);
+      if (group === 'toc') tocCommitted = true; // сброс - подтверждённая правка формата
       notifyChanged(); // значения сброшены кодом, событий input нет
     });
   });
 
   // Автосохранение вместо кнопки «Сохранить»
+  watchTocCommit();
   enableAutosave({ save: saveSettings });
 });
 
@@ -836,6 +839,33 @@ const SETTING_KEYS_BY_GROUP = {
   storage: ['cleanupOnTitleChange', 'cleanupOldTitles']
 };
 
+// Формат заголовков глав. Значение пишется автосохранением на каждую паузу ввода, а переформатирование глав (сброс displayTitle у всех тайтлов,
+// это стирает ручные правки) - один раз на подтверждённую правку: change поля (потеря фокуса, выбор в списке) или уход со страницы
+const TOC_CONTROLS = { tocFormat: 'toc-format', customTocFormat: 'custom-toc-format', hideChapterName: 'hide-chapter-name', hideVolumeNumber: 'hide-volume-number' };
+let tocCommitted = false; // правка формата подтверждена, но главы ещё не переформатированы
+let appliedToc = null; // подпись формата, по которому главы переформатированы в последний раз (null - неизвестно)
+
+const tocSignature = values => JSON.stringify(Object.keys(TOC_CONTROLS).map(key => values[key]));
+
+function readTocControls() {
+  return Object.fromEntries(Object.entries(TOC_CONTROLS).map(([key, id]) => {
+    const element = document.getElementById(id);
+    return [key, element.type === 'checkbox' ? element.checked : element.value];
+  }));
+}
+
+function watchTocCommit() {
+  document.addEventListener('change', event => {
+    if (Object.values(TOC_CONTROLS).includes(event.target?.id)) tocCommitted = true;
+  });
+  // Закрыли окно, пока поле формата в фокусе: change не было, а значение уже могло уйти в storage
+  window.addEventListener('pagehide', () => {
+    if (appliedToc === null || tocSignature(readTocControls()) === appliedToc) return;
+    tocCommitted = true;
+    saveSettings().catch(error => console.error('[LibSaver] settings', error));
+  });
+}
+
 // Сохранение настроек (автосохранение, enableAutosave)
 async function saveSettings() {
   const all = {
@@ -881,18 +911,14 @@ async function saveSettings() {
   const groups = settingsGroups ?? Object.keys(SETTING_KEYS_BY_GROUP);
   const settings = Object.fromEntries(groups.flatMap(group => SETTING_KEYS_BY_GROUP[group] ?? []).map(key => [key, all[key]]));
 
-  // Если изменился формат заголовков - отправляем сообщение для переформатирования
-  const {
-    tocFormat: oldTocFormat,
-    customTocFormat: oldCustomTocFormat,
-    hideChapterName: oldHideChapterName,
-    hideVolumeNumber: oldHideVolumeNumber
-  } = await chrome.storage.local.get(['tocFormat', 'customTocFormat', 'hideChapterName', 'hideVolumeNumber']);
   await chrome.storage.local.set(settings);
 
-  const changed = (key, oldValue) => key in settings && oldValue !== settings[key];
-  if (changed('tocFormat', oldTocFormat) || changed('customTocFormat', oldCustomTocFormat) ||
-      changed('hideChapterName', oldHideChapterName) || changed('hideVolumeNumber', oldHideVolumeNumber)) {
+  // Если подтверждён другой формат заголовков - переформатируем главы (appliedToc обновляется до первого await: два сохранения подряд не задвоят проход)
+  if (tocCommitted && Object.keys(TOC_CONTROLS).every(key => key in settings)) {
+    tocCommitted = false;
+    const signature = tocSignature(settings);
+    if (signature === appliedToc) return;
+    appliedToc = signature;
     // Удаляем сохранённые displayTitle из titleData
     const titleData = await getAllTitleData();
     if (titleData) {
@@ -908,7 +934,6 @@ async function saveSettings() {
     // Отправляем сообщение для переформатирования в открытых окнах
     chrome.runtime.sendMessage({ action: 'reformatChapters' });
   }
-
 }
 
 // Дефолтные значения по группам
@@ -1218,6 +1243,7 @@ document.getElementById('btn-reset').addEventListener('click', async () => {
   updateTocOptionTexts();
   updatePaginationSettingsVisibility();
 
+  tocCommitted = true;
   notifyChanged(); // значения сброшены кодом, событий input нет
 });
 
