@@ -247,11 +247,14 @@ label.editing {
   color: var(--text-primary);
 }
 
-/* Drag and Drop стили */
-.sortable-ghost {
+/* Drag and Drop стили. Рамка места вставки: :hover поля перебивал её цвет, а transition перекрашивал из серого в акцентный - рамка мигала.
+   Толщина как у поля (1px), чтобы высота не прыгала */
+.sortable-ghost,
+.sortable-ghost:hover {
   opacity: 0.4;
   background-color: var(--bg-secondary);
-  border: 2px dashed var(--accent-color);
+  border: 1px dashed var(--accent-color);
+  transition: none;
   overflow: hidden;
 }
 

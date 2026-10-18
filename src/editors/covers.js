@@ -1,26 +1,8 @@
 let userCovers = [];
 let currentSlug = null;
 let originalCovers = [];
-let tippyInstances = [];
-let tooltipContents = [];
 
-// Функция для обновления темы в tippy (локальная обёртка)
-function updateTippyTheme() {
-  const isDark = !document.documentElement.hasAttribute('data-theme');
-
-  // Обновляем backgroundColor всех tooltipContent
-  tooltipContents.forEach(tooltipContent => {
-    tooltipContent.style.backgroundColor = isDark ? 'rgba(10, 10, 10, 0.95)' : 'rgba(255, 255, 255, 0.95)';
-  });
-
-  // Обновляем theme всех tippy экземпляров
-  tippyInstances.forEach(instance => {
-    instance.setProps({ theme: isDark ? 'dark' : 'light' });
-  });
-}
-
-// Слушатель сообщений для обновления темы
-setupThemeMessageListener(updateTippyTheme);
+setupThemeMessageListener();
 
 // Функция для загрузки изображения через background script (обход защиты)
 async function fetchImageWithBypass(url) {
@@ -49,120 +31,6 @@ function dataUrlToBlob(dataUrl) {
     u8arr[n] = bstr.charCodeAt(n);
   }
   return new Blob([u8arr], { type: mime });
-}
-
-// Настройка Tippy для превью обложки
-function setupTippyPreview(preview, imageUrl) {
-  // Создаем контейнер для контента tooltip
-  const tooltipContent = document.createElement('div');
-  tooltipContent.style.display = 'flex';
-  tooltipContent.style.alignItems = 'center';
-  tooltipContent.style.justifyContent = 'center';
-  const isDark = !document.documentElement.hasAttribute('data-theme');
-  tooltipContent.style.backgroundColor = isDark ? 'rgba(10, 10, 10, 0.95)' : 'rgba(255, 255, 255, 0.95)';
-  
-  // Показываем иконку загрузки по умолчанию
-  const loadingIcon = document.createElement('div');
-  loadingIcon.innerHTML = '<i class="fa-solid fa-image" style="font-size: 48px; color: #666;"></i>';
-  loadingIcon.className = 'tooltip-loading-icon';
-  loadingIcon.style.width = '200px';
-  loadingIcon.style.height = '300px';
-  loadingIcon.style.display = 'flex';
-  loadingIcon.style.alignItems = 'center';
-  loadingIcon.style.justifyContent = 'center';
-  tooltipContent.appendChild(loadingIcon);
-
-  // Загружаем изображение для tooltip
-  if (imageUrl.startsWith('data:')) {
-    const tooltipImg = document.createElement('img');
-    tooltipImg.style.maxWidth = '476px';
-    tooltipImg.style.maxHeight = '476px';
-    tooltipImg.style.objectFit = 'contain';
-    tooltipImg.style.display = 'none';
-    tooltipImg.style.borderRadius = '8px';
-    tooltipImg.src = imageUrl;
-    tooltipImg.onload = () => {
-      const loadingIcon = tooltipContent.querySelector('.tooltip-loading-icon');
-      if (loadingIcon) loadingIcon.remove();
-      tooltipContent.appendChild(tooltipImg);
-      tooltipImg.style.display = 'block';
-    };
-  } else {
-    fetchImageWithBypass(imageUrl).then(dataUrl => {
-      if (dataUrl) {
-        const tooltipImg = document.createElement('img');
-        tooltipImg.style.maxWidth = '476px';
-        tooltipImg.style.maxHeight = '476px';
-        tooltipImg.style.objectFit = 'contain';
-        tooltipImg.style.display = 'none';
-        tooltipImg.style.borderRadius = '8px';
-        tooltipImg.src = dataUrl;
-        tooltipImg.onload = () => {
-          const loadingIcon = tooltipContent.querySelector('.tooltip-loading-icon');
-          if (loadingIcon) loadingIcon.remove();
-          tooltipContent.appendChild(tooltipImg);
-          tooltipImg.style.display = 'block';
-        };
-      } else {
-        // Используем иконку ошибки вместо текста
-        const loadingIcon = tooltipContent.querySelector('.tooltip-loading-icon');
-        if (loadingIcon) loadingIcon.remove();
-        const errorIcon = document.createElement('div');
-        errorIcon.innerHTML = '<i class="fa-solid fa-image" style="font-size: 48px; color: #666;"></i>';
-        errorIcon.style.display = 'flex';
-        errorIcon.style.alignItems = 'center';
-        errorIcon.style.justifyContent = 'center';
-        errorIcon.style.width = '200px';
-        errorIcon.style.height = '300px';
-        errorIcon.style.backgroundColor = isDark ? 'rgba(10, 10, 10, 0.95)' : 'rgba(255, 255, 255, 0.95)';
-        tooltipContent.appendChild(errorIcon);
-      }
-    }).catch(() => {
-      // Используем иконку ошибки вместо текста
-      const loadingIcon = tooltipContent.querySelector('.tooltip-loading-icon');
-      if (loadingIcon) loadingIcon.remove();
-      const errorIcon = document.createElement('div');
-      errorIcon.innerHTML = '<i class="fa-solid fa-image" style="font-size: 48px; color: #666;"></i>';
-      errorIcon.style.display = 'flex';
-      errorIcon.style.alignItems = 'center';
-      errorIcon.style.justifyContent = 'center';
-      errorIcon.style.width = '476px';
-      errorIcon.style.height = '476px';
-      errorIcon.style.backgroundColor = isDark ? 'rgba(10, 10, 10, 0.95)' : 'rgba(255, 255, 255, 0.95)';
-      tooltipContent.appendChild(errorIcon);
-    });
-  }
-
-  const instance = window.tippy(preview, {
-    content: tooltipContent,
-    placement: 'right',
-    trigger: 'mouseenter',
-    interactive: false,
-    theme: isDark ? 'dark' : 'light',
-    animation: 'scale-subtle',
-    duration: [200, 200],
-    offset: [20, 10],
-    hideOnClick: true,
-    maxWidth: 'none',
-    arrow: false,
-    onShow(instance) {
-      instance.popper.style.transition = 'opacity 0.2s cubic-bezier(0.4, 0, 0.2, 1)';
-    },
-    popperOptions: {
-      strategy: 'fixed',
-      modifiers: [
-        {
-          name: 'preventOverflow',
-          options: {
-            padding: { top: 50, bottom: 10, left: 10, right: 10 },
-          },
-        },
-      ],
-    },
-  });
-
-  tippyInstances.push(instance);
-  tooltipContents.push(tooltipContent);
 }
 
 // Загрузка данных при открытии
@@ -338,7 +206,6 @@ function createCoverItem(cover, index) {
         const imgContainer = createImgContainer(img);
         imgWrapper.appendChild(imgContainer);
         setupImage(img, dataUrl, preview, imgWrapper, imageInfo);
-        setupTippyPreview(preview, cover.url);
       } else {
         const loadingIcon = imgWrapper.querySelector('.loading-icon');
         if (loadingIcon) loadingIcon.remove();
@@ -373,7 +240,6 @@ function createCoverItem(cover, index) {
     imgWrapper.appendChild(imgContainer);
     preview.appendChild(imgWrapper);
     preventDrag(img);
-    setupTippyPreview(preview, cover.dataUrl);
   } else {
     const imgWrapper = createImgWrapper(false);
     const emptyIcon = createErrorIcon();
@@ -772,9 +638,3 @@ document.getElementById('btn-delete-all').addEventListener('click', () => {
 });
 
 enableAutosave({ save: saveCovers });
-
-// Очистка tippy instances при закрытии окна
-window.addEventListener('beforeunload', () => {
-  tippyInstances.forEach(instance => instance.destroy());
-  tippyInstances = [];
-});

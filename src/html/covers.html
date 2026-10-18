@@ -12,7 +12,6 @@
   <script src="../utils/window-loader.js"></script>
   <link rel="stylesheet" href="../libs/fontawesome/css/all.min.css">
   <script src="../libs/Sortable.min.js"></script>
-  <link rel="stylesheet" href="../css/scale-subtle.css">
   <link rel="stylesheet" href="../css/editor.css">
   <style>
     body {
@@ -125,38 +124,14 @@
     .cover-preview:hover .img-wrapper.has-image .img-container::after {
       opacity: 1;
     }
-    /* Стили Tippy для соответствия дизайну */
-    .tippy-box[data-theme='dark'] {
-      background-color: rgba(10, 10, 10, 0.95);
-      border: 1px solid var(--border-color);
-      border-radius: 6px;
-      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
-    }
-    .tippy-box[data-theme='dark'] > .tippy-arrow::before {
-      border-top-color: var(--border-color);
-    }
-    .tippy-box[data-theme='dark'] > .tippy-arrow::after {
-      border-top-color: rgba(10, 10, 10, 0.95);
-    }
-    .tippy-box[data-theme='light'] {
-      background-color: var(--bg-secondary);
-      border: 1px solid var(--border-color);
-      border-radius: 6px;
-      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
-    }
-    .tippy-box[data-theme='light'] > .tippy-arrow::before {
-      border-top-color: var(--border-color);
-    }
-    .tippy-box[data-theme='light'] > .tippy-arrow::after {
-      border-top-color: var(--bg-secondary);
-    }
-    .tippy-content {
-      padding: 2px;
-    }
-    .sortable-ghost {
+    /* Рамка места вставки: без :hover-цвета и transition карточки, той же толщины - иначе мигает и прыгает (как в редакторе метаданных) */
+    .sortable-ghost,
+    .sortable-ghost:hover {
       opacity: 0.4;
       background-color: var(--bg-secondary);
-      border: 2px dashed var(--accent-color);
+      border: 1px dashed var(--accent-color);
+      transform: none;
+      transition: none;
       overflow: hidden;
     }
     .sortable-chosen {
@@ -372,8 +347,6 @@
   <script src="../libs/jszip.min.js"></script>
   <script src="../libs/FileSaver.min.js"></script>
   <script src="../libs/pica.min.js"></script>
-  <script src="../libs/popper.min.js"></script>
-  <script src="../libs/tippy-bundle.umd.min.js"></script>
   <script src="../core/theme.js"></script>
   <script src="../utils/autosave.js"></script>
   <script src="../editors/covers.js"></script>

@@ -705,3 +705,18 @@ test('reload-page button waits for the tab to finish loading and reruns the titl
   assert.match(handler, /await loadTitle\(\);/);
   assert.doesNotMatch(handler, /setTimeout|loadCovers\(/);
 });
+
+test('cover editor has no Tippy previews: covers are already large and each one was fetched twice', () => {
+  assert.doesNotMatch(source('src/html/covers.html'), /tippy|popper|scale-subtle/);
+  assert.doesNotMatch(source('src/editors/covers.js'), /tippy/i);
+  assert.doesNotMatch(source('src/core/theme.js'), /tippy/i);
+});
+
+test('drag placeholder outline keeps one colour: :hover and transition of the card do not repaint it', () => {
+  for (const css of [source('src/css/editor.css'), source('src/html/covers.html')]) {
+    const rule = css.match(/\.sortable-ghost,\s*\.sortable-ghost:hover \{([^}]*)\}/);
+    assert.ok(rule, 'ghost rule covers :hover');
+    assert.match(rule[1], /border: 1px dashed var\(--accent-color\);/);
+    assert.match(rule[1], /transition: none;/);
+  }
+});
