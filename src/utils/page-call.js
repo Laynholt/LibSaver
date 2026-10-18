@@ -94,6 +94,9 @@ function siteKeyByHost(url) {
   })) || null;
 }
 
+// Название сайта для текстов интерфейса (страница расширения, плашка на сайте)
+const SITE_NAMES = { mangalib: 'MangaLIB', hentailib: 'HentaiLIB', shlib: 'SlashLIB', ranobelib: 'RanobeLIB' };
+
 // Страница тайтла: /ru/manga/<slug> или /ru/book/<slug>, без /read/ и других вложенных путей
 function isTitlePage(url) {
   try {

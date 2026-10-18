@@ -1031,8 +1031,10 @@ class FakeEl {
   attachShadow() { return new FakeEl('#shadow'); }
   addEventListener() {}
   remove() { this.parentElement?.children.splice(this.parentElement.children.indexOf(this), 1); this.parentElement = null; }
+  get nextElementSibling() { const siblings = this.parentElement?.children; return siblings?.[siblings.indexOf(this) + 1] || null; }
   insertAdjacentElement(where, el) {
     assert.equal(where, 'afterend');
+    el.remove(); // like the DOM: an element that is already in the tree moves
     this.parentElement.children.splice(this.parentElement.children.indexOf(this) + 1, 0, el);
     el.parentElement = this.parentElement;
     return el;
@@ -1066,8 +1068,9 @@ function siteUiContext({ stored = {} } = {}) {
   const listeners = new Set();
   const ctx = {
     console, URL, URLSearchParams, stored, listeners,
+    location: { href: 'https://mangalib.me/ru/manga/123--title', origin: 'https://mangalib.me' },
     chrome: {
-      runtime: { getURL: file => 'chrome-extension://id/' + file, sendMessage: async () => ({}) },
+      runtime: { id: 'id', getURL: file => 'chrome-extension://id/' + file, sendMessage: async () => ({}) },
       storage: { local: { get: async () => structuredClone(stored) }, onChanged: { addListener: fn => listeners.add(fn), removeListener: fn => listeners.delete(fn) } }
     }
   };
@@ -1450,4 +1453,288 @@ test('quick.html scrolls the body inside a full-height frame and measures an inn
   assert.equal(html.match(/\n    body \{/g).length, 1); // one body rule
   assert.match(html, /<div id="quick-content">/);
   assert.match(source('src/core/quick.js'), /observe\(content\)/);
+});
+
+// ---- Task 9: download progress on the page ----
+
+const jsonOf = value => JSON.parse(JSON.stringify(value));
+const queueEntry = (status, extra = {}) => ({ id: extra.slug || 'a', slug: 'a', siteKey: 'mangalib', title: 'Title A', format: 'cbz', status, progress: { current: 0, total: 0 }, ...extra });
+const stateOf = (...items) => ({ items, stats: null, logTail: [] });
+
+test('plaqueText: running shows the percent and the rest of the queue, waiting and paused say what is needed, nothing active gives null', () => {
+  const ctx = siteUiContext();
+  const text = (state, site = 'mangalib') => jsonOf(ctx.plaqueText(state, site));
+  assert.deepEqual(text(stateOf(queueEntry('running', { progress: { current: 9, total: 20 } }))), { title: 'Title A', detail: '45%' });
+  assert.deepEqual(text(stateOf(queueEntry('running', { progress: { current: 9, total: 20 } }), queueEntry('queued', { slug: 'b' }), queueEntry('queued', { slug: 'c' }))), { title: 'Title A', detail: '45% · +2 в очереди' });
+  assert.equal(text(stateOf(queueEntry('waiting-tab'))).detail, 'Откройте страницу MangaLIB, чтобы продолжить');
+  assert.equal(text(stateOf(queueEntry('waiting-tab', { siteKey: 'shlib' }))).detail, 'Откройте страницу SlashLIB, чтобы продолжить');
+  assert.equal(text(stateOf(queueEntry('waiting-decision', { decision: { kind: 'chapter', chapterTitle: 'Г1', message: 'x' } }))).detail, 'Нужно решение: ошибка главы');
+  assert.equal(text(stateOf(queueEntry('paused'))).detail, 'Пауза');
+  assert.deepEqual(text(stateOf(queueEntry('queued'), queueEntry('queued', { slug: 'b' }))), { title: 'Title A', detail: 'В очереди' });
+  assert.equal(text(stateOf()), null);
+  assert.equal(text(stateOf(queueEntry('done'), queueEntry('error'), queueEntry('canceled'))), null);
+  assert.equal(text(null), null);
+  assert.equal(text(stateOf(queueEntry('running', { progress: { current: 0, total: 0 } }))).detail, '0%'); // total unknown yet
+});
+
+test('buttonProgress: the running title of this page gets the percent, a queued one «В очереди», others nothing', () => {
+  const ctx = siteUiContext();
+  const progress = (state, site = 'mangalib', slug = 'a') => jsonOf(ctx.buttonProgress(state, site, slug));
+  const running = queueEntry('running', { progress: { current: 1, total: 3 } });
+  assert.deepEqual(progress(stateOf(running)), { kind: 'running', percent: 33 });
+  assert.deepEqual(progress(stateOf(queueEntry('queued'))), { kind: 'queued' });
+  assert.equal(progress(stateOf(running), 'mangalib', 'other'), null);
+  assert.equal(progress(stateOf(running), 'ranobelib'), null); // the same slug on another site is another title
+  assert.equal(progress(stateOf(queueEntry('paused'))), null);
+  assert.equal(progress(null), null);
+});
+
+test('the button paints the percent and «В очереди» for its own title and follows the page address', () => {
+  const ctx = siteUiContext();
+  const doc = fakeTitleDoc('mangalib');
+  doc.documentElement = new FakeEl('html');
+  ctx.document = doc;
+  const created = [];
+  const createElement = doc.createElement;
+  doc.createElement = tag => { const el = createElement(tag); created.push(el); return el; };
+  ctx.ensureButtons(doc, 'https://mangalib.me/ru/manga/123--title');
+  const [download] = created.filter(el => el.className === 'download');
+  const fill = created.find(el => el.className === 'fill');
+  const percent = created.find(el => el.className === 'percent');
+  const label = created.find(el => el.tag === 'span' && !el.className);
+  assert.deepEqual([download.attrs['data-state'], fill.style.width, percent.textContent, label.textContent], ['', '0%', '', 'Скачать']);
+
+  const mine = { slug: '123--title', siteKey: 'mangalib' };
+  ctx.setEngineState(stateOf(queueEntry('running', { ...mine, progress: { current: 9, total: 20 } })));
+  assert.deepEqual([download.attrs['data-state'], fill.style.width, percent.textContent, label.textContent], ['running', '45%', '45%', 'Скачать']);
+  ctx.setEngineState(stateOf(queueEntry('queued', mine)));
+  assert.deepEqual([download.attrs['data-state'], fill.style.width, percent.textContent, label.textContent], ['queued', '0%', '', 'В очереди']);
+  ctx.setEngineState(stateOf(queueEntry('running', { ...mine, progress: { current: 1, total: 2 } })));
+  ctx.location.href = 'https://mangalib.me/ru/manga/999--other'; // SPA moved to another title under the same host
+  ctx.paintButtons();
+  assert.deepEqual([download.attrs['data-state'], fill.style.width, label.textContent], ['', '0%', 'Скачать']);
+  ctx.setEngineState(null);
+  assert.equal(download.attrs['data-state'], '');
+});
+
+test('plaque corner: the nearest corner to the drop point, margin 16px, the default is bottom-right', () => {
+  const ctx = siteUiContext();
+  const view = { width: 1000, height: 800 };
+  assert.equal(ctx.snapCorner(100, 100, view), 'top-left');
+  assert.equal(ctx.snapCorner(900, 100, view), 'top-right');
+  assert.equal(ctx.snapCorner(100, 700, view), 'bottom-left');
+  assert.equal(ctx.snapCorner(900, 700, view), 'bottom-right');
+  const host = new FakeEl('div');
+  ctx.applyCorner(host);
+  assert.deepEqual([host.style.top, host.style.bottom, host.style.left, host.style.right], ['auto', '16px', 'auto', '16px']);
+  vm.runInContext("plaqueCorner = 'top-left'", ctx);
+  ctx.applyCorner(host);
+  assert.deepEqual([host.style.top, host.style.bottom, host.style.left, host.style.right], ['16px', 'auto', '16px', 'auto']);
+});
+
+test('the plaque appears with the queue, shows its texts, comes back when the page drops it, and goes when nothing is left to download', () => {
+  const ctx = siteUiContext();
+  const doc = fakeTitleDoc('mangalib');
+  doc.documentElement = new FakeEl('html');
+  ctx.document = doc;
+  ctx.renderPlaque(doc);
+  assert.equal(doc.documentElement.children.length, 0);
+  vm.runInContext('engine.state = ' + JSON.stringify(stateOf(queueEntry('running', { progress: { current: 1, total: 4 } }))), ctx);
+  ctx.renderPlaque(doc);
+  const first = vm.runInContext('plaque', ctx);
+  assert.deepEqual([doc.documentElement.children.length, first.title.textContent, first.detail.textContent], [1, 'Title A', '25%']);
+  assert.equal(first.button.attrs['aria-label'], 'Title A: 25%');
+  assert.ok(first.host.attrs['data-libsaver-plaque'] === '');
+  first.host.isConnected = false; // thrown out by the page
+  ctx.renderPlaque(doc);
+  const second = vm.runInContext('plaque', ctx);
+  assert.notEqual(second, first);
+  assert.equal(second.host.parentElement, doc.documentElement);
+  vm.runInContext('engine.state = null', ctx);
+  ctx.renderPlaque(doc);
+  assert.deepEqual([vm.runInContext('plaque', ctx), second.host.parentElement], [null, null]);
+});
+
+test('the plaque corner follows storage, accepts only the four corners and only from the local area', () => {
+  const ctx = siteUiContext();
+  const host = new FakeEl('div');
+  ctx.testHost = host;
+  vm.runInContext('plaque = { host: testHost }', ctx);
+  const corner = () => vm.runInContext('plaqueCorner', ctx);
+  ctx.onPlaqueCornerChanged({ plaqueCorner: { newValue: 'top-left' } }, 'local');
+  assert.deepEqual([corner(), host.style.top, host.style.left], ['top-left', '16px', '16px']);
+  ctx.onPlaqueCornerChanged({ plaqueCorner: { newValue: 'middle' } }, 'local');
+  ctx.onPlaqueCornerChanged({ plaqueCorner: { newValue: 'top-right' } }, 'sync');
+  ctx.onPlaqueCornerChanged({ plaqueCorner: { newValue: undefined } }, 'local'); // nothing saved yet
+  ctx.onPlaqueCornerChanged({ theme: { newValue: 'light' } }, 'local');
+  assert.equal(corner(), 'top-left');
+});
+
+// Fake port and timers for connectEngine; `ensure` decides what ensureEngine answers
+function engineLinkContext({ ensure = async () => true } = {}) {
+  const ctx = siteUiContext();
+  const doc = fakeTitleDoc('mangalib');
+  doc.documentElement = new FakeEl('html');
+  ctx.document = doc;
+  const link = { doc, ports: [], messages: [], timers: [] };
+  ctx.chrome.runtime.sendMessage = async message => { link.messages.push(message.action); return ensure(); };
+  ctx.chrome.runtime.connect = options => {
+    const port = { name: options.name, disconnected: false, disconnect() { this.disconnected = true; }, onMessage: { addListener: fn => { port.receive = fn; } }, onDisconnect: { addListener: fn => { port.drop = fn; } } };
+    link.ports.push(port);
+    return port;
+  };
+  ctx.setTimeout = (fn, ms) => { link.timers.push({ fn, ms }); return link.timers.length; };
+  ctx.clearTimeout = () => {};
+  link.state = () => vm.runInContext('engine.state', ctx);
+  link.failures = () => vm.runInContext('engine.failures', ctx);
+  return { ctx, link };
+}
+
+test('the content script asks the background for the engine, takes its state from the port, and drops the state when the port drops', async () => {
+  const { ctx, link } = engineLinkContext();
+  await ctx.connectEngine();
+  assert.deepEqual([link.messages, link.ports.map(port => port.name)], [['ensureEngine'], ['libsaver-engine']]);
+  await ctx.connectEngine(); // already connected: no second port
+  assert.equal(link.ports.length, 1);
+  link.ports[0].receive({ type: 'log', id: 'a', line: 'x' }); // only «state» matters
+  assert.equal(link.state(), null);
+  link.ports[0].receive({ type: 'state', state: stateOf(queueEntry('running', { progress: { current: 1, total: 4 } })) });
+  assert.equal(vm.runInContext('plaque', ctx).detail.textContent, '25%');
+  link.ports[0].drop();
+  assert.deepEqual([link.state(), vm.runInContext('plaque', ctx)], [null, null]);
+  assert.deepEqual(link.timers.map(timer => timer.ms), [1000]); // reconnect in a second
+  link.timers[0].fn();
+  await settle();
+  assert.equal(link.ports.length, 2);
+});
+
+test('after five failed reconnects in a row the content script stops until the page address changes', async () => {
+  const { ctx, link } = engineLinkContext({ ensure: async () => { throw new Error('no engine'); } });
+  await ctx.connectEngine();
+  for (let retry = 0; retry < 5; retry++) {
+    assert.equal(link.timers.length, retry + 1);
+    link.timers[retry].fn();
+    await settle();
+  }
+  assert.equal(link.messages.length, 6); // the first try and five retries
+  assert.equal(link.timers.length, 5); // the sixth failure schedules nothing
+  ctx.retryEngine(); // the address changed
+  await settle();
+  assert.equal(link.messages.length, 7);
+  assert.equal(link.timers.length, 6);
+  // a state from the engine gives a fresh count
+  const healthy = engineLinkContext();
+  await healthy.ctx.connectEngine();
+  healthy.link.ports[0].receive({ type: 'state', state: stateOf() });
+  assert.equal(healthy.link.failures(), 0);
+  healthy.ctx.retryEngine(); // not exhausted: nothing happens
+  assert.equal(healthy.link.messages.length, 1);
+});
+
+test('ensureEngine answering false is a failed attempt, not a connection', async () => {
+  const { ctx, link } = engineLinkContext({ ensure: async () => false });
+  await ctx.connectEngine();
+  assert.deepEqual([link.ports.length, link.timers.length], [0, 1]);
+});
+
+test('a content script whose extension was reloaded stops instead of reconnecting', async () => {
+  const { ctx, link } = engineLinkContext();
+  await ctx.connectEngine();
+  ctx.stops = 0;
+  vm.runInContext('stopSiteUi = () => { stops++; }', ctx);
+  ctx.chrome.runtime.id = undefined; // what chrome.runtime looks like after the reload
+  link.ports[0].drop();
+  assert.deepEqual([ctx.stops, link.timers.length], [1, 0]); // stopped, no reconnect timer
+  await ctx.connectEngine();
+  assert.deepEqual([ctx.stops, link.messages.length], [2, 1]); // and no further calls into the dead runtime
+});
+
+test('stopping the engine link disconnects the port and cancels the reconnect', async () => {
+  const { ctx, link } = engineLinkContext();
+  await ctx.connectEngine();
+  ctx.stopEngineLink();
+  assert.equal(link.ports[0].disconnected, true);
+  link.ports[0].drop(); // a late disconnect event
+  assert.equal(link.timers.length, 0);
+  await ctx.connectEngine();
+  assert.equal(link.ports.length, 1);
+});
+
+test('the page check is throttled: a quiet page waits 200 ms, constant mutations still run it within a second', () => {
+  const ctx = siteUiContext();
+  let now = 0;
+  const timers = [];
+  ctx.Date = { now: () => now };
+  ctx.setTimeout = (fn, ms) => { timers.push({ fn, ms }); return timers.length; };
+  ctx.clearTimeout = () => {};
+  let runs = 0;
+  const schedule = ctx.createScheduler(() => { runs++; });
+  for (now of [0, 150, 300, 450, 600, 750, 900, 950]) schedule();
+  assert.deepEqual(timers.map(timer => timer.ms), [200, 200, 200, 200, 200, 200, 100, 50]);
+  timers.at(-1).fn();
+  assert.equal(runs, 1);
+  now = 1000;
+  schedule(); // the wait starts over after a run
+  assert.equal(timers.at(-1).ms, 200);
+});
+
+test('a buttons host that is no longer right after the anchor is put back (SPA re-render)', () => {
+  const ctx = siteUiContext();
+  const doc = fakeTitleDoc('mangalib');
+  const url = 'https://mangalib.me/ru/manga/x';
+  assert.equal(ctx.ensureButtons(doc, url), 'inserted');
+  const host = doc.grid.children[1];
+  const intruder = new FakeEl('div');
+  doc.grid.children.splice(1, 0, intruder); // the site pushed something between the anchor and our host
+  intruder.parentElement = doc.grid;
+  assert.equal(ctx.ensureButtons(doc, url), 'moved');
+  assert.deepEqual([doc.grid.children[1] === host, doc.grid.children.length, doc.querySelectorAll('[data-libsaver-buttons]').length], [true, 3, 1]);
+  assert.equal(ctx.ensureButtons(doc, url), 'present');
+});
+
+test('the overlay host is recreated on the same address when the page detached it', () => {
+  const ctx = siteUiContext();
+  const doc = fakeTitleDoc('mangalib');
+  doc.documentElement = new FakeEl('html');
+  ctx.document = doc;
+  const log = [];
+  ctx.addEventListener = (type) => log.push(['add', type]);
+  ctx.removeEventListener = (type) => log.push(['remove', type]);
+  ctx.reviveOverlay(); // no overlay: nothing happens
+  ctx.openOverlay('chrome-extension://id/html/downloads.html');
+  const first = vm.runInContext('overlay', ctx);
+  ctx.reviveOverlay(); // still attached
+  assert.equal(vm.runInContext('overlay', ctx), first);
+  first.host.isConnected = false;
+  log.length = 0;
+  ctx.reviveOverlay();
+  const second = vm.runInContext('overlay', ctx);
+  assert.notEqual(second, first);
+  assert.equal(second.src, 'chrome-extension://id/html/downloads.html');
+  assert.equal(second.host.parentElement, doc.documentElement);
+  assert.deepEqual(log, [['remove', 'keydown'], ['remove', 'message'], ['add', 'keydown'], ['add', 'message']]); // the old listeners go, new ones come
+});
+
+test('an open «Скачать» popover closes when the page moves to another title and stays on the same one', () => {
+  const ctx = siteUiContext();
+  ctx.removedCount = 0;
+  vm.runInContext("popover = { host: { remove() { removedCount++; } }, slug: '123--title', listeners: [] }", ctx);
+  ctx.closePopoverOnTitleChange('https://mangalib.me/ru/manga/123--title?section=info#top');
+  assert.notEqual(vm.runInContext('popover', ctx), null);
+  ctx.closePopoverOnTitleChange('https://mangalib.me/ru/manga/456--other');
+  assert.deepEqual([vm.runInContext('popover', ctx), ctx.removedCount], [null, 1]);
+  ctx.closePopoverOnTitleChange('https://mangalib.me/ru/manga/456--other'); // nothing open: no error
+});
+
+test('the plaque click opens the downloads page in the overlay (until the new window in Task 10)', () => {
+  const ctx = siteUiContext();
+  const opened = [];
+  ctx.openOverlay = src => opened.push(src);
+  ctx.openDownloads();
+  assert.deepEqual(opened, ['chrome-extension://id/html/downloads.html']);
+});
+
+test('the site name map lives in page-call.js and the downloads view no longer carries its own copy', () => {
+  assert.match(source('src/utils/page-call.js'), /const SITE_NAMES = /);
+  assert.doesNotMatch(source('src/core/downloads-view.js'), /const SITE_NAMES/);
 });

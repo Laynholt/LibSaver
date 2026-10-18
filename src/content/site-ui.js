@@ -1,6 +1,6 @@
-// site-ui.js - кнопки «Скачать» и ⚙ под «Начать читать» на странице тайтла и окно расширения поверх сайта.
+// site-ui.js - кнопки «Скачать» и ⚙ под «Начать читать» на странице тайтла, окно расширения поверх сайта и плашка с ходом загрузки.
 // Скрипты контента (manifest.json): core/theme.js (ACCENT_COLORS), utils/page-call.js (siteKeyOf, getSiteConfig), utils/formats.js (ключ формата), этот файл.
-// Кнопки и окно живут в закрытых Shadow DOM, а действия принимают только от настоящих кликов (isTrusted):
+// Кнопки, окно и плашка живут в закрытых Shadow DOM, а действия принимают только от настоящих кликов (isTrusted):
 // скрипты сайта не достают до наших элементов и не запускают наши действия.
 
 // Кнопка «Начать читать». Проверено на живых сайтах 2026-10-17 (без входа): mangalib.me, ranobelib.me и hentailib.me
@@ -48,7 +48,7 @@ function accentFor(siteKey, forcedAccent, isDark) {
 
 // ---- Окно поверх сайта ----
 
-let overlay = null; // { host, frame, overflow, onKey, onMessage }
+let overlay = null; // { src, host, frame, overflow, onKey, onMessage }
 
 // Сообщения iframe -> страница (протокол: { libsaver: true, type, ... }). Окошко «Скачать» понимает ещё 'resize' и 'openPanel' (popoverMessageHandlers)
 const frameMessageHandlers = { close: () => closeOverlay() };
@@ -99,9 +99,17 @@ function openOverlay(src) {
   window.addEventListener('keydown', onKey, true);
   window.addEventListener('message', onMessage);
 
-  overlay = { host, frame, overflow: document.documentElement.style.overflow, onKey, onMessage };
+  overlay = { src, host, frame, overflow: document.documentElement.style.overflow, onKey, onMessage };
   document.documentElement.style.overflow = 'hidden';
   document.documentElement.append(host);
+}
+
+// Страница могла выбросить хост окна из документа: пересоздаём его на том же адресе
+function reviveOverlay() {
+  if (!overlay || overlay.host.isConnected !== false) return;
+  const { src } = overlay;
+  closeOverlay();
+  openOverlay(src);
 }
 
 function closeOverlay() {
@@ -137,7 +145,7 @@ const POPOVER_GAP = 6;
 const POPOVER_MARGIN = 8;
 const POPOVER_INITIAL_HEIGHT = 96; // до первого resize от окошка
 
-let popover = null; // { host, anchor, height, listeners: [[type, handler, capture]] }
+let popover = null; // { host, anchor, slug, height, listeners: [[type, handler, capture]] }
 
 // Ширина - как у ряда кнопок (не меньше 280px). Под рядом, если там хватает места, иначе над ним; высота урезается до места.
 // rect - ряд кнопок, view - размер окна страницы
@@ -189,6 +197,11 @@ function closePopover() {
   for (const [type, handler, capture] of listeners) window.removeEventListener(type, handler, capture);
 }
 
+// SPA перешла на другой тайтл, не заменив кнопки: окошко осталось бы от прежнего
+function closePopoverOnTitleChange(url) {
+  if (popover && popover.slug !== titleSlug(url)) closePopover();
+}
+
 // Повторный клик «Скачать» закрывает окошко. anchor - хост кнопок: клики по нему окошко не закрывают само, их разбирают кнопки
 async function openQuickPopover(anchor) {
   if (popover) {
@@ -219,7 +232,7 @@ async function openQuickPopover(anchor) {
     ['scroll', placePopover, true]
   ];
   for (const [type, handler, capture] of listeners) window.addEventListener(type, handler, capture);
-  popover = { host, anchor, height: POPOVER_INITIAL_HEIGHT, listeners };
+  popover = { host, anchor, slug: titleSlug(location.href), height: POPOVER_INITIAL_HEIGHT, listeners };
   placePopover();
   document.documentElement.append(host);
 }
@@ -231,6 +244,13 @@ function ensureIconFont(doc) {
   style.setAttribute('data-libsaver-font', '');
   style.textContent = `@font-face{font-family:"LibSaver FA";font-weight:900;src:url("${chrome.runtime.getURL('libs/fontawesome/webfonts/fa-solid-900.woff2')}") format("woff2");}`;
   (doc.head || doc.documentElement).append(style);
+}
+
+// Перерисовщики кнопок «Скачать» на странице (по одному на хост)
+const buttonPainters = new Set();
+
+function paintButtons() {
+  for (const paint of [...buttonPainters]) paint();
 }
 
 function createButton(doc, className, label, icon) {
@@ -253,11 +273,15 @@ function createButtonsHost(doc, siteKey) {
   addStyles(doc, host, shadow);
 
   const download = createButton(doc, 'download', 'Скачать', ''); // fa-download
+  const fill = doc.createElement('span'); // полоска хода загрузки
+  fill.className = 'fill';
   const label = doc.createElement('span');
   label.textContent = 'Скачать';
   const format = doc.createElement('small');
   format.className = 'format';
-  download.append(label, format);
+  const percent = doc.createElement('span');
+  percent.className = 'percent';
+  download.append(fill, label, format, percent);
   const settings = createButton(doc, 'settings', 'Настройки LibSaver', ''); // fa-gear
   settings.setAttribute('title', 'Настройки LibSaver');
   download.addEventListener('click', event => { if (event.isTrusted) openQuickPopover(host); });
@@ -267,6 +291,21 @@ function createButtonsHost(doc, siteKey) {
   row.className = 'row';
   row.append(download, settings);
   shadow.append(row);
+
+  // Ход загрузки этого тайтла: полоска и «45%» (на месте формата) или «В очереди»; адрес читаем в момент вызова - SPA меняет тайтл под тем же хостом
+  const paint = () => {
+    if (host.isConnected === false) { // SPA убрала кнопки
+      buttonPainters.delete(paint);
+      return;
+    }
+    const progress = buttonProgress(engine.state, siteKeyByHost(location.href), titleSlug(location.href));
+    download.setAttribute('data-state', progress?.kind || '');
+    fill.style.width = `${progress?.percent ?? 0}%`;
+    percent.textContent = progress?.kind === 'running' ? `${progress.percent}%` : '';
+    label.textContent = progress?.kind === 'queued' ? 'В очереди' : 'Скачать';
+  };
+  buttonPainters.add(paint);
+  paint();
 
   const siteType = siteKey === 'ranobelib' ? 'ranobe' : 'manga';
   const formatKey = formatKeyFor(siteType);
@@ -311,8 +350,11 @@ function ensureButtons(doc, url) {
   const siteKey = siteKeyOf(url);
   const anchor = (SITE_ANCHORS[siteKey] || []).map(selector => doc.querySelector(selector)).find(Boolean);
   if (existing) {
-    if (anchor) fitToAnchor(doc, existing, anchor);
-    return 'present';
+    if (!anchor) return 'present';
+    fitToAnchor(doc, existing, anchor);
+    if (anchor.nextElementSibling === existing) return 'present';
+    anchor.insertAdjacentElement('afterend', existing); // SPA перерисовала ряд: хост остался не на своём месте
+    return 'moved';
   }
   if (!anchor) return 'no-anchor';
   const host = createButtonsHost(doc, siteKey);
@@ -321,35 +363,324 @@ function ensureButtons(doc, url) {
   return 'inserted';
 }
 
+// ---- Ход загрузки: состояние очереди от движка ----
+
+const ENGINE_RETRY_MS = 1000;
+const ENGINE_MAX_RETRIES = 5;
+
+// failures - подряд неудачных подключений (сбрасываются первым состоянием); после ENGINE_MAX_RETRIES ждём смены адреса
+const engine = { port: null, state: null, failures: 0, connecting: false, stopped: false, timer: 0 };
+
+// После перезагрузки расширения chrome.runtime в старом скрипте остаётся без id и бросает на каждый вызов
+function extensionAlive() {
+  try {
+    return !!chrome.runtime?.id;
+  } catch (e) {
+    return false;
+  }
+}
+
+function setEngineState(state) {
+  engine.state = state;
+  paintButtons();
+  renderPlaque();
+}
+
+function onEngineLost(port) {
+  if (port) {
+    if (engine.port !== port) return;
+    engine.port = null;
+  }
+  setEngineState(null); // чужое состояние без связи не показываем
+  if (engine.stopped) return;
+  if (!extensionAlive()) {
+    stopSiteUi();
+    return;
+  }
+  if (++engine.failures <= ENGINE_MAX_RETRIES) engine.timer = setTimeout(connectEngine, ENGINE_RETRY_MS);
+}
+
+async function connectEngine() {
+  if (engine.port || engine.connecting || engine.stopped) return;
+  if (!extensionAlive()) {
+    stopSiteUi();
+    return;
+  }
+  engine.connecting = true;
+  try {
+    if (!(await chrome.runtime.sendMessage({ action: 'ensureEngine' }))) throw new Error('ensureEngine');
+    if (engine.stopped) return;
+    const port = chrome.runtime.connect({ name: 'libsaver-engine' });
+    port.onMessage.addListener(message => {
+      if (message?.type !== 'state') return;
+      engine.failures = 0;
+      setEngineState(message.state);
+    });
+    port.onDisconnect.addListener(() => onEngineLost(port));
+    engine.port = port;
+  } catch (e) {
+    onEngineLost(null);
+  } finally {
+    engine.connecting = false;
+  }
+}
+
+// Смена адреса даёт новые попытки подключиться тому, кто исчерпал их
+function retryEngine() {
+  if (engine.failures <= ENGINE_MAX_RETRIES) return;
+  engine.failures = 0;
+  connectEngine();
+}
+
+function stopEngineLink() {
+  engine.stopped = true;
+  clearTimeout(engine.timer);
+  const { port } = engine;
+  engine.port = null;
+  try { port?.disconnect(); } catch (e) { /* контекст уже недействителен */ }
+}
+
+// ---- Плашка с ходом загрузки в углу ----
+
+const PLAQUE_MARGIN = 16;
+const PLAQUE_CORNERS = ['top-left', 'top-right', 'bottom-left', 'bottom-right'];
+const PLAQUE_DRAG_THRESHOLD = 5;
+const ACTIVE_STATUSES = ['queued', 'running', 'paused', 'waiting-tab', 'waiting-decision'];
+
+let plaque = null; // { host, title, detail, button, stopDrag }
+let plaqueCorner = 'bottom-right';
+
+function progressPercent(item) {
+  const { current, total } = item.progress || {};
+  return total > 0 ? Math.min(100, Math.max(0, Math.round(100 * current / total))) : 0;
+}
+
+// Что показать на кнопке «Скачать» тайтла: ход идущей загрузки, очередь или ничего
+function buttonProgress(state, siteKey, slug) {
+  const mine = (state?.items || []).filter(item => item.slug === slug && item.siteKey === siteKey);
+  const running = mine.find(item => item.status === 'running');
+  if (running) return { kind: 'running', percent: progressPercent(running) };
+  return mine.some(item => item.status === 'queued') ? { kind: 'queued' } : null;
+}
+
+// Текст плашки: { title, detail } или null, если качать нечего. Главный - идущий (или ждущий) тайтл, иначе первый в очереди.
+// siteKeyOfPage - сайт страницы: подсказка, какую страницу открыть, если движок не назвал сайт
+function plaqueText(state, siteKeyOfPage) {
+  const active = (state?.items || []).filter(item => ACTIVE_STATUSES.includes(item.status));
+  if (!active.length) return null;
+  const item = active.find(candidate => candidate.status !== 'queued') || active[0];
+  const queued = active.filter(other => other !== item && other.status === 'queued').length;
+  let detail;
+  switch (item.status) {
+    case 'running': detail = `${progressPercent(item)}%${queued ? ` · +${queued} в очереди` : ''}`; break;
+    case 'waiting-tab': detail = `Откройте страницу ${SITE_NAMES[item.siteKey || siteKeyOfPage] || item.siteKey || siteKeyOfPage}, чтобы продолжить`; break;
+    case 'waiting-decision': detail = `Нужно решение: ошибка ${item.decision?.kind === 'image' ? 'картинки' : 'главы'}`; break;
+    case 'paused': detail = 'Пауза'; break;
+    default: detail = 'В очереди';
+  }
+  return { title: item.title || item.slug, detail };
+}
+
+// Ближайший угол окна к точке
+function snapCorner(x, y, view) {
+  return `${y < view.height / 2 ? 'top' : 'bottom'}-${x < view.width / 2 ? 'left' : 'right'}`;
+}
+
+function applyCorner(host) {
+  const [vertical, horizontal] = plaqueCorner.split('-');
+  const edge = (side, value) => value === side ? `${PLAQUE_MARGIN}px` : 'auto';
+  Object.assign(host.style, { top: edge('top', vertical), bottom: edge('bottom', vertical), left: edge('left', horizontal), right: edge('right', horizontal) });
+}
+
+// До Task 10 плашка открывает раздел «Загрузки» напрямую (потом - openSettings('downloads'))
+function openDownloads() {
+  openOverlay(chrome.runtime.getURL('html/downloads.html'));
+}
+
+function saveCorner() {
+  try {
+    chrome.storage.local.set({ plaqueCorner }).catch(() => {});
+  } catch (e) { /* контекст недействителен */ }
+}
+
+function createPlaque(doc) {
+  const host = doc.createElement('div');
+  host.setAttribute('data-libsaver-plaque', '');
+  host.style.cssText = `position:fixed;z-index:${OVERLAY_Z_INDEX - 1};`; // ниже окна и окошка «Скачать»
+  const shadow = host.attachShadow({ mode: 'closed' });
+  addStyles(doc, host, shadow);
+
+  const button = doc.createElement('button');
+  button.className = 'plaque';
+  button.setAttribute('type', 'button');
+  const title = doc.createElement('span');
+  title.className = 'plaque-title';
+  const detail = doc.createElement('span');
+  detail.className = 'plaque-detail';
+  button.append(title, detail);
+  shadow.append(button);
+
+  // Перетаскивание: сдвиг меньше порога - это клик. После отпускания плашка прилипает к ближайшему углу
+  let dragged = false;
+  const result = { host, title, detail, button, stopDrag: () => {} };
+  button.addEventListener('pointerdown', event => {
+    if (!event.isTrusted || event.button !== 0) return;
+    result.stopDrag();
+    const start = { x: event.clientX, y: event.clientY };
+    const rect = host.getBoundingClientRect();
+    dragged = false;
+    const onMove = move => {
+      if (!dragged && Math.hypot(move.clientX - start.x, move.clientY - start.y) < PLAQUE_DRAG_THRESHOLD) return;
+      dragged = true;
+      Object.assign(host.style, { left: `${rect.left + move.clientX - start.x}px`, top: `${rect.top + move.clientY - start.y}px`, right: 'auto', bottom: 'auto' });
+    };
+    const onEnd = end => {
+      result.stopDrag();
+      if (!dragged) return;
+      if (end.type === 'pointerup') {
+        const root = doc.documentElement;
+        plaqueCorner = snapCorner(end.clientX, end.clientY, { width: root.clientWidth, height: root.clientHeight });
+        saveCorner();
+      }
+      applyCorner(host);
+    };
+    const types = [['pointermove', onMove], ['pointerup', onEnd], ['pointercancel', onEnd]];
+    for (const [type, handler] of types) window.addEventListener(type, handler, true);
+    result.stopDrag = () => {
+      for (const [type, handler] of types) window.removeEventListener(type, handler, true);
+      result.stopDrag = () => {};
+    };
+  });
+  button.addEventListener('click', event => {
+    if (!event.isTrusted) return;
+    if (dragged) { // клик после перетаскивания - не открытие
+      dragged = false;
+      return;
+    }
+    openDownloads();
+  });
+  applyCorner(host);
+  return result;
+}
+
+function removePlaque() {
+  if (!plaque) return;
+  const { host, stopDrag } = plaque;
+  plaque = null;
+  stopDrag();
+  host.remove();
+}
+
+// Идемпотентно: создаёт плашку, когда есть что показать (и когда страница её выбросила), обновляет тексты, убирает, когда качать нечего
+function renderPlaque(doc = document) {
+  const view = plaqueText(engine.state, siteKeyByHost(location.href));
+  if (!view) {
+    removePlaque();
+    return;
+  }
+  if (!plaque || plaque.host.isConnected === false) {
+    removePlaque();
+    plaque = createPlaque(doc);
+    doc.documentElement.append(plaque.host);
+  }
+  plaque.title.textContent = view.title;
+  plaque.detail.textContent = view.detail;
+  plaque.button.setAttribute('aria-label', `${view.title}: ${view.detail}`);
+}
+
+// Угол плашки общий для вкладок: сменили в одной - переехала во всех
+function onPlaqueCornerChanged(changes, area) {
+  const next = changes.plaqueCorner?.newValue;
+  if (area !== 'local' || !PLAQUE_CORNERS.includes(next)) return;
+  plaqueCorner = next;
+  if (plaque) applyCorner(plaque.host);
+}
+
+// ---- Слежение за страницей ----
+
+// Дебаунс, но не дольше maxWait с первого вызова: на странице с постоянными изменениями DOM кнопки всё равно появятся
+function createScheduler(run, delay = 200, maxWait = 1000) {
+  let timer = 0;
+  let first = null;
+  const schedule = () => {
+    const now = Date.now();
+    first ??= now;
+    clearTimeout(timer);
+    timer = setTimeout(() => {
+      timer = 0;
+      first = null;
+      run();
+    }, Math.max(0, Math.min(delay, first + maxWait - now)));
+  };
+  schedule.cancel = () => {
+    clearTimeout(timer);
+    timer = 0;
+    first = null;
+  };
+  return schedule;
+}
+
+let stopSiteUi = () => {};
+
 // SPA: следим за DOM и адресом. Якорь не появился за 10 с на этом адресе - молчим до смены адреса
 function startSiteUi() {
   if (!document.body) return;
   let lastHref = '';
   let anchorDeadline = 0;
   let gaveUp = false;
-  let timer = 0;
   const check = () => {
+    if (!extensionAlive()) { // расширение перезагрузили: этот скрипт больше ничего не может
+      stopSiteUi();
+      return;
+    }
     if (location.href !== lastHref) {
       lastHref = location.href;
       anchorDeadline = Date.now() + ANCHOR_WAIT_MS;
       gaveUp = false;
+      retryEngine();
+    }
+    try {
+      closePopoverOnTitleChange(location.href);
+      reviveOverlay();
+      renderPlaque();
+      paintButtons();
+    } catch (e) {
+      console.error('[LibSaver] site-ui', e);
     }
     if (gaveUp) return;
     try {
       const result = ensureButtons(document, location.href);
-      if (result === 'inserted' || result === 'present') anchorDeadline = Date.now() + ANCHOR_WAIT_MS;
+      if (['inserted', 'present', 'moved'].includes(result)) anchorDeadline = Date.now() + ANCHOR_WAIT_MS;
       else if (result === 'no-anchor' && Date.now() > anchorDeadline) gaveUp = true;
     } catch (e) {
       console.error('[LibSaver] site-ui', e);
       gaveUp = true;
     }
   };
-  const schedule = () => {
-    clearTimeout(timer);
-    timer = setTimeout(check, 200);
-  };
-  new MutationObserver(schedule).observe(document.body, { childList: true, subtree: true });
+  const schedule = createScheduler(check);
+  // documentElement, а не body: окно и плашка живут в <html>, и их выбрасывание тоже надо заметить
+  const observer = new MutationObserver(schedule);
+  observer.observe(document.documentElement, { childList: true, subtree: true });
   window.addEventListener('resize', schedule);
+
+  stopSiteUi = () => {
+    stopSiteUi = () => {};
+    observer.disconnect();
+    schedule.cancel();
+    window.removeEventListener('resize', schedule);
+    stopEngineLink();
+    try { chrome.storage.onChanged.removeListener(onPlaqueCornerChanged); } catch (e) { /* контекст недействителен */ }
+    document.querySelector('[data-libsaver-buttons]')?.remove();
+    removePlaque();
+    closePopover();
+    closeOverlay();
+  };
+
+  if (siteKeyByHost(location.href)) {
+    chrome.storage.onChanged.addListener(onPlaqueCornerChanged);
+    chrome.storage.local.get('plaqueCorner').then(stored => onPlaqueCornerChanged({ plaqueCorner: { newValue: stored.plaqueCorner } }, 'local')).catch(() => {});
+    connectEngine();
+  }
   check();
 }
 

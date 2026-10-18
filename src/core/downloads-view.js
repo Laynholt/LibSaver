@@ -1,7 +1,6 @@
 // downloads-view.js - раздел «Загрузки»: клиент очереди фонового движка.
 // Со скачиванием дела не имеет: команды и состояние ходят только через порт 'libsaver-engine'.
 
-const SITE_NAMES = { mangalib: 'MangaLIB', hentailib: 'HentaiLIB', shlib: 'SlashLIB', ranobelib: 'RanobeLIB' };
 const RECONNECT_DELAY = 1000;
 const MAX_RECONNECT_DELAY = 10000;
 

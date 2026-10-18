@@ -52,16 +52,51 @@ button:focus-visible {
 }
 
 .icon {
+  position: relative;
   font: normal 900 14px/1 'LibSaver FA';
   -webkit-font-smoothing: antialiased;
 }
 
-.format {
+.download {
+  overflow: hidden;
+}
+
+.download > span:not(.fill):not(.percent) {
+  position: relative;
+}
+
+.format,
+.percent {
   position: absolute;
   right: 10px;
   font-size: 11px;
   font-weight: 500;
   opacity: 0.75;
+}
+
+/* Ход загрузки этого тайтла: полоска слева, «45%» на месте формата */
+.fill {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 0;
+  background: rgba(255, 255, 255, 0.28);
+  transition: width 0.25s;
+}
+
+.percent {
+  display: none;
+  font-weight: 600;
+  opacity: 1;
+}
+
+.download[data-state="running"] .percent {
+  display: inline;
+}
+
+.download[data-state="running"] .format {
+  display: none;
 }
 
 /* Окно поверх сайта */
@@ -92,8 +127,55 @@ button:focus-visible {
   box-shadow: 0 0 0 1px rgba(128, 128, 128, 0.3), 0 8px 30px rgba(0, 0, 0, 0.45);
 }
 
-/* Телефонный режим: окно на весь экран */
+/* Плашка с ходом загрузки: угол задаёт content script (host), здесь только вид. Перебивает общие правила button */
+.plaque {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: flex-start;
+  gap: 2px;
+  height: auto;
+  min-width: 140px;
+  max-width: min(280px, 100vw - 32px);
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: rgba(30, 30, 30, 0.94);
+  box-shadow: 0 0 0 1px rgba(128, 128, 128, 0.3), 0 8px 24px rgba(0, 0, 0, 0.4);
+  text-align: left;
+  user-select: none;
+  touch-action: none; /* без этого палец на телефоне прокручивает страницу вместо перетаскивания */
+}
+
+.plaque:hover {
+  background: rgba(45, 45, 45, 0.96);
+}
+
+.plaque-title,
+.plaque-detail {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.plaque-title {
+  font-size: 13px;
+}
+
+.plaque-detail {
+  font-size: 12px;
+  font-weight: 500;
+  opacity: 0.8;
+}
+
+/* Телефонный режим: окно на весь экран, плашка поуже */
 @media (max-width: 767px) {
+  .plaque {
+    min-width: 0;
+    max-width: min(200px, 100vw - 32px);
+    padding: 6px 10px;
+  }
+
   .frame {
     width: 100%;
     height: 100%;
