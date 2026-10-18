@@ -214,4 +214,14 @@ test('AnimeLIB is wired in: title page, buttons under «Начать смотр�
   }
   assert.match(source('src/html/settings.html'), /data-group="video" data-site-type="anime"/);
   assert.match(source('src/core/snapshot.js'), /'animeQuality', 'animeSaveInfo'/);
+  // редакторы под аниме: без обложек, студия вместо художника и типа, серии без «Том/Глава», озвучка вместо перевода
+  assert.match(source('src/core/panel.js'), /\.\.\.\(siteType === 'anime' \? \[\] : \[\{ id: 'covers'/);
+  const metadata = source('src/editors/metadata.js');
+  assert.match(metadata, /for \(const fieldId of \['artist', 'country'\]\)/);
+  assert.match(metadata, /publisherLabel = 'Студия';/);
+  assert.equal((metadata.match(/'publisher': publisherLabel/g) || []).length, 2);
+  const chapters = source('src/editors/chapters.js');
+  assert.match(chapters, /label\.textContent = episode \? `Серия \$\{originalCh\.number\}/);
+  assert.match(chapters, /episode \? 'Озвучка ' : 'Перевод '/);
+  assert.equal((chapters.match(/episode: ch\.episode/g) || []).length, 2, 'флаг серии доходит до originalChapters');
 });

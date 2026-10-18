@@ -410,3 +410,22 @@ label.editing {
     grid-area: reset;
   }
 }
+
+/* Серия AnimeLIB - одна строка (галочка, «Серия N», озвучка) на любой ширине: сетка «название | поле | сброс» ей не нужна */
+.chapter-item.episode {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  contain-intrinsic-size: auto 44px;
+}
+
+.chapter-item.episode .chapter-header {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+}
+
+.chapter-item.episode .chapter-title {
+  font-size: 14px;
+  color: var(--text-primary);
+}

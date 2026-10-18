@@ -5,8 +5,9 @@ let originalChapters = [];
 let uniqueChapters = []; // getUniqueChapters(displayChapters): индекс в списке = data-index в DOM и значения «от»/«до»
 let volumeChapters = new Map(); // том (строкой) -> его главы из uniqueChapters, все, а не только показанные
 let volumeCards = new Map(); // том (строкой) -> карточка тома в DOM (по мере показа глав)
-// Тома свёрнуты, если их больше одного; раскрытые помнятся, пока окно открыто, - перерисовка списка их не сворачивает
+// Томов больше одного - дерево: все тома свёрнуты; раскрытые помнятся, пока окно открыто, - перерисовка списка их не сворачивает
 const expandedVolumes = new Set();
+let renderSource = null; // { chapters, originalChapters, container } последнего показа: из него fillVolume берёт главы тома
 let chosenIds = new Set(); // id отмеченных глав (хранится в titleData[slug].selectedChapterIds)
 let selectionDirty = false; // выбор правили здесь и ещё не записали: без этого saveChapters чужой выбор (быстрое окошко) не трогает
 let userChapters = [];
@@ -102,7 +103,8 @@ function createVolumeCard(key) {
   });
   const title = document.createElement('span');
   title.className = 'volume-title';
-  title.textContent = `${volumeChapters.get(key)?.[0]?.episode ? 'Сезон' : 'Том'} ${key}`;
+  const unit = volumeChapters.get(key)?.[0]?.episode ? ['Сезон', 'сезон'] : ['Том', 'том'];
+  title.textContent = `${unit[0]} ${key}`;
   const count = document.createElement('span');
   count.className = 'volume-count';
   const toggle = document.createElement('button');
@@ -112,13 +114,14 @@ function createVolumeCard(key) {
   const setOpen = open => {
     card.classList.toggle('collapsed', !open);
     toggle.setAttribute('aria-expanded', String(open));
-    toggle.title = open ? 'Свернуть том' : 'Развернуть том';
+    toggle.title = `${open ? 'Свернуть' : 'Развернуть'} ${unit[1]}`;
   };
   const flip = () => {
     const open = card.classList.contains('collapsed');
     if (open) expandedVolumes.add(key);
     else expandedVolumes.delete(key);
     setOpen(open);
+    if (open) fillVolume(key);
   };
   setOpen(volumeChapters.size <= 1 || expandedVolumes.has(key));
   toggle.addEventListener('click', flip);
@@ -251,10 +254,11 @@ function getChapterVariantsById(chapterId) {
   return new Map(variantsIndex.byId.get(chapterId) || []);
 }
 
-// Карточка «Перевод»: приоритет переводчиков списком (по умолчанию - по числу глав)
+// Карточка «Перевод» («Озвучка» у аниме): приоритет переводчиков списком (по умолчанию - по числу глав)
 function populateTranslators() {
   const card = document.getElementById('translator-card');
   const list = document.getElementById('translator-list');
+  card.querySelector('h4').firstChild.textContent = uniqueChapters[0]?.episode ? 'Озвучка ' : 'Перевод ';
   updatePriorityList(list);
   card.style.display = list.children.length > 0 ? '' : 'none';
 }
@@ -335,7 +339,8 @@ document.addEventListener('DOMContentLoaded', async () => {
       volume: ch.volume,
       number: ch.number,
       name: ch.name,
-      branchId: ch.branchId
+      branchId: ch.branchId,
+      episode: ch.episode
     }));
   } else {
     originalChapters = (result.titleData && result.titleData[currentSlug] && result.titleData[currentSlug].chapters || []).map(ch => ({
@@ -343,7 +348,8 @@ document.addEventListener('DOMContentLoaded', async () => {
       volume: ch.volume,
       number: ch.number,
       name: ch.name,
-      branchId: ch.branchId
+      branchId: ch.branchId,
+      episode: ch.episode
     }));
   }
   
@@ -472,144 +478,19 @@ function renderChaptersList(chapters, originalChapters, startIndex = 0, append =
   const effectivePageSize = overridePageSize || pageSize;
   
   // loadAll=true - рендерим все главы до конца
-  const endIndex = loadAll ? chapters.length : Math.min(startIndex + effectivePageSize, chapters.length);
+  // Томов больше одного - дерево томов вместо показа частями
+  const treeMode = volumeChapters.size > 1;
+  const endIndex = loadAll || treeMode ? chapters.length : Math.min(startIndex + effectivePageSize, chapters.length);
   const chaptersToRender = chapters.slice(startIndex, endIndex);
   
-  chaptersToRender.forEach((ch, i) => {
-    const globalIndex = startIndex + i;
-    const originalCh = originalChapters[globalIndex] || ch;
-    const div = document.createElement('div');
-    div.className = 'chapter-item';
-    div.dataset.index = globalIndex;
-    
-    const header = document.createElement('div');
-    header.className = 'chapter-header';
-    
-    const select = createCheckbox('chapter-select');
-    select.input.dataset.index = globalIndex;
-    select.input.checked = chosenIds.has(ch.id);
-    select.input.addEventListener('change', () => {
-      selectionDirty = true;
-      if (select.input.checked) chosenIds.add(ch.id);
-      else chosenIds.delete(ch.id);
-      updateVolumeHeader(String(ch.volume));
-      updateRangeCount();
-    });
-    header.appendChild(select.label);
-
-    const label = document.createElement('div');
-    label.className = 'chapter-title';
-    label.textContent = chapterLabel(originalCh);
-    
-    header.appendChild(label);
-    
-    const resetBtn = document.createElement('button');
-    resetBtn.className = 'chapter-reset-btn';
-    resetBtn.innerHTML = '<i class="fa-solid fa-rotate-left"></i>';
-    resetBtn.dataset.index = globalIndex;
-    
-    header.appendChild(resetBtn);
-    div.appendChild(header);
-    
-    const inputWrapper = document.createElement('div');
-    inputWrapper.className = 'chapter-input-wrapper';
-    
-    const input = document.createElement('input');
-    input.className = 'chapter-input';
-    input.type = 'text';
-    const defaultValue = formatChapterTitle(originalCh.volume, originalCh.number, originalCh.name, tocFormat, customTocFormat, hideChapterName, hideVolumeNumber);
-    input.dataset.default = defaultValue;
-    input.value = ch.displayTitle || defaultValue;
-    input.dataset.index = globalIndex;
-    
-    inputWrapper.appendChild(input);
-    
-    const variants = getChapterVariantsById(ch.id);
-    let currentTranslatorKey = chapterBranchOverrides[ch.id];
-    let currentTranslator = '';
-    
-    if (!currentTranslatorKey && translatorPriority.length > 0) {
-      for (const priorityKey of translatorPriority) {
-        if (variants.has(priorityKey)) {
-          currentTranslatorKey = priorityKey;
-          break;
-        }
-      }
-    }
-    
-    if (!currentTranslatorKey && ch.branches && ch.branches[0]) {
-      currentTranslatorKey = getTranslatorKey(ch.branches[0]);
-    }
-    
-    if (currentTranslatorKey && variants.has(currentTranslatorKey)) {
-      currentTranslator = variants.get(currentTranslatorKey);
-    } else if (ch.branches && ch.branches[0]) {
-      currentTranslator = getTranslatorName(ch.branches[0]);
-    } else {
-      currentTranslator = ch.branchTeamName || 'Основной перевод';
-    }
-    
-    if (variants.size > 1) {
-      const translatorSelect = document.createElement('div');
-      translatorSelect.className = 'chapter-translator';
-      translatorSelect.textContent = currentTranslator;
-      translatorSelect.dataset.chapterId = ch.id;
-      
-      const dropdown = document.createElement('div');
-      dropdown.className = 'chapter-translator-dropdown';
-      dropdown.style.display = 'none';
-      dropdown.style.position = 'absolute';
-      dropdown.style.zIndex = '1000';
-      
-      variants.forEach((name, translatorKey) => {
-        const option = document.createElement('div');
-        option.className = 'chapter-translator-option';
-        if (translatorKey === currentTranslatorKey) {
-          option.classList.add('selected');
-        }
-        option.textContent = name;
-        option.dataset.translatorKey = translatorKey;
-        option.addEventListener('click', (e) => {
-          e.stopPropagation();
-          selectionDirty = true; // перевод главы лежит и в копиях глав filteredChapters
-          chapterBranchOverrides[ch.id] = translatorKey;
-          notifyChanged();
-          translatorSelect.textContent = name;
-          dropdown.querySelectorAll('.chapter-translator-option').forEach(opt => opt.classList.remove('selected'));
-          option.classList.add('selected');
-          dropdown.style.display = 'none';
-        });
-        dropdown.appendChild(option);
-      });
-      
-      inputWrapper.appendChild(dropdown);
-      inputWrapper.appendChild(translatorSelect);
-      
-      const resizeObserver = new ResizeObserver(() => {
-        const translatorWidth = translatorSelect.offsetWidth;
-        input.style.paddingRight = (translatorWidth + 12) + 'px';
-      });
-      resizeObserver.observe(translatorSelect);
-      
-      translatorSelect.addEventListener('click', (e) => {
-        e.stopPropagation();
-        document.querySelectorAll('.chapter-translator-dropdown').forEach(dd => {
-          if (dd !== dropdown) dd.style.display = 'none';
-        });
-        const rect = translatorSelect.getBoundingClientRect();
-        dropdown.style.position = 'fixed';
-        dropdown.style.top = (rect.bottom + 2) + 'px';
-        dropdown.style.left = rect.left + 'px';
-        dropdown.style.display = dropdown.style.display !== 'none' ? 'none' : 'block';
-        div.classList.add('menu-open');
-      });
-      
-      inputWrapper.appendChild(translatorSelect);
-    }
-    
-    div.appendChild(inputWrapper);
-    getVolumeBody(container, ch.volume).appendChild(div);
-  });
+  if (treeMode) {
+    // Дерево: карточки всех томов сразу, свёрнутые; главы тома рисуются, когда его раскрыли (fillVolume)
+    renderSource = { chapters, originalChapters, container };
+    chapters.forEach(ch => getVolumeBody(container, ch.volume));
+    expandedVolumes.forEach(fillVolume);
+  } else {
+    chaptersToRender.forEach((ch, i) => renderChapterRow(container, ch, originalChapters[startIndex + i] || ch, startIndex + i));
+  }
   volumeCards.forEach((card, key) => updateVolumeHeader(key));
   
   totalChaptersRendered = endIndex;
@@ -617,6 +498,157 @@ function renderChaptersList(chapters, originalChapters, startIndex = 0, append =
   initChapterResetButtons();
   
   updateLoadMoreButton(chapters.length);
+}
+
+// Строка главы (серии) в карточке её тома
+function renderChapterRow(container, ch, originalCh, globalIndex) {
+  const div = document.createElement('div');
+  div.className = 'chapter-item';
+  div.dataset.index = globalIndex;
+  // Серия AnimeLIB - одна строка: галочка, «Серия N», озвучка. Заголовка для оглавления у видео нет, поле и сброс не нужны
+  const episode = !!(originalCh.episode || ch.episode);
+  if (episode) div.classList.add('episode');
+  
+  const header = document.createElement('div');
+  header.className = 'chapter-header';
+  
+  const select = createCheckbox('chapter-select');
+  select.input.dataset.index = globalIndex;
+  select.input.checked = chosenIds.has(ch.id);
+  select.input.addEventListener('change', () => {
+    selectionDirty = true;
+    if (select.input.checked) chosenIds.add(ch.id);
+    else chosenIds.delete(ch.id);
+    updateVolumeHeader(String(ch.volume));
+    updateRangeCount();
+  });
+  header.appendChild(select.label);
+
+  const label = document.createElement('div');
+  label.className = 'chapter-title';
+  label.textContent = episode ? `Серия ${originalCh.number}${originalCh.name ? '. ' + originalCh.name : ''}` : chapterLabel(originalCh);
+  
+  header.appendChild(label);
+  
+  const resetBtn = document.createElement('button');
+  resetBtn.className = 'chapter-reset-btn';
+  resetBtn.innerHTML = '<i class="fa-solid fa-rotate-left"></i>';
+  resetBtn.dataset.index = globalIndex;
+  
+  if (!episode) header.appendChild(resetBtn);
+  div.appendChild(header);
+  
+  const inputWrapper = document.createElement('div');
+  inputWrapper.className = 'chapter-input-wrapper';
+  
+  const input = document.createElement('input');
+  input.className = 'chapter-input';
+  input.type = 'text';
+  const defaultValue = formatChapterTitle(originalCh.volume, originalCh.number, originalCh.name, tocFormat, customTocFormat, hideChapterName, hideVolumeNumber);
+  input.dataset.default = defaultValue;
+  input.value = ch.displayTitle || defaultValue;
+  input.dataset.index = globalIndex;
+  
+  if (!episode) inputWrapper.appendChild(input);
+  
+  const variants = getChapterVariantsById(ch.id);
+  let currentTranslatorKey = chapterBranchOverrides[ch.id];
+  let currentTranslator = '';
+  
+  if (!currentTranslatorKey && translatorPriority.length > 0) {
+    for (const priorityKey of translatorPriority) {
+      if (variants.has(priorityKey)) {
+        currentTranslatorKey = priorityKey;
+        break;
+      }
+    }
+  }
+  
+  if (!currentTranslatorKey && ch.branches && ch.branches[0]) {
+    currentTranslatorKey = getTranslatorKey(ch.branches[0]);
+  }
+  
+  if (currentTranslatorKey && variants.has(currentTranslatorKey)) {
+    currentTranslator = variants.get(currentTranslatorKey);
+  } else if (ch.branches && ch.branches[0]) {
+    currentTranslator = getTranslatorName(ch.branches[0]);
+  } else {
+    currentTranslator = ch.branchTeamName || 'Основной перевод';
+  }
+  
+  if (variants.size > 1) {
+    const translatorSelect = document.createElement('div');
+    translatorSelect.className = 'chapter-translator';
+    translatorSelect.textContent = currentTranslator;
+    translatorSelect.dataset.chapterId = ch.id;
+    
+    const dropdown = document.createElement('div');
+    dropdown.className = 'chapter-translator-dropdown';
+    dropdown.style.display = 'none';
+    dropdown.style.position = 'absolute';
+    dropdown.style.zIndex = '1000';
+    
+    variants.forEach((name, translatorKey) => {
+      const option = document.createElement('div');
+      option.className = 'chapter-translator-option';
+      if (translatorKey === currentTranslatorKey) {
+        option.classList.add('selected');
+      }
+      option.textContent = name;
+      option.dataset.translatorKey = translatorKey;
+      option.addEventListener('click', (e) => {
+        e.stopPropagation();
+        selectionDirty = true; // перевод главы лежит и в копиях глав filteredChapters
+        chapterBranchOverrides[ch.id] = translatorKey;
+        notifyChanged();
+        translatorSelect.textContent = name;
+        dropdown.querySelectorAll('.chapter-translator-option').forEach(opt => opt.classList.remove('selected'));
+        option.classList.add('selected');
+        dropdown.style.display = 'none';
+      });
+      dropdown.appendChild(option);
+    });
+    
+    inputWrapper.appendChild(dropdown);
+    inputWrapper.appendChild(translatorSelect);
+    
+    const resizeObserver = new ResizeObserver(() => {
+      const translatorWidth = translatorSelect.offsetWidth;
+      input.style.paddingRight = (translatorWidth + 12) + 'px';
+    });
+    if (!episode) resizeObserver.observe(translatorSelect);
+    
+    translatorSelect.addEventListener('click', (e) => {
+      e.stopPropagation();
+      document.querySelectorAll('.chapter-translator-dropdown').forEach(dd => {
+        if (dd !== dropdown) dd.style.display = 'none';
+      });
+      const rect = translatorSelect.getBoundingClientRect();
+      dropdown.style.position = 'fixed';
+      dropdown.style.top = (rect.bottom + 2) + 'px';
+      dropdown.style.left = rect.left + 'px';
+      dropdown.style.display = dropdown.style.display !== 'none' ? 'none' : 'block';
+      div.classList.add('menu-open');
+    });
+    
+    inputWrapper.appendChild(translatorSelect);
+  }
+  
+  (episode ? header : div).appendChild(inputWrapper);
+  getVolumeBody(container, ch.volume).appendChild(div);
+}
+
+// Главы тома в дереве: при первом раскрытии карточки
+function fillVolume(key) {
+  const card = volumeCards.get(key);
+  if (!card || !renderSource || card.dataset.filled) return;
+  card.dataset.filled = 'true';
+  const { chapters, originalChapters, container } = renderSource;
+  chapters.forEach((ch, index) => {
+    if (String(ch.volume) === key) renderChapterRow(container, ch, originalChapters[index] || ch, index);
+  });
+  updateVolumeHeader(key);
+  initChapterResetButtons();
 }
 
 // Клик мимо списка переводчиков закрывает его: один обработчик на все главы (клики по самому списку до document не доходят)
@@ -882,6 +914,8 @@ document.getElementById('btn-reset').addEventListener('click', () => {
 function initChapterResetButtons() {
   const resetButtons = document.querySelectorAll('.chapter-reset-btn');
   resetButtons.forEach(button => {
+    if (button.dataset.bound) return; // главы дорисовываются частями и по томам: обработчик - один на кнопку
+    button.dataset.bound = 'true';
     button.addEventListener('click', (e) => {
       e.preventDefault();
       const index = parseInt(button.dataset.index);

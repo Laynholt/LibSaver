@@ -742,12 +742,17 @@ test('chapter cards skip off-screen rendering, except the one whose translator l
   assert.match(source('src/editors/chapters.js'), /div\.classList\.add\('menu-open'\)/);
 });
 
-test('chapters are always shown in parts of 100 with "show more" / "show all", no pagination toggle', () => {
+test('chapters: a single volume is shown in parts of 100 with "show more" / "show all", several volumes - as a collapsed tree, no pagination toggle', () => {
   const js = source('src/editors/chapters.js');
   assert.doesNotMatch(js, /enablePagination/);
   assert.match(js, /initialChapterCount = result\.initialChapters \|\| 100;/);
   assert.match(js, /loadMoreChapterCount = result\.loadMoreChapters \|\| 100;/);
-  assert.match(js, /const endIndex = loadAll \? chapters\.length : Math\.min\(startIndex \+ effectivePageSize, chapters\.length\);/);
+  assert.match(js, /const treeMode = volumeChapters\.size > 1;\s*const endIndex = loadAll \|\| treeMode \? chapters\.length : Math\.min\(startIndex \+ effectivePageSize, chapters\.length\);/);
+  // дерево: карточки всех томов сразу, свёрнуты, главы тома - при раскрытии
+  assert.match(js, /chapters\.forEach\(ch => getVolumeBody\(container, ch\.volume\)\);\s*expandedVolumes\.forEach\(fillVolume\);/);
+  assert.match(js, /setOpen\(volumeChapters\.size <= 1 \|\| expandedVolumes\.has\(key\)\);/);
+  assert.match(js, /setOpen\(open\);\s*if \(open\) fillVolume\(key\);/);
+  assert.match(js, /if \(button\.dataset\.bound\) return;/);
   assert.doesNotMatch(source('src/html/settings.html'), /enable-pagination/);
   assert.doesNotMatch(source('src/core/settings.js'), /enablePagination|enable-pagination/);
 });

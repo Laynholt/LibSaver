@@ -24,12 +24,12 @@ const TOC_FORMAT_LABELS = {
 
 // Разделы в порядке меню. group: null - «Загрузки» отдельно внизу.
 // «Форматы» - настройки всех форматов (CBZ/ZIP, PDF, TXT), как во вкладке настроек: их можно поправить заранее, не переключая формат
-// Аниме (AnimeLIB): вместо картинок, оглавления и форматов - «Видео»
+// Аниме (AnimeLIB): без обложек, вместо картинок, оглавления и форматов - «Видео»
 function PANEL_SECTIONS(siteType) {
   const title = [
     { id: 'chapters', group: 'title', title: siteType === 'anime' ? 'Серии' : 'Главы', url: 'chapters.html' },
     { id: 'metadata', group: 'title', title: 'Метаданные', url: 'metadata.html' },
-    { id: 'covers', group: 'title', title: 'Обложки', url: 'covers.html' }
+    ...(siteType === 'anime' ? [] : [{ id: 'covers', group: 'title', title: 'Обложки', url: 'covers.html' }])
   ];
   const build = siteType === 'anime' ? [{ id: 'video', group: 'build', title: 'Видео', url: 'settings.html?group=video' }] : [
     { id: 'images', group: 'build', title: 'Картинки', url: 'settings.html?group=images' },
