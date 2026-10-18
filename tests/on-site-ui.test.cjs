@@ -3454,3 +3454,16 @@ test('update check: no releases or a tag that is not a version is an error, Fire
   ctx.openUpdate(await ctx.fetchLatestRelease());
   assert.deepEqual([calls.tabs, calls.downloads], [[xpi], []]);
 });
+
+test('«Сообщить о проблеме» opens the issue form of the 2.x repository with version, title page and browser filled in', async () => {
+  const ctx = vm.createContext({
+    URLSearchParams, LIBSAVER_REPO: 'Laynholt/LibSaver', navigator: { userAgent: 'UA 1' },
+    chrome: { storage: { local: { get: async () => ({ sourceUrl: 'https://mangalib.me/ru/manga/1--a' }) } }, runtime: { getManifest: () => ({ version: '2.0.0' }) } }
+  });
+  vm.runInContext(functionSource('src/core/settings.js', 'buildIssueUrl'), ctx);
+  const url = new URL(await ctx.buildIssueUrl());
+  assert.equal(url.origin + url.pathname, 'https://github.com/Laynholt/LibSaver/issues/new');
+  assert.deepEqual(Object.fromEntries(url.searchParams), { template: 'bug_report.yml', version: '2.0.0', page: 'https://mangalib.me/ru/manga/1--a', browser: 'UA 1' });
+  const form = source('.github/ISSUE_TEMPLATE/bug_report.yml');
+  for (const id of ['version', 'page', 'browser']) assert.match(form, new RegExp(`id: ${id}\n`));
+});

@@ -763,3 +763,41 @@ body.tab-mode .settings-column {
     overflow-x: auto;
   }
 }
+
+/* «О LibSaver»: авторы - аватар и ник, подпись роли под ником */
+.about-authors {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-sm);
+}
+
+.about-author {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 12px 6px 6px;
+  border: 1px solid var(--border-color);
+  border-radius: 999px;
+  color: var(--text-primary);
+  text-decoration: none;
+}
+
+.about-author:hover {
+  border-color: var(--accent-color);
+}
+
+.about-author img {
+  border-radius: 50%;
+  background: var(--bg-tertiary);
+}
+
+.about-author span {
+  display: flex;
+  flex-direction: column;
+  font-size: 13px;
+}
+
+.about-author small {
+  color: var(--text-secondary);
+  font-size: 12px;
+}

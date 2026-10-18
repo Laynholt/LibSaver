@@ -130,3 +130,26 @@ npx web-ext sign --source-dir dist/firefox --channel unlisted --api-key $AMO_JWT
 ## Лицензия
 
 [GPL-3.0 license](LICENSE)
+
+<div align="center">
+
+# ~ Авторы и благодарности ~
+
+Спасибо всем, кто пользуется **LibSaver**!<br>
+Огромное спасибо тем, кто находит ошибки и баги!<br>
+И особая благодарность всем участникам **LibSaver**!!!
+
+<br>
+
+<a href="https://github.com/dfy-dpg"><img src="https://github.com/dfy-dpg.png?size=200" width="100" height="100" alt="dfy-dpg"></a><br>
+<a href="https://github.com/dfy-dpg"><b>dfy-dpg</b></a><br>
+<sub>оригинальный автор · <a href="https://github.com/dfy-dpg/LibSaver">dfy-dpg/LibSaver</a></sub>
+
+<br>
+<br>
+
+<a href="https://github.com/Laynholt"><img src="https://github.com/Laynholt.png?size=200" width="100" height="100" alt="Laynholt"></a><br>
+<a href="https://github.com/Laynholt"><b>Laynholt</b></a><br>
+<sub>автор обновления 2.0 · <a href="https://github.com/Laynholt/LibSaver">Laynholt/LibSaver</a></sub>
+
+</div>

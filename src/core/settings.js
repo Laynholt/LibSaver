@@ -1467,31 +1467,16 @@ document.addEventListener('DOMContentLoaded', () => {
   initToolbarTippy();
 });
 
-// Ссылка на новый issue в репозитории автора с заранее заполненным шаблоном
+// Форма issue (.github/ISSUE_TEMPLATE/bug_report.yml): версия, страница тайтла и браузер подставляются по id полей формы
 async function buildIssueUrl() {
   const { sourceUrl } = await chrome.storage.local.get(['sourceUrl']);
-  const body = [
-    '### Что произошло',
-    '<!-- Кратко опишите проблему -->',
-    '',
-    '### Как повторить',
-    '1. ',
-    '2. ',
-    '3. ',
-    '',
-    '### Что ожидалось',
-    '',
-    '',
-    '### Скриншоты и логи',
-    '<!-- Перетащите сюда скриншоты. Логи можно скопировать из раздела «Логи» в окне загрузки -->',
-    '',
-    '### Окружение',
-    `- Версия LibSaver: ${chrome.runtime.getManifest().version}`,
-    `- Страница тайтла: ${sourceUrl || ''}`,
-    '- Формат файла: ',
-    `- Браузер: ${navigator.userAgent}`
-  ].join('\n');
-  return `https://github.com/dfy-dpg/LibSaver/issues/new?title=${encodeURIComponent('[Баг] ')}&body=${encodeURIComponent(body)}`;
+  const params = new URLSearchParams({
+    template: 'bug_report.yml',
+    version: chrome.runtime.getManifest().version,
+    page: sourceUrl || '',
+    browser: navigator.userAgent
+  });
+  return `https://github.com/${LIBSAVER_REPO}/issues/new?${params}`;
 }
 
 // Подсказка tippy вставляется в body, поэтому клик ловим делегированием
