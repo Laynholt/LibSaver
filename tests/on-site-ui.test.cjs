@@ -3489,7 +3489,7 @@ test('ranobe PDF draws characters missing from the chosen font (Korean, Chinese)
   const cjk = fakeFont('아나도,');
   const fetched = [];
   ctx.fetch = async url => { fetched.push(url); return { ok: true, arrayBuffer: async () => 'bytes' }; };
-  const pdfDoc = { embedFont: async (bytes, options) => { assert.deepEqual(jsonCopy(options), { subset: true }); return cjk; } };
+  const pdfDoc = { embedFont: async (bytes, options) => { assert.equal(options, undefined); return cjk; } /* whole font: subset loses its Japanese glyphs */ };
   formatter.fallbackFont = undefined;
   formatter.fontChars = new Map();
   await formatter.loadFallbackFontFor(pdfDoc, 'Ах ты~', [main], () => {});

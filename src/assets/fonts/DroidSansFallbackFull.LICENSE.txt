@@ -1,0 +1,3 @@
+DroidSansFallbackFull.ttf - Droid Sans Fallback (Google, 2006), из AOSP: platform/frameworks/base, data/fonts.
+Лицензия: Apache License 2.0 - https://www.apache.org/licenses/LICENSE-2.0
+LibSaver встраивает его подмножеством в PDF ранобэ для китайских и японских символов, которых нет в выбранном шрифте.

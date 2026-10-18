@@ -1204,7 +1204,7 @@ class PdfFormatter extends BaseFormatter {
     return this.fontChars.get(font);
   }
 
-  // Запасной шрифт встраивается подмножеством и только в PDF, где есть символы без глифа в выбранном шрифте
+  // Запасной шрифт (~2 МБ в PDF) встраивается только в PDF с символами без глифа в выбранном шрифте; целиком - subset теряет у него японские глифы
   async loadFallbackFontFor(pdfDoc, text, fonts, addLog) {
     if (this.fallbackFont !== undefined) return;
     const missing = [...text].some(char => fonts.some(font => !this.charsOf(font).has(char.codePointAt(0))));
@@ -1213,7 +1213,7 @@ class PdfFormatter extends BaseFormatter {
     try {
       const response = await fetch(chrome.runtime.getURL(PDF_FALLBACK_FONT));
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      this.fallbackFont = await pdfDoc.embedFont(await response.arrayBuffer(), { subset: true });
+      this.fallbackFont = await pdfDoc.embedFont(await response.arrayBuffer());
     } catch (error) {
       addLog(`Не загрузился шрифт для иероглифов, они могут не отобразиться: ${error.message}`, true);
     }
