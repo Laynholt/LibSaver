@@ -309,20 +309,21 @@ class BaseFormatter {
     let imageError = false;
 
     try {
-      if (this.options.trackRequest) {
-        await this.options.trackRequest();
-      }
-      
+      // Картинки идут мимо RateLimiter API, если он не включён в настройках (см. trackImageRequest в download.js)
+      await (this.options.trackImageRequest || this.options.trackRequest)?.();
+
       // Always use content script through tab context (like RanobeLIB)
       // В Firefox движок и background.js - одна фоновая страница, а своё сообщение страница не получает: directFetch зовём напрямую
       const fetchImage = imageUrl => new Promise(resolve => typeof directFetch === 'function'
         ? directFetch({ url: imageUrl }, resolve)
         : chrome.runtime.sendMessage({ action: 'fetchImage', url: imageUrl }, resolve));
-      let response = await fetchImage(url);
 
       // Сервер оригиналов бывает закрыт целиком (403 на любой файл или нет ответа) — тот же файл в полном размере,
-      // но в JPEG, лежит на сервере «Сжатия»/«Скачивание» (с него же качает NekoShelf)
-      const fallbackUrl = !response?.success ? this.compressedImageUrl(url) : null;
+      // но в JPEG, лежит на сервере «Сжатия»/«Скачивание» (с него же качает NekoShelf).
+      // Раз отказав, он до конца загрузки не спрашивается: иначе каждая картинка ждала бы его повторов (до минуты)
+      const compressedUrl = this.compressedImageUrl(url);
+      let response = this.compressedFallbackLogged && compressedUrl ? null : await fetchImage(url);
+      const fallbackUrl = !response?.success ? compressedUrl : null;
       if (fallbackUrl) {
         // Только строка лога (раздел «Загрузки»): форматтеры работают в движке, showToast там нет
         if (!this.compressedFallbackLogged && this.options.addLog) {
@@ -1110,6 +1111,20 @@ class BaseFormatter {
     xml += '</ComicInfo>';
 
     return xml;
+  }
+
+  // Страницы главы качаются по 3 сразу, как в NekoShelf: take(i) запускает страницы i..i+2 и отдаёт промис i-й.
+  // Ошибка страницы всплывает только в её очередь (решение «повторить/пропустить» идёт по порядку), повторный take(i) качает её заново
+  pageLoader(urls, download, ahead = 3) {
+    const started = [];
+    return i => {
+      for (let k = i; k < Math.min(i + ahead, urls.length); k++) {
+        if (!started[k]) (started[k] = download(urls[k])).catch(() => {}); // ошибку заберёт её take
+      }
+      const promise = started[i];
+      started[i] = null;
+      return promise;
+    };
   }
 
   // Тот же файл на сервере сжатых картинок (пары из /api/constants?fields[]=imageServers); null, если пары нет

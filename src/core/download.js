@@ -357,6 +357,20 @@ async function processQueue() {
     isProcessingQueue = false;
 }
 
+// Картинки идут с CDN, не с API: RateLimiter и случайные паузы для них - только если включены в настройках (imageRateLimit).
+// Пауза и отмена загрузки действуют на картинки всегда
+let imageRateLimit = false;
+async function trackImageRequest() {
+    if (imageRateLimit) {
+        await trackRequest();
+        await window.maybeAddImagePause?.();
+        return;
+    }
+    throwIfCanceled();
+    await checkPause();
+    throwIfCanceled();
+}
+
 function handleRateLimitError() {
     const now = Date.now();
     lastErrorTime = now;
@@ -581,6 +595,7 @@ async function startDownload(snapshot) {
         if (window.setSpeedMode) {
             window.setSpeedMode(result.speedMode || false);
         }
+        imageRateLimit = result.imageRateLimit === true;
         
         if (!snapshot.downloadData) {
             throw new Error('Данные для загрузки не найдены');
@@ -670,6 +685,7 @@ async function startDownload(snapshot) {
             format: options.selectedFormat,
             // Передаем функции для RateLimiter и статистики
             trackRequest: trackRequest,
+            trackImageRequest: trackImageRequest,
             addLog: addLog,
             updateProgress: updateProgress,
             updateImageProgress: updateImageProgress,

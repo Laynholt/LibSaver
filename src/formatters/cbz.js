@@ -294,11 +294,12 @@ class CbzFormatter extends BaseFormatter {
 
       // Скачиваем и добавляем изображения в архив
       let pageIndex = 0;
+      const takePage = this.pageLoader(pagesResult.pages.map(page => page.url), url => this.downloadImage(url));
       while (pageIndex < pagesResult.pages.length) {
         this.options.updateImageProgress?.(pageIndex, pagesResult.pages.length);
         const page = pagesResult.pages[pageIndex];
         try {
-          const imageBlob = await this.downloadImage(page.url);
+          const imageBlob = await takePage(pageIndex);
           if (imageBlob) {
             const imageFormat = this.options.imageFormat || 'original';
             const imgExtension = this.getImageExtension(imageBlob, imageFormat, page.url);
@@ -314,10 +315,6 @@ class CbzFormatter extends BaseFormatter {
               this.options.addFileSize(imageBlob.size);
             }
 
-            // Случайная пауза между картинками (централизованная логика)
-            if (typeof window.maybeAddImagePause === 'function') {
-              await window.maybeAddImagePause(addLog);
-            }
             pageIndex++; // Переходим к следующей картинке
           } else {
             addLog(`    Не удалось загрузить изображение`, true);

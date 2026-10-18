@@ -263,7 +263,7 @@ function downloadHarness({ fail = false, partial = false, noDownloadData = false
   const context = vm.createContext({
     console: { error: noop }, statsUpdateInterval: null, skippedChapters: [],
     resetDownloadState: noop, calculateInitialSpeed: () => 60, updateStatisticsDisplay: noop,
-    formatChapterTitle: () => 'Test', trackRequest: noop, updateProgress: noop, updateImageProgress: noop, progressSamples: [], throwIfCanceled: noop,
+    formatChapterTitle: () => 'Test', trackRequest: noop, trackImageRequest: noop, updateProgress: noop, updateImageProgress: noop, progressSamples: [], throwIfCanceled: noop,
     handleChapterError: noop, handleImageError: noop, onTranslatorSelected: noop,
     addLog: line => logs.push(line), setExactFileSize: noop, saveAs: () => saved++,
     setInterval: () => { const id = timers.size + 1; timers.add(id); return id; }, clearInterval: id => timers.delete(id),
@@ -615,6 +615,42 @@ test('image unavailable on the original server is fetched from the compressed se
   assert.deepEqual(requested, [url, 'https://img3.cdnlibs.org//manga/slug/chapters/1/page.png']);
   assert.equal(logs.filter(message => message.includes('403')).length, 1);
   assert.equal(formatter.compressedImageUrl('https://img3.cdnlibs.org/x.png'), null);
+
+  // once the original server failed, later pages go straight to the compressed one
+  requested.length = 0;
+  await assert.rejects(formatter.downloadAndResizeImage(url.replace('page', 'page2'), 'ORIGINAL'));
+  assert.deepEqual(requested, ['https://img3.cdnlibs.org//manga/slug/chapters/1/page2.png']);
+});
+
+test('pageLoader keeps 3 chapter pages in flight and refetches a page on retry', async () => {
+  const context = vm.createContext({ URL });
+  vm.runInContext(source('src/formatters/base.js') + '\nthis.Formatter = BaseFormatter;', context);
+  const started = [];
+  const take = new context.Formatter({}).pageLoader(['a', 'b', 'c', 'd', 'e'], async url => {
+    started.push(url);
+    if (url === 'b' && started.filter(u => u === 'b').length === 1) throw new Error('boom');
+    return url.toUpperCase();
+  });
+  assert.equal(await take(0), 'A');
+  assert.deepEqual(started, ['a', 'b', 'c']);
+  await assert.rejects(take(1), /boom/);
+  assert.deepEqual(started, ['a', 'b', 'c', 'd']);
+  assert.equal(await take(1), 'B'); // retry downloads it again
+  assert.equal(await take(2), 'C');
+  assert.equal(await take(4), 'E');
+  assert.deepEqual(started, ['a', 'b', 'c', 'd', 'b', 'e']);
+});
+
+test('images bypass the API rate limiter unless imageRateLimit is on', () => {
+  const body = between('src/core/download.js', 'async function trackImageRequest() {', 'function handleRateLimitError() {');
+  assert.match(body, /if \(imageRateLimit\) \{\s*await trackRequest\(\);\s*await window\.maybeAddImagePause/);
+  assert.match(body, /throwIfCanceled\(\);\s*await checkPause\(\);/);
+  assert.match(source('src/core/download.js'), /imageRateLimit = result\.imageRateLimit === true;/);
+  assert.match(source('src/core/snapshot.js'), /'imageRateLimit'/);
+  for (const file of ['cbz', 'epub', 'pdf', 'html']) {
+    assert.doesNotMatch(source(`src/formatters/${file}.js`), /maybeAddImagePause/, file);
+    assert.match(source(`src/formatters/${file}.js`), /this\.pageLoader\(/, file);
+  }
 });
 
 test('same-width option scales manga pages to the most common width of the first chapter', async () => {
