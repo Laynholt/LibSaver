@@ -3521,3 +3521,9 @@ test('ranobe PDF draws characters missing from the chosen font with the first fa
   assert.match(logs[0], /gone\.ttf.*HTTP 404/);
   assert.deepEqual(jsonCopy(formatter.textRuns('아中', main).map(run => run.text)), ['아', '中']);
 });
+
+test('settings tab mode stretches panels to the column even on a window from 1000px, where .container is a start-aligned grid', () => {
+  const css = source('src/css/settings.css');
+  assert.match(css, /@media \(min-width: 1000px\) \{\s*\.container \{[^}]*align-items: start/);
+  assert.match(css, /body\.tab-mode \.container \{[^}]*align-items: stretch/);
+});

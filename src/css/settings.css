@@ -737,6 +737,7 @@ body.tab-mode .settings-nav {
 body.tab-mode .container {
   display: flex;
   flex-direction: column;
+  align-items: stretch; /* на окне от 1000px .container - сетка с align-items: start, панели бы сжались по содержимому */
   flex: 1;
   min-width: 0;
   max-width: none;
