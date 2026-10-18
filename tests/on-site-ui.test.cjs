@@ -1987,6 +1987,11 @@ test('reopening within 1.5 s reuses the closing window on the same address; on a
   assert.equal(page.timers.size, 0); // the delayed removal is canceled
   assert.deepEqual(page.hosts(), [host]);
   assert.ok(page.listeners.keydown && page.listeners.message);
+  // ✕ in the reused window: its message is checked against the same frame (it used to throw on frame.contentWindow)
+  reopened.frame.contentWindow = {};
+  page.listeners.message({ source: reopened.frame.contentWindow, origin: 'chrome-extension://id', data: { libsaver: true, type: 'close' } });
+  assert.equal(vm.runInContext('overlay', ctx), null);
+  ctx.openOverlay(src);
 
   ctx.closeOverlay();
   ctx.openOverlay(src + '&section=downloads');
@@ -3477,7 +3482,7 @@ test('«Сообщить о проблеме» opens the issue form of the 2.x r
   assert.equal(url.origin + url.pathname, 'https://github.com/Laynholt/LibSaver/issues/new');
   assert.deepEqual(Object.fromEntries(url.searchParams), { template: 'bug_report.yml', version: '2.0.0', page: 'https://mangalib.me/ru/manga/1--a', browser: 'UA 1' });
   const form = source('.github/ISSUE_TEMPLATE/bug_report.yml');
-  for (const id of ['version', 'page', 'browser']) assert.match(form, new RegExp(`id: ${id}\n`));
+  for (const id of ['version', 'page', 'browser']) assert.match(form, new RegExp(`id: ${id}\r?\n`));
 });
 
 test('ranobe PDF draws characters missing from the chosen font with the first fallback font that has them, embedding only the fonts it needs', async () => {

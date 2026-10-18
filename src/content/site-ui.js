@@ -51,7 +51,7 @@ function accentFor(siteKey, forcedAccent, isDark) {
 // ---- Окно поверх сайта ----
 
 let overlay = null; // { src, host, frame, overflow, onKey, onMessage }
-let closingOverlay = null; // последнее закрытое окно, пока фрейм доживает: { src, host, timer } (его можно открыть снова)
+let closingOverlay = null; // последнее закрытое окно, пока фрейм доживает: { src, host, frame, timer } (его можно открыть снова)
 const closingHosts = new Set(); // все закрытые и ещё не удалённые окна: каждое удаляет свой таймер
 
 // Сообщения iframe -> страница (протокол: { libsaver: true, type, ... }). Окошко «Скачать» понимает ещё 'resize' и 'openPanel' (popoverMessageHandlers)
@@ -135,13 +135,13 @@ function reviveOverlay() {
 // OVERLAY_REMOVE_DELAY - автосохранение редактора (pagehide ждёт чтения storage) не обрывается вместе с фреймом
 function closeOverlay() {
   if (!overlay) return;
-  const { src, host, overflow, onKey, onMessage } = overlay;
+  const { src, host, frame, overflow, onKey, onMessage } = overlay;
   overlay = null;
   Object.assign(host.style, { visibility: 'hidden', pointerEvents: 'none' });
   host.inert = true;
   window.focus(); // фокус из скрытого фрейма - обратно странице
   if (host.isConnected !== false) { // хост, снятый самой страницей, доживать не может
-    const entry = { src, host };
+    const entry = { src, host, frame }; // frame нужен, если окно откроют снова: по нему проверяются его сообщения
     entry.timer = setTimeout(() => dropClosingOverlay(entry), OVERLAY_REMOVE_DELAY);
     closingHosts.add(entry);
     closingOverlay = entry;
