@@ -55,7 +55,7 @@ let overlay = null; // { src, host, frame, overflow, onKey, onMessage }
 let closingOverlay = null; // последнее закрытое окно, пока фрейм доживает: { src, host, frame, timer } (его можно открыть снова)
 const closingHosts = new Set(); // все закрытые и ещё не удалённые окна: каждое удаляет свой таймер
 
-// Сообщения iframe -> страница (протокол: { libsaver: true, type, ... }). Окошко «Скачать» понимает ещё 'resize' и 'openPanel' (popoverMessageHandlers)
+// Сообщения iframe -> страница (протокол: { libsaver: true, type, ... }). Окошко «Скачать» понимает ещё 'resize' (popoverMessageHandlers)
 const frameMessageHandlers = { close: () => closeOverlay() };
 
 // Сообщение настоящее, если пришло из нашего iframe с origin расширения
@@ -220,15 +220,11 @@ function resizePopover(height) {
   placePopover();
 }
 
-// Сообщения окошка -> страница. «Подробнее…» открывает окно расширения на нужном разделе
+// Сообщения окошка -> страница. Окно расширения открывает ⚙ рядом с «Скачать», в окошке ссылки на него нет
 const popoverMessageHandlers = {
   close: () => closePopover(),
   resize: ({ height }) => {
     if (Number.isFinite(height)) resizePopover(height);
-  },
-  openPanel: ({ section }) => {
-    closePopover();
-    openSettings(typeof section === 'string' ? section : undefined);
   }
 };
 

@@ -1475,19 +1475,21 @@ test('the settings URL can carry a section for the window to open on', () => {
   assert.equal(new URL(ctx.buildPanelUrl('https://mangalib.me/ru/manga/123--title', 42, 'https://mangalib.me')).searchParams.has('section'), false);
 });
 
-test('popover frame messages: «Подробнее…» closes the popover and opens the settings window on that section; resize takes numbers only', () => {
+test('popover frame messages: close and resize (numbers only); the popover has no «Подробнее…» - the ⚙ button opens the window', () => {
   const ctx = siteUiContext();
   const log = [];
   ctx.closePopover = () => log.push('close');
   ctx.openSettings = section => log.push(['settings', section]);
   ctx.resizePopover = height => log.push(['resize', height]);
   const handlers = vm.runInContext('popoverMessageHandlers', ctx); // const: not a property of the context
-  handlers.openPanel({ section: 'chapters' });
+  assert.equal(handlers.openPanel, undefined);
+  assert.doesNotMatch(source('src/html/quick.html'), /Подробнее|id="more"/);
+  assert.doesNotMatch(source('src/core/quick.js'), /openPanel|\$\('more'\)/);
   handlers.close();
   handlers.resize({ height: 180 });
   handlers.resize({ height: 'tall' });
   handlers.resize({});
-  assert.deepEqual(log, ['close', ['settings', 'chapters'], 'close', ['resize', 180]]);
+  assert.deepEqual(log, ['close', ['resize', 180]]);
 });
 
 test('the «Скачать» label and accent follow the format and accent saved in storage', async () => {

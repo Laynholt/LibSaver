@@ -101,10 +101,6 @@ function startQuick() {
   });
   formatSelect.addEventListener('change', () => chrome.storage.local.set({ [formatKeyFor(info.siteType)]: formatSelect.value }));
   $('retry').addEventListener('click', () => load(true));
-  $('more').addEventListener('click', event => {
-    event.preventDefault();
-    post({ type: 'openPanel', section: 'chapters' });
-  });
   $('form').addEventListener('submit', async event => {
     event.preventDefault();
     downloadButton.disabled = true;
