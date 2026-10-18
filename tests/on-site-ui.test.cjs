@@ -2726,22 +2726,10 @@ test('the popup closes after opening the window on a title page and otherwise sa
   assert.deepEqual([stale.calls.closed, stale.shown('btn-reload-page'), stale.shown('btn-mangalib'), stale.element('error-text').textContent], [0, true, false, 'Не удалось открыть окно LibSaver. Перезагрузите страницу.']);
 });
 
-test('the popup ⚙ on the screens off a title page opens the full settings page in a tab and closes the popup', async () => {
-  const handlers = {};
-  const calls = { tabs: [], closed: 0 };
-  const ctx = vm.createContext({
-    window: { close: () => { calls.closed++; } },
-    document: { getElementById: id => ({ addEventListener: (type, fn) => { handlers[id] = fn; } }) },
-    chrome: { tabs: { create: async options => { calls.tabs.push(options); } }, runtime: { getURL: file => 'chrome-extension://self/' + file } }
-  });
-  vm.runInContext(between('src/core/popup.js', "document.getElementById('btn-settings')", '// Кнопки открытия LIB сайтов'), ctx);
-  await handlers['btn-settings']();
-  assert.deepEqual(jsonCopy(calls), { tabs: [{ url: 'chrome-extension://self/html/settings.html' }], closed: 1 });
-  // the button sits in the error view, which every off-title screen shows, as its own row under the site logos (not over the text)
-  const html = source('src/html/popup.html');
-  const at = html.indexOf('id="btn-settings"');
-  assert.ok(at > html.indexOf('class="lib-buttons"') && at < html.indexOf('id="toast-container"'));
-  assert.doesNotMatch(source('src/css/popup.css'), /[.]btn-settings [{][^}]*position: absolute/);
+test('the popup off a title page only points to the sites: no settings button', () => {
+  assert.doesNotMatch(source('src/html/popup.html'), /btn-settings/);
+  assert.doesNotMatch(source('src/core/popup.js'), /btn-settings|settings[.]html/);
+  assert.doesNotMatch(source('src/css/popup.css'), /btn-settings/);
 });
 
 test('the settings tab (no ?group=) lists the sections on the left and shows only the panels of the one in the address', () => {
