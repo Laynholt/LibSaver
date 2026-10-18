@@ -426,8 +426,38 @@ function addLog(message, isError = false, color = null) {
     emit({ type: 'log', line: `[${new Date().toLocaleTimeString()}] ${message}`, isError, color });
 }
 
+// Прогресс = готовые главы + доля текущей главы по картинкам: шкала двигается с каждой страницей
+let progressNow = { current: 0, total: 0, part: 0 };
+let progressSamples = []; // [{t, f}] - доля всей загрузки во времени, для оценки оставшегося времени
+const ETA_WINDOW_MS = 60000; // скорость берём по последней минуте: паузы быстро выпадают из оценки
+
 function updateProgress(current, total) {
-    emit({ type: 'progress', current, total });
+    progressNow = { current, total, part: 0 };
+    reportProgress();
+}
+
+function updateImageProgress(done, total) {
+    progressNow.part = total > 0 ? Math.min(done / total, 1) : 0;
+    reportProgress();
+}
+
+function reportProgress() {
+    const { current, total, part } = progressNow;
+    const now = Date.now();
+    progressSamples.push({ t: now, f: total > 0 ? Math.min((current + part) / total, 1) : 0 });
+    while (progressSamples.length > 2 && now - progressSamples[1].t > ETA_WINDOW_MS) progressSamples.shift();
+    emit({ type: 'progress', current, total, part });
+}
+
+// Секунды до конца или null, пока скорость не ясна. Время с последнего отчёта входит в оценку: застой растит её
+function estimateRemainingSeconds(samples, now) {
+    const first = samples[0], last = samples[samples.length - 1];
+    if (!first) return null;
+    if (last.f >= 1) return 0;
+    const seconds = (now - first.t) / 1000;
+    const done = last.f - first.f;
+    if (seconds < 5 || done <= 0) return null;
+    return (1 - last.f) * seconds / done;
 }
 
 async function checkPause() {
@@ -595,7 +625,8 @@ async function startDownload(snapshot) {
         // Инициализируем статистику через statistics.js
         window.setDownloadStartTime();
         totalBytesDownloaded = 0;
-        
+        progressSamples = [];
+
         // Сбрасываем счётчики пауз
         if (window.resetPauseCounters) {
             window.resetPauseCounters();
@@ -641,6 +672,7 @@ async function startDownload(snapshot) {
             trackRequest: trackRequest,
             addLog: addLog,
             updateProgress: updateProgress,
+            updateImageProgress: updateImageProgress,
             incrementErrorCount: window.incrementErrorCount,
             incrementSkippedImagesCount: window.incrementSkippedImagesCount,
             addFileSize: window.addFileSize,
@@ -824,6 +856,7 @@ function updateStatisticsDisplay() {
         stats: {
             elapsed: formatTime(downloadStartTime ? (Date.now() - downloadStartTime) / 1000 : 0),
             estimated: calculateEstimatedTime(),
+            etaSeconds: estimateRemainingSeconds(progressSamples, Date.now()),
             fileSize: formatFileSize(window.getStatisticsValue('totalFileSize')),
             errors: window.getStatisticsValue('totalErrorCount'),
             skippedChapters: window.getStatisticsValue('skippedChaptersCount'),
@@ -866,59 +899,9 @@ function formatFileSize(bytes) {
     }
 }
 
-// Функция для расчёта медианы массива
-function calculateMedian(arr) {
-    if (arr.length === 0) return 0;
-    const sorted = [...arr].sort((a, b) => a - b);
-    const mid = Math.floor(sorted.length / 2);
-    return sorted.length % 2 !== 0 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
-}
-
-// Функция для расчёта примерного времени на основе адаптивных данных
 function calculateEstimatedTime() {
-    const chapterTimes = window.getStatisticsValue('chapterTimes');
-    const currentChapterIndex = window.getStatisticsValue('currentChapterIndex');
-    
-    if (!chapterTimes || chapterTimes.length === 0) {
-        return 'Вычисляется...';
-    }
-
-    const remainingChapters = chaptersToDownload.length - currentChapterIndex;
-
-    // Если все главы загружены, показываем 0
-    if (remainingChapters <= 0) {
-        return '0 сек';
-    }
-
-    // Определяем тип контента по siteType
-    const siteType = options.siteType || 'ranobe';
-
-    // Медиана из 3 глав везде
-    const sampleSize = 3;
-
-    // Лимит по типу сайта
-    let maxTimePerChapter;
-    if (siteType === 'ranobelib') {
-        maxTimePerChapter = 4;  // RanobeLIB
-    } else if (siteType === 'mangalib' || siteType === 'hentailib' || siteType === 'shlib') {
-        maxTimePerChapter = 8;  // MangaLIB, HentaiLIB, SlashLIB
-    } else {
-        maxTimePerChapter = 4;  // Дефолт
-    }
-
-    const recentChapterTimes = chapterTimes.slice(-sampleSize);
-    const medianTime = calculateMedian(recentChapterTimes);
-
-    // Ограничиваем максимум и защищаем от NaN
-    const avgTimePerChapter = Math.min(medianTime || 0, maxTimePerChapter);
-    const estimatedSeconds = (avgTimePerChapter || 0) * remainingChapters;
-
-    // Защита от NaN
-    if (isNaN(estimatedSeconds) || !isFinite(estimatedSeconds)) {
-        return 'Вычисляется...';
-    }
-
-    return formatTime(estimatedSeconds);
+    const seconds = estimateRemainingSeconds(progressSamples, Date.now());
+    return seconds === null ? 'Вычисляется...' : formatTime(seconds);
 }
 
 // Обработчик ошибок глав

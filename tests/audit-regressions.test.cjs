@@ -263,7 +263,7 @@ function downloadHarness({ fail = false, partial = false, noDownloadData = false
   const context = vm.createContext({
     console: { error: noop }, statsUpdateInterval: null, skippedChapters: [],
     resetDownloadState: noop, calculateInitialSpeed: () => 60, updateStatisticsDisplay: noop,
-    formatChapterTitle: () => 'Test', trackRequest: noop, updateProgress: noop, throwIfCanceled: noop,
+    formatChapterTitle: () => 'Test', trackRequest: noop, updateProgress: noop, updateImageProgress: noop, progressSamples: [], throwIfCanceled: noop,
     handleChapterError: noop, handleImageError: noop, onTranslatorSelected: noop,
     addLog: line => logs.push(line), setExactFileSize: noop, saveAs: () => saved++,
     setInterval: () => { const id = timers.size + 1; timers.add(id); return id; }, clearInterval: id => timers.delete(id),

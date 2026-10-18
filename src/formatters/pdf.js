@@ -448,6 +448,7 @@ class PdfFormatter extends BaseFormatter {
       // Добавляем каждую картинку как отдельную страницу
       let pageIndex = 0;
       while (pageIndex < pages.length) {
+        this.options.updateImageProgress?.(pageIndex, pages.length);
         const pageUrl = pages[pageIndex].url || pages[pageIndex];
 
         try {

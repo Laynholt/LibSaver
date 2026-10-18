@@ -67,8 +67,8 @@ function renderStatus(item) {
 
 // Один элемент очереди: чистая разметка, весь текст экранируется
 function renderQueueItem(item) {
-  const { current, total } = item.progress;
-  const percent = total ? Math.min(100, Math.round((current / total) * 100)) : 0;
+  const { current, total, part = 0 } = item.progress; // part - доля текущей главы по картинкам
+  const percent = total ? Math.min(100, Math.round(((current + part) / total) * 100)) : 0;
   // Файл готового тайтла движок держит только у последнего (canSaveAgain): у остальных пересохранять нечего
   const commands = (STATUS_COMMANDS[item.status] || []).filter(command => command !== 'saveAgain' || item.canSaveAgain);
   const buttons = commands.map(command => renderCommandButton(command, item.id)).join('');

@@ -220,7 +220,7 @@ test('stats event carries the protocol fields and takes over from storage', () =
   ctx.updateStatisticsDisplay();
   const { type, stats } = events.at(-1);
   assert.equal(type, 'stats');
-  assert.deepEqual(Object.keys(stats).sort(), ['elapsed', 'errors', 'estimated', 'fileSize', 'maxRequestsPerMinute', 'oldFormatChapters', 'requestsPerMinute', 'skippedChapters', 'skippedImages', 'totalChapters', 'totalCovers', 'totalImages']);
+  assert.deepEqual(Object.keys(stats).sort(), ['elapsed', 'errors', 'estimated', 'etaSeconds', 'fileSize', 'maxRequestsPerMinute', 'oldFormatChapters', 'requestsPerMinute', 'skippedChapters', 'skippedImages', 'totalChapters', 'totalCovers', 'totalImages']);
   assert.deepEqual([stats.errors, stats.requestsPerMinute, stats.maxRequestsPerMinute, stats.oldFormatChapters], [3, 0, 0, 3]);
 });
 
@@ -230,7 +230,29 @@ test('log and progress events carry what the window draws', () => {
   ctx.updateProgress(2, 5);
   assert.match(events[0].line, /^\[.*\] hi$/);
   assert.deepEqual([events[0].type, events[0].isError, events[0].color], ['log', true, 'red']);
-  assert.deepEqual(events[1], { type: 'progress', current: 2, total: 5 });
+  assert.deepEqual(events[1], { type: 'progress', current: 2, total: 5, part: 0 });
+});
+
+test('image progress adds the share of the current chapter and a new chapter resets it', () => {
+  const { ctx, events } = downloadEventsContext();
+  ctx.updateProgress(2, 5);
+  ctx.updateImageProgress(10, 40);
+  assert.deepEqual(events.at(-1), { type: 'progress', current: 2, total: 5, part: 0.25 });
+  ctx.updateImageProgress(50, 40); // a page past the end never overshoots the chapter
+  assert.equal(events.at(-1).part, 1);
+  ctx.updateProgress(3, 5);
+  assert.equal(events.at(-1).part, 0);
+});
+
+test('remaining time comes from the speed over the recent samples and grows while nothing moves', () => {
+  const { ctx } = downloadEventsContext();
+  const eta = ctx.estimateRemainingSeconds;
+  assert.equal(eta([], 0), null);
+  assert.equal(eta([{ t: 0, f: 0 }, { t: 2000, f: 0.1 }], 2000), null); // under 5 s the speed is not clear yet
+  assert.equal(Math.round(eta([{ t: 0, f: 0 }, { t: 10000, f: 0.1 }], 10000)), 90); // 10 s per 10 % -> 90 s left
+  assert.equal(Math.round(eta([{ t: 0, f: 0 }, { t: 10000, f: 0.1 }], 20000)), 180); // a stall of 10 s doubles it
+  assert.equal(eta([{ t: 0, f: 0.5 }, { t: 10000, f: 0.5 }], 10000), null); // nothing moved
+  assert.equal(eta([{ t: 0, f: 0.2 }, { t: 9000, f: 1 }], 9000), 0);
 });
 
 test('downloadControl.cancel ends a pending decision and stops further requests', async () => {
@@ -454,7 +476,7 @@ test('engine turns download events into state, forwards commands and saves the f
   const states = port.posted.filter(m => m.type === 'state');
   assert.equal(states.length, 2); // the burst of changes goes out as one throttled state
   assert.deepEqual(states[1].state, {
-    items: [{ id: 'a', slug: 'a', siteKey: 'mangalib', title: 'T a', format: 'cbz', status: 'waiting-decision', progress: { current: 1, total: 2 }, decision: { kind: 'chapter', chapterTitle: 'Г1', message: 'boom' } }],
+    items: [{ id: 'a', slug: 'a', siteKey: 'mangalib', title: 'T a', format: 'cbz', status: 'waiting-decision', progress: { current: 1, total: 2, part: 0 }, decision: { kind: 'chapter', chapterTitle: 'Г1', message: 'boom' } }],
     stats: { elapsed: '00:01' },
     logTail: [{ line: 'L1', isError: false, color: null }]
   });
@@ -1595,8 +1617,11 @@ const stateOf = (...items) => ({ items, stats: null, logTail: [] });
 test('plaqueText: running shows the percent and the rest of the queue, waiting and paused say what is needed, nothing active gives null', () => {
   const ctx = siteUiContext();
   const text = (state, site = 'mangalib') => jsonOf(ctx.plaqueText(state, site));
-  assert.deepEqual(text(stateOf(queueEntry('running', { progress: { current: 9, total: 20 } }))), { title: 'Title A', detail: '45%' });
-  assert.deepEqual(text(stateOf(queueEntry('running', { progress: { current: 9, total: 20 } }), queueEntry('queued', { slug: 'b' }), queueEntry('queued', { slug: 'c' }))), { title: 'Title A', detail: '45% · +2 в очереди' });
+  assert.deepEqual(text(stateOf(queueEntry('running', { progress: { current: 9, total: 20 } }))), { title: 'Title A', detail: '45%', percent: 45 });
+  assert.deepEqual(text(stateOf(queueEntry('running', { progress: { current: 9, total: 20 } }), queueEntry('queued', { slug: 'b' }), queueEntry('queued', { slug: 'c' }))), { title: 'Title A', detail: '45% · +2 в очереди', percent: 45 });
+  const withEta = { ...stateOf(queueEntry('running', { progress: { current: 9, total: 20, part: 0.5 } })), stats: { estimated: '3 мин 5 сек', etaSeconds: 185 } };
+  assert.deepEqual(text(withEta), { title: 'Title A', detail: '48% · ≈3 мин 5 сек', percent: 48 }); // the page share counts, the time left is shown
+  assert.equal(text({ ...withEta, stats: { estimated: 'Вычисляется...', etaSeconds: null } }).detail, '48%');
   assert.equal(text(stateOf(queueEntry('waiting-tab'))).detail, 'Откройте страницу MangaLIB, чтобы продолжить');
   assert.equal(text(stateOf(queueEntry('waiting-tab', { siteKey: 'shlib' }))).detail, 'Откройте страницу SlashLIB, чтобы продолжить');
   assert.equal(text(stateOf(queueEntry('waiting-decision', { decision: { kind: 'chapter', chapterTitle: 'Г1', message: 'x' } }))).detail, 'Нужно решение: ошибка главы');

@@ -93,7 +93,7 @@ function onDownloadEvent(event) {
     for (const port of ports) post(port, { type: 'log', id: current.id, ...line });
     scheduleState();
   } else if (event.type === 'progress') {
-    updateCurrent(null, { progress: { current: event.current, total: event.total } });
+    updateCurrent(null, { progress: { current: event.current, total: event.total, part: event.part || 0 } });
   } else if (event.type === 'stats') {
     stats = event.stats;
     scheduleState();

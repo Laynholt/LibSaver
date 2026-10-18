@@ -152,6 +152,7 @@ button:focus-visible {
   box-shadow: 0 0 0 1px rgba(128, 128, 128, 0.3), 0 8px 24px rgba(0, 0, 0, 0.4);
   text-align: left;
   user-select: none;
+  overflow: hidden; /* полоска не вылезает за скруглённые углы */
   touch-action: none; /* без этого палец на телефоне прокручивает страницу вместо перетаскивания */
 }
 
@@ -175,6 +176,17 @@ button:focus-visible {
   font-size: 12px;
   font-weight: 500;
   opacity: 0.8;
+}
+
+/* Полоска хода загрузки по нижнему краю плашки */
+.plaque-bar {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  height: 3px;
+  width: 0;
+  background: var(--ls-accent, #ef6c00);
+  transition: width 0.25s;
 }
 
 /* Телефонный режим: окно на весь экран, плашка поуже */

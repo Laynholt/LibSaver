@@ -507,12 +507,12 @@ const PLAQUE_CORNERS = ['top-left', 'top-right', 'bottom-left', 'bottom-right'];
 const PLAQUE_DRAG_THRESHOLD = 5;
 const ACTIVE_STATUSES = ['queued', 'running', 'paused', 'waiting-tab', 'waiting-decision'];
 
-let plaque = null; // { host, title, detail, button, stopDrag }
+let plaque = null; // { host, title, detail, bar, button, stopDrag }
 let plaqueCorner = 'bottom-right';
 
 function progressPercent(item) {
-  const { current, total } = item.progress || {};
-  return total > 0 ? Math.min(100, Math.max(0, Math.round(100 * current / total))) : 0;
+  const { current, total, part = 0 } = item.progress || {}; // part - доля текущей главы по картинкам
+  return total > 0 ? Math.min(100, Math.max(0, Math.round(100 * (current + part) / total))) : 0;
 }
 
 // Что показать на кнопке «Скачать» тайтла: ход идущей загрузки, очередь или ничего
@@ -523,7 +523,7 @@ function buttonProgress(state, siteKey, slug) {
   return mine.some(item => item.status === 'queued') ? { kind: 'queued' } : null;
 }
 
-// Текст плашки: { title, detail } или null, если качать нечего. Главный - идущий (или ждущий) тайтл, иначе первый в очереди.
+// Текст плашки: { title, detail, percent? } или null, если качать нечего. Главный - идущий (или ждущий) тайтл, иначе первый в очереди.
 // siteKeyOfPage - сайт страницы: подсказка, какую страницу открыть, если движок не назвал сайт
 function plaqueText(state, siteKeyOfPage) {
   const active = (state?.items || []).filter(item => ACTIVE_STATUSES.includes(item.status));
@@ -532,7 +532,11 @@ function plaqueText(state, siteKeyOfPage) {
   const queued = active.filter(other => other !== item && other.status === 'queued').length;
   let detail;
   switch (item.status) {
-    case 'running': detail = `${progressPercent(item)}%${queued ? ` · +${queued} в очереди` : ''}`; break;
+    case 'running': {
+      const eta = state.stats?.etaSeconds != null && state.stats.estimated ? ` · ≈${state.stats.estimated}` : ''; // stats - всегда идущей загрузки
+      const percent = progressPercent(item);
+      return { title: item.title || item.slug, detail: `${percent}%${eta}${queued ? ` · +${queued} в очереди` : ''}`, percent };
+    }
     case 'waiting-tab': detail = `Откройте страницу ${SITE_NAMES[item.siteKey || siteKeyOfPage] || item.siteKey || siteKeyOfPage}, чтобы продолжить`; break;
     case 'waiting-decision': detail = `Нужно решение: ошибка ${item.decision?.kind === 'image' ? 'картинки' : 'главы'}`; break;
     case 'paused': detail = 'Пауза'; break;
@@ -577,12 +581,14 @@ function createPlaque(doc) {
   title.className = 'plaque-title';
   const detail = doc.createElement('span');
   detail.className = 'plaque-detail';
-  button.append(title, detail);
+  const bar = doc.createElement('span');
+  bar.className = 'plaque-bar';
+  button.append(title, detail, bar);
   shadow.append(button);
 
   // Перетаскивание: сдвиг меньше порога - это клик. После отпускания плашка прилипает к ближайшему углу
   let dragged = false;
-  const result = { host, title, detail, button, stopDrag: () => {} };
+  const result = { host, title, detail, bar, button, stopDrag: () => {} };
   button.addEventListener('pointerdown', event => {
     if (!event.isTrusted || event.button !== 0) return;
     if (event.pointerType === 'mouse') event.preventDefault(); // без выделения текста страницы под рукой
@@ -650,6 +656,7 @@ function renderPlaque(doc = document) {
   }
   plaque.title.textContent = view.title;
   plaque.detail.textContent = view.detail;
+  plaque.bar.style.width = `${view.percent ?? 0}%`;
   plaque.button.setAttribute('aria-label', `${view.title}: ${view.detail}`);
 }
 

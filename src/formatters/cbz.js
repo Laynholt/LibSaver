@@ -295,6 +295,7 @@ class CbzFormatter extends BaseFormatter {
       // Скачиваем и добавляем изображения в архив
       let pageIndex = 0;
       while (pageIndex < pagesResult.pages.length) {
+        this.options.updateImageProgress?.(pageIndex, pagesResult.pages.length);
         const page = pagesResult.pages[pageIndex];
         try {
           const imageBlob = await this.downloadImage(page.url);
