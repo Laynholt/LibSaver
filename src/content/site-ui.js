@@ -1,5 +1,5 @@
 // site-ui.js - кнопки «Скачать» и ⚙ под «Начать читать» на странице тайтла и окно расширения поверх сайта.
-// Скрипты контента (manifest.json): core/theme.js (ACCENT_COLORS), utils/page-call.js (siteKeyOf, getSiteConfig), этот файл.
+// Скрипты контента (manifest.json): core/theme.js (ACCENT_COLORS), utils/page-call.js (siteKeyOf, getSiteConfig), utils/formats.js (ключ формата), этот файл.
 // Кнопки и окно живут в закрытых Shadow DOM, а действия принимают только от настоящих кликов (isTrusted):
 // скрипты сайта не достают до наших элементов и не запускают наши действия.
 
@@ -33,10 +33,20 @@ function titleSlug(url) {
   return match ? match[1] + (match[2] || '') : null;
 }
 
-// Окно настроек. В Task 10 html/workspace.html заменится на html/panel.html - это единственное место
-function buildPanelUrl(pageUrl, tabId, parentOrigin) {
-  const query = new URLSearchParams({ slug: titleSlug(pageUrl) || '', tab: String(tabId), url: pageUrl, parent: parentOrigin });
+// Параметры страницы расширения во фрейме: slug, вкладка сайта, адрес страницы и origin для postMessage обратно
+function frameQuery(pageUrl, tabId, parentOrigin) {
+  return new URLSearchParams({ slug: titleSlug(pageUrl) || '', tab: String(tabId), url: pageUrl, parent: parentOrigin });
+}
+
+// Окно настроек; section - раздел, на котором открыться. В Task 10 html/workspace.html заменится на html/panel.html - это единственное место
+function buildPanelUrl(pageUrl, tabId, parentOrigin, section) {
+  const query = frameQuery(pageUrl, tabId, parentOrigin);
+  if (section) query.set('section', section);
   return `${chrome.runtime.getURL('html/workspace.html')}?${query}`;
+}
+
+function buildQuickUrl(pageUrl, tabId, parentOrigin) {
+  return `${chrome.runtime.getURL('html/quick.html')}?${frameQuery(pageUrl, tabId, parentOrigin)}`;
 }
 
 // Цвет кнопок: принудительный акцент из настроек, иначе цвет сайта (как applySiteAccent)
@@ -49,7 +59,7 @@ function accentFor(siteKey, forcedAccent, isDark) {
 
 let overlay = null; // { host, frame, overflow, onKey, onMessage }
 
-// Сообщения iframe -> страница (протокол: { libsaver: true, type, ... }). Task 8 и 10 добавляют 'resize' и 'openPanel'
+// Сообщения iframe -> страница (протокол: { libsaver: true, type, ... }). Окошко «Скачать» понимает ещё 'resize' и 'openPanel' (popoverMessageHandlers)
 const frameMessageHandlers = { close: () => closeOverlay() };
 
 // Сообщение настоящее, если пришло из нашего iframe с origin расширения
@@ -69,6 +79,7 @@ function addStyles(doc, host, shadow) {
 
 function openOverlay(src) {
   if (!src.startsWith(extensionBase())) return;
+  closePopover();
   closeOverlay();
   const host = document.createElement('div');
   host.style.cssText = `position:fixed;inset:0;z-index:${OVERLAY_Z_INDEX};`;
@@ -122,15 +133,104 @@ async function whoami() {
   }
 }
 
-async function openSettings() {
+async function openSettings(section) {
   const me = await whoami();
   if (me?.tabId == null) return;
-  openOverlay(buildPanelUrl(location.href, me.tabId, location.origin));
+  openOverlay(buildPanelUrl(location.href, me.tabId, location.origin, section));
 }
 
-// Task 8 заменит тело быстрым окном выбора глав и формата
-function openQuickPopover() {
-  return openSettings();
+// ---- Быстрое окошко «Скачать» под кнопками ----
+
+const POPOVER_MIN_WIDTH = 280;
+const POPOVER_GAP = 6;
+const POPOVER_MARGIN = 8;
+const POPOVER_INITIAL_HEIGHT = 96; // до первого resize от окошка
+
+let popover = null; // { host, anchor, height, listeners: [[type, handler, capture]] }
+
+// Ширина - как у ряда кнопок (не меньше 280px). Под рядом, если там хватает места, иначе над ним; высота урезается до места.
+// rect - ряд кнопок, view - размер окна страницы
+function popoverPlacement(rect, height, view) {
+  const width = Math.min(Math.max(rect.width, POPOVER_MIN_WIDTH), view.width - 2 * POPOVER_MARGIN);
+  const left = Math.min(Math.max(rect.left, POPOVER_MARGIN), view.width - width - POPOVER_MARGIN);
+  const below = view.height - rect.bottom - POPOVER_GAP - POPOVER_MARGIN;
+  const above = rect.top - POPOVER_GAP - POPOVER_MARGIN;
+  if (height <= below || below >= above) return { left, top: rect.bottom + POPOVER_GAP, width, height: Math.min(height, below) };
+  const fitted = Math.min(height, above);
+  return { left, top: rect.top - POPOVER_GAP - fitted, width, height: fitted };
+}
+
+function placePopover() {
+  if (!popover) return;
+  const { host, anchor, height } = popover;
+  if (anchor.isConnected === false) { // SPA убрала кнопки
+    closePopover();
+    return;
+  }
+  const root = document.documentElement;
+  const place = popoverPlacement(anchor.getBoundingClientRect(), height, { width: root.clientWidth, height: root.clientHeight });
+  Object.assign(host.style, { left: `${place.left}px`, top: `${place.top}px`, width: `${place.width}px`, height: `${place.height}px` });
+}
+
+function resizePopover(height) {
+  if (!popover) return;
+  popover.height = height;
+  placePopover();
+}
+
+// Сообщения окошка -> страница. «Подробнее…» открывает окно расширения на нужном разделе
+const popoverMessageHandlers = {
+  close: () => closePopover(),
+  resize: ({ height }) => {
+    if (Number.isFinite(height)) resizePopover(height);
+  },
+  openPanel: ({ section }) => {
+    closePopover();
+    openSettings(typeof section === 'string' ? section : undefined);
+  }
+};
+
+function closePopover() {
+  if (!popover) return;
+  const { host, listeners } = popover;
+  popover = null;
+  host.remove();
+  for (const [type, handler, capture] of listeners) window.removeEventListener(type, handler, capture);
+}
+
+// Повторный клик «Скачать» закрывает окошко. anchor - хост кнопок: клики по нему окошко не закрывают само, их разбирают кнопки
+async function openQuickPopover(anchor) {
+  if (popover) {
+    closePopover();
+    return;
+  }
+  const me = await whoami();
+  if (me?.tabId == null || popover) return;
+
+  const host = document.createElement('div');
+  host.style.cssText = `position:fixed;z-index:${OVERLAY_Z_INDEX};`;
+  const shadow = host.attachShadow({ mode: 'closed' });
+  addStyles(document, host, shadow);
+  const frame = document.createElement('iframe');
+  frame.className = 'popover-frame';
+  frame.setAttribute('title', 'LibSaver');
+  frame.src = buildQuickUrl(location.href, me.tabId, location.origin);
+  shadow.append(frame);
+
+  const listeners = [
+    ['keydown', event => { if (event.key === 'Escape' && event.isTrusted) closePopover(); }, true],
+    ['pointerdown', event => { if (event.isTrusted && event.target !== host && event.target !== anchor) closePopover(); }, true],
+    ['message', event => {
+      const type = event.data?.type;
+      if (isTrustedFrameMessage(event, frame) && Object.hasOwn(popoverMessageHandlers, type)) popoverMessageHandlers[type](event.data);
+    }, false],
+    ['resize', placePopover, false],
+    ['scroll', placePopover, true]
+  ];
+  for (const [type, handler, capture] of listeners) window.addEventListener(type, handler, capture);
+  popover = { host, anchor, height: POPOVER_INITIAL_HEIGHT, listeners };
+  placePopover();
+  document.documentElement.append(host);
 }
 
 // Иконки - Font Awesome из расширения; @font-face внутри Shadow DOM не работает, поэтому шрифт объявляется в документе под своим именем
@@ -169,7 +269,7 @@ function createButtonsHost(doc, siteKey) {
   download.append(label, format);
   const settings = createButton(doc, 'settings', 'Настройки LibSaver', ''); // fa-gear
   settings.setAttribute('title', 'Настройки LibSaver');
-  download.addEventListener('click', event => { if (event.isTrusted) openQuickPopover(); });
+  download.addEventListener('click', event => { if (event.isTrusted) openQuickPopover(host); });
   settings.addEventListener('click', event => { if (event.isTrusted) openSettings(); });
 
   const row = doc.createElement('div');
@@ -177,14 +277,25 @@ function createButtonsHost(doc, siteKey) {
   row.append(download, settings);
   shadow.append(row);
 
-  const formatKey = siteKey === 'ranobelib' ? 'selectedFormat_ranobe' : 'selectedFormat_manga';
-  chrome.storage.local.get(['accentColor', 'theme', formatKey]).then(stored => {
+  const siteType = siteKey === 'ranobelib' ? 'ranobe' : 'manga';
+  const formatKey = formatKeyFor(siteType);
+  const refresh = () => chrome.storage.local.get(['accentColor', 'theme', formatKey]).then(stored => {
     const isDark = stored.theme === 'light' ? false : stored.theme === 'system' ? doc.defaultView.matchMedia('(prefers-color-scheme: dark)').matches : true;
     const accent = accentFor(siteKey, stored.accentColor, isDark);
     host.style.setProperty('--ls-accent', accent.color);
     host.style.setProperty('--ls-accent-hover', accent.hover);
-    format.textContent = (stored[formatKey] || (siteKey === 'ranobelib' ? 'epub' : 'cbz')).toUpperCase();
+    format.textContent = (stored[formatKey] || defaultFormatFor(siteType)).toUpperCase();
   }).catch(() => {});
+  refresh();
+  // Формат выбирают в быстром окошке и в окне «Подготовка», акцент и тему - в настройках: подпись и цвет подхватывают сразу
+  const onChanged = (changes, area) => {
+    if (host.isConnected === false) { // SPA убрала кнопки
+      chrome.storage.onChanged.removeListener(onChanged);
+      return;
+    }
+    if (area === 'local' && ['accentColor', 'theme', formatKey].some(key => key in changes)) refresh();
+  };
+  chrome.storage.onChanged.addListener(onChanged);
   return host;
 }
 

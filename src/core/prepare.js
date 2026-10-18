@@ -880,37 +880,15 @@ function loadSavedCheckboxes() {
 
 function populateFormatSelector(siteType) {
   const formatSelect = document.getElementById('format-select');
-  
+
   if (!formatSelect) return;
-  
-  // Опции по типу сайта
-  const formatOptions = {
-    'ranobe': [
-      { value: 'epub', label: 'EPUB' },
-      { value: 'fb2', label: 'FB2' },
-      { value: 'pdf', label: 'PDF' },
-      { value: 'txt', label: 'TXT' },
-      { value: 'html', label: 'HTML' }
-    ],
-    'manga': [
-      { value: 'cbz', label: 'CBZ' },
-      { value: 'zip', label: 'ZIP' },
-      { value: 'pdf', label: 'PDF' },
-      { value: 'epub', label: 'EPUB' },
-      { value: 'html', label: 'HTML' }
-    ],
-    'anime': [
-      { value: 'mkv', label: 'MKV' }
-    ]
-  };
-  
-  const options = formatOptions[siteType] || formatOptions['ranobe'];
-  const defaultFormat = siteType === 'manga' ? 'cbz' : (siteType === 'anime' ? 'mkv' : 'epub');
-  
+
+  const defaultFormat = defaultFormatFor(siteType);
+
   // Очищаем dropdown
   formatSelect.innerHTML = '';
-  
-  options.forEach(opt => {
+
+  formatOptionsFor(siteType).forEach(opt => {
     const option = document.createElement('option');
     option.value = opt.value;
     option.textContent = opt.label;
@@ -919,23 +897,6 @@ function populateFormatSelector(siteType) {
   formatSelect.value = defaultFormat;
 
   return defaultFormat;
-}
-
-// Ставит снимок в очередь движка: ensureEngine -> порт -> enqueue; движок отвечает enqueueResult
-async function enqueueSnapshot(snapshot) {
-  await chrome.runtime.sendMessage({ action: 'ensureEngine' });
-  const port = chrome.runtime.connect({ name: 'libsaver-engine' });
-  try {
-    return await new Promise((resolve, reject) => {
-      port.onMessage.addListener(message => {
-        if (message.type === 'enqueueResult') resolve(message);
-      });
-      port.onDisconnect.addListener(() => reject(new Error('Движок загрузки недоступен')));
-      port.postMessage({ cmd: 'enqueue', snapshot });
-    });
-  } finally {
-    port.disconnect();
-  }
 }
 
 // Раздел «Загрузки» (downloads.html) вместо панели логов: iframe создаётся при первом «Скачать»
@@ -970,7 +931,7 @@ function setupEventListeners() {
     const serverSelect = document.getElementById('server-select');
     const textOnlyToggle = document.getElementById('text-only-toggle');
     const textOnlyCheckbox = document.getElementById('text-only-checkbox');
-    const formatKey = siteType === 'manga' ? 'selectedFormat_manga' : 'selectedFormat_ranobe';
+    const formatKey = formatKeyFor(siteType);
 
     function updateTextOnlyVisibility() {
       textOnlyToggle.style.display = formatSelect.value === 'txt' ? 'block' : 'none';

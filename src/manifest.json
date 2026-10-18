@@ -40,7 +40,7 @@
     },
     {
       "matches": ["https://ranobelib.me/*", "https://*.ranobelib.me/*", "https://novelslib.me/*", "https://*.novelslib.me/*", "https://mangalib.me/*", "https://*.mangalib.me/*", "https://mangalib.org/*", "https://*.mangalib.org/*", "https://hentailib.me/*", "https://*.hentailib.me/*", "https://hentailib.org/*", "https://*.hentailib.org/*", "https://shlib.life/*", "https://*.shlib.life/*"],
-      "js": ["core/theme.js", "utils/page-call.js", "content/site-ui.js"],
+      "js": ["core/theme.js", "utils/page-call.js", "utils/formats.js", "content/site-ui.js"],
       "run_at": "document_idle"
     }
   ],

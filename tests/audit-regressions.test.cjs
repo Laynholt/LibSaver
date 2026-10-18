@@ -396,7 +396,7 @@ test('format selector exposes selectable native options for each site', () => {
     getElementById: id => id === 'format-select' ? select : null,
     createElement: tag => ({ tagName: tag.toUpperCase(), value: '', textContent: '', classList: { add() {} } })
   } });
-  vm.runInContext(functionSource('src/core/prepare.js', 'populateFormatSelector'), context);
+  vm.runInContext(source('src/utils/formats.js') + functionSource('src/core/prepare.js', 'populateFormatSelector'), context);
   assert.equal(context.populateFormatSelector('manga'), 'cbz');
   assert.ok(select.options.some(option => option.tagName === 'OPTION' && option.value === 'pdf'));
   assert.equal(select.value, 'cbz');

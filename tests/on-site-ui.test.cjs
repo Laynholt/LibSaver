@@ -732,7 +732,8 @@ function prepareClient({ reply, disconnectInstead = false }) {
     showToast: (message, type) => toasts.push([message, type]),
     chrome: { runtime: { sendMessage: async message => { calls.push(['sendMessage', clone(message)]); return true; }, connect: options => { calls.push(['connect', options.name]); return port; } } }
   });
-  for (const name of ['enqueueSnapshot', 'showDownloadsView', 'enqueueAndShow']) vm.runInContext(functionSource('src/core/prepare.js', name), ctx);
+  vm.runInContext(source('src/utils/engine-client.js'), ctx);
+  for (const name of ['showDownloadsView', 'enqueueAndShow']) vm.runInContext(functionSource('src/core/prepare.js', name), ctx);
   return { ctx, calls, toasts, port, element };
 }
 
@@ -909,7 +910,7 @@ test('getTitleStore takes currentSlug from ?slug= on extension pages only, else 
 
 test('chapter-range.js, title-loader.js and the pages loading them are not redefined by other scripts on the pages loading them', () => {
   const names = file => [...source(file).matchAll(/^(?:async\s+)?function\s+(\w+)|^(?:const|let|var)\s+(\w+)/gm)].map(m => m[1] || m[2]);
-  const pages = { 'src/html/popup.html': 'src/core/popup.js', 'src/html/chapters.html': 'src/editors/chapters.js', 'src/html/prepare.html': 'src/core/prepare.js' };
+  const pages = { 'src/html/popup.html': 'src/core/popup.js', 'src/html/chapters.html': 'src/editors/chapters.js', 'src/html/prepare.html': 'src/core/prepare.js', 'src/html/quick.html': 'src/core/quick.js' };
   for (const [html, script] of Object.entries(pages)) {
     const scripts = [...source(html).matchAll(/<script src="\.\.\/([^"]+)"/g)].map(m => 'src/' + m[1]);
     assert.ok(scripts.includes('src/core/chapter-range.js') && scripts.indexOf('src/core/chapter-range.js') < scripts.indexOf(script), html);
@@ -1061,15 +1062,19 @@ function fakeTitleDoc(siteKey, { columns = '260px' } = {}) {
   return doc;
 }
 
-function siteUiContext() {
+function siteUiContext({ stored = {} } = {}) {
+  const listeners = new Set();
   const ctx = {
-    console, URL, URLSearchParams,
-    chrome: { runtime: { getURL: file => 'chrome-extension://id/' + file, sendMessage: async () => ({}) }, storage: { local: { get: async () => ({}) } } }
+    console, URL, URLSearchParams, stored, listeners,
+    chrome: {
+      runtime: { getURL: file => 'chrome-extension://id/' + file, sendMessage: async () => ({}) },
+      storage: { local: { get: async () => structuredClone(stored) }, onChanged: { addListener: fn => listeners.add(fn), removeListener: fn => listeners.delete(fn) } }
+    }
   };
   ctx.window = ctx;
   vm.createContext(ctx);
-  // the content script list from manifest.json: theme.js (ACCENT_COLORS), page-call.js (siteKeyOf), site-ui.js
-  vm.runInContext(['src/core/theme.js', 'src/utils/page-call.js', 'src/content/site-ui.js'].map(source).join('\n'), ctx);
+  // the content script list from manifest.json: theme.js (ACCENT_COLORS), page-call.js (siteKeyOf), formats.js (format key), site-ui.js
+  vm.runInContext(['src/core/theme.js', 'src/utils/page-call.js', 'src/utils/formats.js', 'src/content/site-ui.js'].map(source).join('\n'), ctx);
   return ctx;
 }
 
@@ -1149,7 +1154,7 @@ test('site-ui content script is registered for the four sites, with its styleshe
   const manifest = JSON.parse(source('src/manifest.json'));
   const script = manifest.content_scripts[1];
   const notAnime = match => !/anilib|animelib/.test(match);
-  assert.deepEqual(script.js, ['core/theme.js', 'utils/page-call.js', 'content/site-ui.js']);
+  assert.deepEqual(script.js, ['core/theme.js', 'utils/page-call.js', 'utils/formats.js', 'content/site-ui.js']);
   assert.deepEqual(script.matches, manifest.content_scripts[0].matches.filter(notAnime));
   for (const resource of ['css/site-ui.css', 'html/workspace.html', 'html/panel.html', 'html/quick.html', 'libs/fontawesome/webfonts/fa-solid-900.woff2']) {
     assert.ok(manifest.web_accessible_resources[0].resources.includes(resource), resource);
@@ -1162,4 +1167,190 @@ test('whoami answers with the sender tab id and url', () => {
   let answer;
   ctx.handleEngineMessage({ action: 'whoami' }, { tab: { id: 5, url: 'https://mangalib.me/ru/manga/x' } }, response => { answer = JSON.parse(JSON.stringify(response)); });
   assert.deepEqual(answer, { tabId: 5, url: 'https://mangalib.me/ru/manga/x' });
+});
+
+// ---- Task 8: quick «Скачать» popover ----
+
+test('format options are one list per site type, shared by the preparation window, the quick popover and the buttons', () => {
+  const ctx = vm.createContext({ console });
+  vm.runInContext(['src/utils/formats.js', 'src/core/title-loader.js', 'src/core/quick.js'].map(source).join('\n'), ctx);
+  const values = siteKey => Array.from(ctx.quickFormatOptions(siteKey), option => option.value);
+  assert.ok(!values('ranobelib').includes('cbz'));
+  assert.deepEqual(values('ranobelib'), ['epub', 'fb2', 'pdf', 'txt', 'html']);
+  for (const siteKey of ['mangalib', 'hentailib', 'shlib']) {
+    assert.ok(!values(siteKey).includes('fb2') && !values(siteKey).includes('txt'), siteKey);
+    assert.deepEqual(values(siteKey), ['cbz', 'zip', 'pdf', 'epub', 'html']);
+  }
+  assert.deepEqual([ctx.defaultFormatFor('manga'), ctx.defaultFormatFor('ranobe'), ctx.defaultFormatFor('anime')], ['cbz', 'epub', 'mkv']);
+  assert.deepEqual([ctx.formatKeyFor('manga'), ctx.formatKeyFor('ranobe')], ['selectedFormat_manga', 'selectedFormat_ranobe']);
+  assert.doesNotMatch(source('src/core/prepare.js'), /value: 'cbz'/);
+  assert.doesNotMatch(source('src/core/quick.js'), /value: 'cbz'/);
+});
+
+function quickContext(data = {}, { enqueueResult = { ok: true } } = {}) {
+  const calls = { snapshot: [], enqueue: [] };
+  const ctx = vm.createContext({
+    URL, console,
+    chrome: { storage: { local: {
+      get: async keys => structuredClone(Object.fromEntries([].concat(keys).filter(key => key in data).map(key => [key, data[key]]))),
+      set: async values => Object.assign(data, structuredClone(values)),
+      remove: async keys => { for (const key of [].concat(keys)) delete data[key]; }
+    } } },
+    buildDownloadSnapshot: async args => { calls.snapshot.push(structuredClone(args)); return { id: 'snap' }; },
+    enqueueSnapshot: async snapshot => { calls.enqueue.push(snapshot); return enqueueResult; }
+  });
+  vm.runInContext(['src/utils/title-store.js', 'src/utils/page-call.js', 'src/core/chapter-range.js', 'src/utils/formats.js', 'src/core/title-loader.js', 'src/core/quick.js'].map(source).join('\n'), ctx);
+  ctx.calls = calls;
+  return ctx;
+}
+
+test('the button label counts chapters in Russian and the range keeps «до» not below «от»', () => {
+  const ctx = quickContext();
+  const labels = [1, 2, 4, 5, 11, 12, 21, 22, 25, 111].map(ctx.downloadLabel);
+  assert.deepEqual(labels, ['Скачать 1 главу', 'Скачать 2 главы', 'Скачать 4 главы', 'Скачать 5 глав', 'Скачать 11 глав', 'Скачать 12 глав', 'Скачать 21 главу', 'Скачать 22 главы', 'Скачать 25 глав', 'Скачать 111 глав']);
+  assert.deepEqual(Array.from(ctx.syncRange(5, 3, 'from')), [5, 5]);
+  assert.deepEqual(Array.from(ctx.syncRange(5, 3, 'to')), [3, 3]);
+  assert.deepEqual(Array.from(ctx.syncRange(2, 7, 'from')), [2, 7]);
+  assert.deepEqual(Array.from(ctx.syncRange(2, 7, 'to')), [2, 7]);
+});
+
+test('quick settings keep the preparation window defaults for the image server and text-only', () => {
+  const ctx = quickContext();
+  assert.deepEqual(JSON.parse(JSON.stringify(ctx.quickSettings({}))), { imageServer: 'compressed', textOnly: false });
+  assert.deepEqual(JSON.parse(JSON.stringify(ctx.quickSettings({ imageServer: 'normal', textOnly: true }))), { imageServer: 'normal', textOnly: true });
+  assert.equal(ctx.quickSettings({ imageServer: 'bogus', textOnly: 'yes' }).imageServer, 'compressed');
+  assert.equal(ctx.quickSettings({ textOnly: 'yes' }).textOnly, false);
+});
+
+test('the quick window writes siteType and sourceUrl before loading, like popup, and forwards force', async () => {
+  const data = {};
+  const ctx = quickContext(data);
+  const seen = [];
+  ctx.loadTitleData = async args => { seen.push([data.siteType, data.sourceUrl, args.tabId, args.url, args.force]); return { slug: 's' }; };
+  const url = 'https://ranobelib.me/ru/book/7--y';
+  assert.deepEqual(await ctx.loadQuickTitle({ tabId: 3, url }), { slug: 's' });
+  await ctx.loadQuickTitle({ tabId: 3, url, force: true });
+  assert.deepEqual(seen, [['ranobe', url, 3, url, false], ['ranobe', url, 3, url, true]]);
+});
+
+test('«Скачать N глав» snapshots the chosen range, fixes the saved range for the editors and enqueues once', async () => {
+  const chapter = id => ({ id, volume: '1', number: String(id), name: '' });
+  const data = {
+    'titleData:7--y': { chapters: [1, 2, 3, 4].map(chapter), filteredChapters: [chapter(1)], metadata: {} },
+    imageServer: 'normal', textOnly: true, speedMode: true
+  };
+  const ctx = quickContext(data);
+  const info = { slug: '7--y', chapters: [1, 2, 3, 4].map(chapter), allChapters: [1, 2, 3, 4].map(chapter) };
+  const url = 'https://ranobelib.me/ru/book/7--y';
+  const result = await ctx.startQuickDownload({ info, fromIdx: 2, toIdx: 1, tabId: 9, url, format: 'txt' });
+  assert.equal(result.ok, true);
+  assert.deepEqual(ctx.calls.snapshot, [{ slug: '7--y', tabId: 9, sourceUrl: url, selectedChapterIds: [2, 3], format: 'txt', imageServer: 'normal', textOnly: true }]);
+  assert.ok(!('speedMode' in ctx.calls.snapshot[0]));
+  assert.deepEqual(ctx.calls.enqueue, [{ id: 'snap' }]);
+  assert.deepEqual(data['titleData:7--y'].filteredChapters.map(ch => ch.id), [2, 3]);
+});
+
+test('an already queued title is reported in words, other rejections are errors', async () => {
+  const info = { slug: 's', chapters: [{ id: 1 }], allChapters: [{ id: 1 }] };
+  const args = { info, fromIdx: 0, toIdx: 0, tabId: 1, url: 'https://mangalib.me/ru/manga/s', format: 'cbz' };
+  const queued = await quickContext({}, { enqueueResult: { ok: false, reason: 'already-queued' } }).startQuickDownload(args);
+  assert.deepEqual(JSON.parse(JSON.stringify(queued)), { ok: false, message: 'Этот тайтл уже в очереди' });
+  await assert.rejects(quickContext({}, { enqueueResult: { ok: false, reason: 'queue-full' } }).startQuickDownload(args), /queue-full/);
+});
+
+test('load errors have the texts popup shows', () => {
+  const ctx = quickContext();
+  const text = code => ctx.loadErrorText(Object.assign(new Error('x'), { code }));
+  assert.equal(text('load-failed'), 'Не удалось получить данные из API.');
+  assert.equal(text('not-title-page'), 'Перейдите на главную страницу нужного тайтла.');
+  assert.equal(text('unsupported-site'), 'Перейдите на один из поддерживаемых сайтов.');
+  assert.equal(ctx.loadErrorText(new Error('boom')), 'boom');
+});
+
+test('quick.html is a self-contained extension page that loads what quick.js needs, in order', () => {
+  const html = source('src/html/quick.html');
+  const scripts = [...html.matchAll(/<script src="\.\.\/([^"]+)"/g)].map(m => m[1]);
+  const order = ['core/theme-init.js', 'utils/title-store.js', 'core/theme.js', 'utils/header.js', 'core/page-calls.js', 'utils/page-call.js', 'core/api.js', 'core/chapter-range.js', 'utils/formats.js', 'core/title-loader.js', 'core/snapshot.js', 'utils/engine-client.js', 'core/quick.js'];
+  assert.deepEqual(scripts.filter(script => order.includes(script)), order);
+  assert.doesNotMatch(html, /<script(?![^>]*src=)/); // no inline scripts (extension CSP)
+  const prepareScripts = [...source('src/html/prepare.html').matchAll(/<script src="\.\.\/([^"]+)"/g)].map(m => m[1]);
+  for (const shared of ['utils/formats.js', 'utils/engine-client.js']) {
+    assert.ok(prepareScripts.includes(shared) && prepareScripts.indexOf(shared) < prepareScripts.indexOf('core/prepare.js'), shared);
+  }
+  assert.doesNotMatch(source('src/core/prepare.js'), /function enqueueSnapshot/);
+  assert.doesNotMatch(source('src/core/quick.js'), /innerHTML/); // chapter labels and errors go in as text
+});
+
+test('popover placement: width of the buttons row (min 280), below when it fits, above when not, capped on the roomier side', () => {
+  const ctx = siteUiContext();
+  const place = (rect, height, vw = 1000, vh = 800) => JSON.parse(JSON.stringify(ctx.popoverPlacement(rect, height, { width: vw, height: vh })));
+  assert.deepEqual(place({ left: 100, top: 200, bottom: 232, width: 260 }, 150), { left: 100, top: 238, width: 280, height: 150 });
+  assert.deepEqual(place({ left: 100, top: 200, bottom: 232, width: 400 }, 150), { left: 100, top: 238, width: 400, height: 150 });
+  assert.deepEqual(place({ left: 100, top: 600, bottom: 632, width: 300 }, 250), { left: 100, top: 344, width: 300, height: 250 });
+  assert.deepEqual(place({ left: 100, top: 300, bottom: 332, width: 300 }, 500, 1000, 400), { left: 100, top: 8, width: 300, height: 286 });
+  assert.equal(place({ left: 900, top: 100, bottom: 132, width: 400 }, 100).left, 592);
+  assert.equal(place({ left: 0, top: 100, bottom: 132, width: 260 }, 100, 250).width, 234);
+});
+
+test('the settings URL can carry a section for the window to open on', () => {
+  const ctx = siteUiContext();
+  const url = new URL(ctx.buildPanelUrl('https://mangalib.me/ru/manga/123--title', 42, 'https://mangalib.me', 'chapters'));
+  assert.equal(url.searchParams.get('section'), 'chapters');
+  assert.equal(new URL(ctx.buildPanelUrl('https://mangalib.me/ru/manga/123--title', 42, 'https://mangalib.me')).searchParams.has('section'), false);
+});
+
+test('popover frame messages: «Подробнее…» closes the popover and opens the settings window on that section; resize takes numbers only', () => {
+  const ctx = siteUiContext();
+  const log = [];
+  ctx.closePopover = () => log.push('close');
+  ctx.openSettings = section => log.push(['settings', section]);
+  ctx.resizePopover = height => log.push(['resize', height]);
+  const handlers = vm.runInContext('popoverMessageHandlers', ctx); // const: not a property of the context
+  handlers.openPanel({ section: 'chapters' });
+  handlers.close();
+  handlers.resize({ height: 180 });
+  handlers.resize({ height: 'tall' });
+  handlers.resize({});
+  assert.deepEqual(log, ['close', ['settings', 'chapters'], 'close', ['resize', 180]]);
+});
+
+test('the «Скачать» label and accent follow the format and accent saved in storage', async () => {
+  const stored = { selectedFormat_manga: 'pdf', accentColor: 'green', theme: 'dark' };
+  const ctx = siteUiContext({ stored });
+  const doc = fakeTitleDoc('mangalib');
+  const created = [];
+  const createElement = doc.createElement;
+  doc.createElement = tag => { const el = createElement(tag); created.push(el); return el; };
+  ctx.ensureButtons(doc, 'https://mangalib.me/ru/manga/x');
+  const host = doc.grid.children[1];
+  const label = created.find(el => el.tag === 'small');
+  const settle = () => new Promise(resolve => setImmediate(resolve));
+  await settle();
+  assert.equal(label.textContent, 'PDF');
+  assert.equal(host.style['--ls-accent'], '#4caf50');
+  assert.equal(ctx.listeners.size, 1);
+
+  const change = async (key, value, area = 'local') => {
+    stored[key] = value;
+    for (const listener of [...ctx.listeners]) listener({ [key]: { newValue: value } }, area);
+    await settle();
+  };
+  await change('selectedFormat_manga', 'zip');
+  assert.equal(label.textContent, 'ZIP');
+  await change('accentColor', 'pink');
+  assert.equal(host.style['--ls-accent'], '#e91e63');
+  await change('selectedFormat_ranobe', 'fb2'); // another site's format: nothing to redraw
+  assert.equal(label.textContent, 'ZIP');
+  stored.selectedFormat_manga = 'cbz';
+  await change('selectedFormat_manga', 'cbz', 'sync'); // not the local area
+  assert.equal(label.textContent, 'ZIP');
+});
+
+test('a button row that left the page stops listening to storage', () => {
+  const ctx = siteUiContext({ stored: {} });
+  const doc = fakeTitleDoc('ranobelib');
+  ctx.ensureButtons(doc, 'https://ranobelib.me/ru/book/y');
+  doc.grid.children[1].isConnected = false;
+  for (const listener of [...ctx.listeners]) listener({ theme: { newValue: 'light' } }, 'local');
+  assert.equal(ctx.listeners.size, 0);
 });
