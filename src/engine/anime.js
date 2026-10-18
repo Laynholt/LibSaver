@@ -33,7 +33,7 @@ function pickAnimePlayer(players, teamId) {
   return kodik.find(player => String(player.team?.id) === String(teamId)) || kodik[0] || null;
 }
 
-// Расширению открыты все сайты (<all_urls>), а адрес плеера приходит из API AnimeLIB: запросы - только по https к хостам Kodik
+// Расширению открыты все сайты (<all_urls>), а адрес плеера приходит из API AnimeLIB: запросы - только по https к хостам Kodik, без cookie
 const KODIK_HOST = /(^|\.)kodikplayer\.com$/;
 function kodikUrl(href, base) {
   const url = new URL(href, base);
@@ -45,6 +45,11 @@ function kodikUrl(href, base) {
 function kodikMp4Url(link) {
   const url = new URL(link.replace(/:hls:manifest\.m3u8$/, ''), 'https://kodikplayer.com/');
   if (url.protocol !== 'https:') throw new Error('Kodik: ссылка на видео не https');
+  // Видео качает само расширение, а CDN у Kodik меняются (solodcdn и др.): вместо списка хостов - только имена, не IP и не локальные.
+  // URL приводит любую запись IP к виду 1.2.3.4 или [::1]. shortcut: имя, которое резолвится в адрес своей сети, не ловится
+  if (url.hostname.startsWith('[') || /\.\d+$|^\d+$/.test(url.hostname) || /(^|\.)(localhost|local|internal|lan|home|arpa)$|^[^.]+$/i.test(url.hostname)) {
+    throw new Error(`Kodik: ссылка на видео ведёт в локальную сеть (${url.host})`);
+  }
   return url.href;
 }
 
@@ -63,7 +68,7 @@ async function kodikEndpoint(html, page) {
   if (!kodikEndpoints.has(scriptUrl)) {
     let path = KODIK_ENDPOINT_FALLBACK;
     try {
-      const encoded = (await (await fetch(scriptUrl)).text()).match(/type:\s*"POST",\s*url:\s*atob\("([A-Za-z0-9+/=]+)"\)/)?.[1];
+      const encoded = (await (await fetch(scriptUrl, { credentials: 'omit' })).text()).match(/type:\s*"POST",\s*url:\s*atob\("([A-Za-z0-9+/=]+)"\)/)?.[1];
       if (encoded && /^\/[\w-]/.test(atob(encoded))) path = atob(encoded);
     } catch (e) { /* остаётся известный путь */ }
     kodikEndpoints.set(scriptUrl, path);
@@ -74,7 +79,7 @@ async function kodikEndpoint(html, page) {
 // Плеер Kodik (src без схемы: //kodikplayer.com/seria/...) -> { url, quality }
 async function resolveKodik(src, qualityLimit) {
   const page = kodikUrl(src, 'https://kodikplayer.com/');
-  const html = await (await fetch(page)).text();
+  const html = await (await fetch(page, { credentials: 'omit' })).text();
   const params = html.match(/urlParams\s*=\s*'([^']+)'/)?.[1];
   const info = key => html.match(new RegExp(`vInfo\\.${key}\\s*=\\s*'([^']*)'`))?.[1];
   if (!params || !info('hash') || !info('id')) throw new Error('Kodik: не удалось разобрать страницу плеера');
@@ -85,7 +90,7 @@ async function resolveKodik(src, qualityLimit) {
   });
   const endpoint = new URL(await kodikEndpoint(html, page), page);
   if (endpoint.origin !== new URL(page).origin) throw new Error('Kodik: запрос ссылок ушёл бы на другой сайт');
-  const response = await fetch(endpoint, { method: 'POST', body });
+  const response = await fetch(endpoint, { method: 'POST', body, credentials: 'omit' });
   if (!response.ok) throw new Error(`Kodik: HTTP ${response.status}`);
   const { links } = await response.json();
   const quality = pickKodikQuality(links, qualityLimit);
@@ -102,7 +107,7 @@ async function fetchVideo(url, onPart, stop) {
   const get = async (from, to) => {
     for (let attempt = 1; ; attempt++) {
       try {
-        const response = await fetch(url, { headers: { Range: `bytes=${from}-${to}` }, signal: abort.signal });
+        const response = await fetch(url, { headers: { Range: `bytes=${from}-${to}` }, signal: abort.signal, credentials: 'omit' });
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
         return response;
       } catch (e) {

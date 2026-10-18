@@ -111,7 +111,7 @@ test('fetchVideo: the size from the first byte, then 4 MB parts in parallel, ret
   };
   const ctx = animeContext({ fetch });
   const parts = [];
-  const blob = await ctx.fetchVideo('https://cdn/x.mp4', part => parts.push(part), () => {});
+  const blob = await ctx.fetchVideo('https://cdn.example/x.mp4', part => parts.push(part), () => {});
   assert.equal(blob.size, file.length);
   assert.equal(Buffer.from(await blob.slice(-3).arrayBuffer()).toString(), 'END');
   assert.equal(maxInFlight, 3);
@@ -119,9 +119,9 @@ test('fetchVideo: the size from the first byte, then 4 MB parts in parallel, ret
   assert.equal(parts.at(-1), 1);
 
   const whole = animeContext({ fetch: async () => ({ ok: true, status: 200, headers: { get: () => null }, blob: async () => new Blob(['all']) }) });
-  assert.equal(await (await whole.fetchVideo('https://cdn/x.mp4', () => {}, () => {})).text(), 'all');
+  assert.equal(await (await whole.fetchVideo('https://cdn.example/x.mp4', () => {}, () => {})).text(), 'all');
   const broken = animeContext({ fetch: async () => ({ ok: false, status: 404 }) });
-  await assert.rejects(broken.fetchVideo('https://cdn/x.mp4', () => {}, () => {}), /HTTP 404/);
+  await assert.rejects(broken.fetchVideo('https://cdn.example/x.mp4', () => {}, () => {}), /HTTP 404/);
 });
 
 test('downloadAnime resolves each selected episode through Kodik, tags the MP4 and saves it, skipping episodes without Kodik', async () => {
@@ -134,9 +134,9 @@ test('downloadAnime resolves each selected episode through Kodik, tags the MP4 a
     if (url.endsWith('.js')) return { ok: true, text: async () => 'x({type:"POST",url:atob("L2Z0b3Iy"),cache:!1})' }; // /ftor2
     if (options?.method === 'POST') {
       posts.push([url, Object.fromEntries(options.body)]);
-      return { ok: true, json: async () => ({ links: { 360: [{ src: encodeKodik('//cdn/360.mp4:hls:manifest.m3u8') }], 720: [{ src: encodeKodik('//cdn/720.mp4:hls:manifest.m3u8') }] } }) };
+      return { ok: true, json: async () => ({ links: { 360: [{ src: encodeKodik('//cdn.example/360.mp4:hls:manifest.m3u8') }], 720: [{ src: encodeKodik('//cdn.example/720.mp4:hls:manifest.m3u8') }] } }) };
     }
-    if (url.startsWith('https://cdn/')) return { ok: true, status: 200, headers: { get: () => null }, blob: async () => mp4 };
+    if (url.startsWith('https://cdn.example/')) return { ok: true, status: 200, headers: { get: () => null }, blob: async () => mp4 };
     return { ok: true, text: async () => html };
   };
   const players = { 11: [{ player: 'Kodik', src: '//kodikplayer.com/seria/42/h1/720p', team: { id: 7, name: 'SHIZA' } }], 12: [] };
@@ -178,7 +178,7 @@ test('only https Kodik hosts are requested: a foreign player, a //host endpoint 
   const fetch = async (url, options) => {
     requested.push([String(url), options?.method || 'GET']);
     if (String(url).endsWith('.js')) return { ok: true, text: async () => 'x({type:"POST",url:atob("' + btoa('//evil.test/steal') + '")})' };
-    if (options?.method === 'POST') return { ok: true, json: async () => ({ links: { 720: [{ src: encodeKodik('//cdn/720.mp4') }] } }) };
+    if (options?.method === 'POST') return { ok: true, json: async () => ({ links: { 720: [{ src: encodeKodik('//cdn.example/720.mp4') }] } }) };
     return { ok: true, text: async () => `<script src="/assets/js/app.player_single.x.js"></script> var urlParams = '{"d":"a","ref":""}'; vInfo.hash = 'h'; vInfo.id = '1';` };
   };
   const ctx = animeContext({ fetch });
@@ -187,11 +187,15 @@ test('only https Kodik hosts are requested: a foreign player, a //host endpoint 
   }
   assert.deepEqual(requested, []);
   const video = await ctx.resolveKodik('//kodikplayer.com/seria/1/h/720p', 'max');
-  assert.equal(video.url, 'https://cdn/720.mp4');
+  assert.equal(video.url, 'https://cdn.example/720.mp4');
   assert.deepEqual(requested.map(([url, method]) => `${method} ${url}`), [
     'GET https://kodikplayer.com/seria/1/h/720p', 'GET https://kodikplayer.com/assets/js/app.player_single.x.js', 'POST https://kodikplayer.com/ftor'
   ]);
-  assert.throws(() => ctx.kodikMp4Url('http://cdn/720.mp4'), /не https/);
+  assert.throws(() => ctx.kodikMp4Url('http://cdn.example/720.mp4'), /не https/);
+  for (const link of ['//localhost/x.mp4', '//192.168.1.1/x.mp4', '//2130706433/x.mp4', '//[::1]/x.mp4', '//router.lan/x.mp4', '//nas/x.mp4', '//8.8.8.8/x.mp4']) {
+    assert.throws(() => ctx.kodikMp4Url(link), /локальную сеть/, link);
+  }
+  assert.equal(ctx.kodikMp4Url('//cloud.solodcdn.com/u/720.mp4:hls:manifest.m3u8'), 'https://cloud.solodcdn.com/u/720.mp4');
 });
 
 test('downloadAnime stops on cancel and fails when nothing was saved', async () => {
