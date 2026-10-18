@@ -93,6 +93,7 @@ function startPanel() {
   // Вкладка, адрес и origin страницы - от фона (whoami), не из параметров адреса
   let embedder = null;
   let single = false; // не страница тайтла: нет тайтла для загрузки, доступны только «Загрузки»
+  let early = false; // открыты на «Загрузках» (section=downloads): они видны сразу, тайтл догружается за ними
   let info = null;
   let slug = '';
   let loaded = false;
@@ -106,6 +107,7 @@ function startPanel() {
   let active = 0; // тайтлов в работе в очереди
   let headerTitle = 'LibSaver';
   let refreshTicket = 0;
+  let queuePort = null;
   const frames = new Map();
 
   const post = message => {
@@ -120,7 +122,8 @@ function startPanel() {
     footEl.classList.add('hidden');
     show('error');
   };
-  const sections = () => single ? PANEL_SECTIONS(null).filter(section => section.id === 'downloads') : PANEL_SECTIONS(format);
+  const solo = () => single || early; // только «Загрузки», без меню и низа окна
+  const sections = () => solo() ? PANEL_SECTIONS(null).filter(section => section.id === 'downloads') : PANEL_SECTIONS(format);
 
   // Справа от пункта: на широком экране число, на телефоне подпись (для «Загрузок» - тоже число)
   const noteFor = section => {
@@ -192,17 +195,17 @@ function startPanel() {
     if (!loaded) return;
     phone = window.innerWidth < PANEL_PHONE_WIDTH;
     const list = sections();
-    if (!list.some(section => section.id === current)) current = single ? 'downloads' : DEFAULT_SECTION; // формат сменился, раздела больше нет
-    const inSection = single || !phone || view === 'section';
+    if (!list.some(section => section.id === current)) current = solo() ? 'downloads' : DEFAULT_SECTION; // формат сменился, раздела больше нет
+    const inSection = solo() || !phone || view === 'section';
     const body = document.body;
     body.classList.toggle('phone', phone);
     body.classList.toggle('in-section', inSection);
-    body.classList.toggle('single', single);
+    body.classList.toggle('single', solo());
     const section = list.find(candidate => candidate.id === current);
-    const overList = phone && inSection && !single;
+    const overList = phone && inSection && !solo();
     backButton.classList.toggle('hidden', !overList);
     titleEl.textContent = overList ? section.title : headerTitle;
-    footEl.classList.toggle('hidden', single);
+    footEl.classList.toggle('hidden', solo());
     if (inSection) mountSection(section);
     renderMenu();
   }
@@ -239,6 +242,7 @@ function startPanel() {
     try {
       await chrome.runtime.sendMessage({ action: 'ensureEngine' });
       const port = chrome.runtime.connect({ name: 'libsaver-engine' });
+      queuePort = port;
       const setActive = number => {
         active = number;
         renderMenu();
@@ -246,13 +250,16 @@ function startPanel() {
       port.onMessage.addListener(message => {
         if (message?.type === 'state') setActive((message.state?.items || []).filter(item => ACTIVE_STATUSES.includes(item.status)).length);
       });
-      port.onDisconnect.addListener(() => setActive(0));
+      port.onDisconnect.addListener(() => {
+        queuePort = null;
+        setActive(0);
+      });
     } catch (e) { /* движок недоступен: счётчика не будет */ }
   }
 
   async function load(force) {
     if (!embedder || single) return; // встроившего нас не опознали (whoami) или это не тайтл: ни storage, ни загрузки
-    show('loading');
+    if (!early) show('loading');
     try {
       info = await loadQuickTitle({ tabId: embedder.tabId, url: embedder.url, force });
       slug = info.slug;
@@ -265,9 +272,10 @@ function startPanel() {
       await refresh();
     } catch (error) {
       console.error('[LibSaver] panel', error);
-      showError(loadErrorText(error));
+      if (!early) showError(loadErrorText(error)); // иначе «Загрузки» уже открыты и работают без тайтла
       return;
     }
+    early = false;
     const wanted = params.get('section');
     if (sections().some(section => section.id === wanted)) {
       current = wanted;
@@ -285,8 +293,11 @@ function startPanel() {
   formatSelect.addEventListener('change', () => {
     if (info) chrome.storage.local.set({ [formatKeyFor(info.siteType)]: formatSelect.value });
   });
+  // Как в «Загрузках» (R11): идущая загрузка ускоряется сразу командой движку, флаг в storage - для следующих
   speedBox.addEventListener('change', () => {
-    if (info) chrome.storage.local.set({ speedMode: speedBox.checked });
+    if (!info) return;
+    queuePort?.postMessage({ cmd: 'speedMode', on: speedBox.checked });
+    chrome.storage.local.set({ speedMode: speedBox.checked });
   });
   downloadButton.addEventListener('click', async () => {
     if (!embedder || single || !info || busy) return;
@@ -335,15 +346,15 @@ function startPanel() {
       return;
     }
     window.applySiteAccent(embedder.url);
-    if (single) {
+    early = !single && params.get('section') === 'downloads'; // плашка: «Загрузки» не ждут загрузки тайтла
+    if (solo()) {
       current = 'downloads';
       loaded = true;
       headerTitle = 'Загрузки';
       show('main');
       update();
-    } else {
-      load(false);
     }
+    if (!single) load(false);
   })();
 }
 

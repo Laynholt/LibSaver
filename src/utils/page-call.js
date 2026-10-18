@@ -144,7 +144,7 @@ async function findSiteTab(siteKey, preferredTabId) {
   if (preferredTabId != null) {
     try {
       const preferred = await chrome.tabs.get(preferredTabId);
-      if (siteKeyOf(preferred.url) === siteKey && isLoadedTab(preferred)) return preferredTabId;
+      if (siteKeyByHost(preferred.url) === siteKey && isLoadedTab(preferred)) return preferredTabId; // по хосту: siteKeyOf ищет подстроку во всём адресе
     } catch (e) { /* вкладки уже нет - ищем другую */ }
   }
   const tabs = await chrome.tabs.query({ url: SITE_TAB_PATTERNS[siteKey] || [] });

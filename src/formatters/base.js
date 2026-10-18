@@ -324,12 +324,9 @@ class BaseFormatter {
       // но в JPEG, лежит на сервере «Сжатия»/«Скачивание» (с него же качает NekoShelf)
       const fallbackUrl = !response?.success ? this.compressedImageUrl(url) : null;
       if (fallbackUrl) {
+        // Только строка лога (раздел «Загрузки»): форматтеры работают в движке, showToast там нет
         if (!this.compressedFallbackLogged && this.options.addLog) {
-          this.options.addLog(`Сервер оригиналов ${new URL(url).hostname} недоступен (${response?.error || 'нет ответа'}) — картинки берутся с ${new URL(fallbackUrl).hostname}`, true);
-        }
-        // Пользователь должен увидеть смену формата и без открытых логов (showToast есть в окне поверх сайта)
-        if (!this.compressedFallbackLogged && typeof showToast === 'function') {
-          showToast('Сервер оригиналов недоступен.\nКартинки скачиваются в JPEG того же размера');
+          this.options.addLog(`Сервер оригиналов ${new URL(url).hostname} недоступен (${response?.error || 'нет ответа'}) — картинки берутся с ${new URL(fallbackUrl).hostname} в JPEG того же размера`, true);
         }
         this.compressedFallbackLogged = true;
         response = await fetchImage(fallbackUrl);

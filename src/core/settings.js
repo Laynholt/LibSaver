@@ -1026,9 +1026,6 @@ function resetGroupSettings(group) {
     // Обновляем видимость полей после сброса
     updateTocFormatFields();
     updateCustomFormatExample();
-
-    // Отправляем сообщение для обновления полей в редакторе оглавления
-    chrome.runtime.sendMessage({ action: 'tocSettingsReset', settings: defaults });
   } else if (group === 'txt') {
     // Сброс настроек TXT
     for (const [key, value] of Object.entries(defaults)) {

@@ -40,6 +40,13 @@ test('findSiteTab keeps the preferred tab while it stays on the same site', asyn
   assert.equal(await ctx.findSiteTab('mangalib', 7), 7);
 });
 
+test('findSiteTab checks the preferred tab by its host, not by a substring of the address', async () => {
+  const tabs = [{ id: 7, url: 'https://example.com/?ref=mangalib.me' }, { id: 9, url: 'https://mangalib.org/ru/catalog' }];
+  const ctx = pageCallContext(tabs);
+  assert.equal(ctx.siteKeyOf(tabs[0].url), 'mangalib'); // the substring match would keep the foreign tab
+  assert.equal(await ctx.findSiteTab('mangalib', 7), 9);
+});
+
 test('findSiteTab falls back to another tab of the same site and never to another site', async () => {
   const tabs = [{ id: 7, url: 'https://hentailib.me/ru/manga/x' }, { id: 9, url: 'https://mangalib.org/ru/catalog' }];
   const ctx = pageCallContext(tabs);
@@ -513,6 +520,11 @@ test('scripts of the engine page use neither storage, tabs, downloads nor the wi
 });
 
 // --- Firefox: the engine runs as the background page, merged with background.js ---
+
+test('engine-side code promises no toast it cannot show, and no message goes to a listener that is gone (R33)', () => {
+  assert.doesNotMatch(source('src/formatters/base.js'), /showToast\(/); // the JPEG fallback is a log line in the engine
+  assert.doesNotMatch(source('src/core/settings.js'), /tocSettingsReset/);
+});
 
 test('firefoxManifest: background page instead of the service worker, gecko id, no Chrome-only permissions', () => {
   const { firefoxManifest } = require('../tools/build-firefox.cjs');
@@ -1370,7 +1382,7 @@ test('«Скачать N глав» snapshots the chosen range, fixes the saved 
   assert.ok(!('speedMode' in ctx.calls.snapshot[0]));
   assert.deepEqual(ctx.calls.enqueue, [{ id: 'snap' }]);
   assert.deepEqual(data['titleData:7--y'].filteredChapters.map(ch => ch.id), [2, 3]);
-  assert.deepEqual([data['titleData:7--y'].fromIdx, data['titleData:7--y'].toIdx], [1, 2]);
+  assert.ok(!('fromIdx' in data['titleData:7--y']) && !('toIdx' in data['titleData:7--y'])); // nothing reads the old popup bounds any more
 });
 
 test('an already queued title is reported in words, other rejections are errors', async () => {
@@ -2221,7 +2233,7 @@ function panelPage({ me, search = '?tab=7', ancestorOrigins, width = 1000, store
   const storageListeners = [];
   const windowHandlers = {};
   const documentHandlers = {};
-  const port = { onMessage: { addListener: fn => { port.receive = fn; } }, onDisconnect: { addListener: fn => { port.drop = fn; } } };
+  const port = { posted: [], postMessage: message => port.posted.push(jsonCopy(message)), onMessage: { addListener: fn => { port.receive = fn; } }, onDisconnect: { addListener: fn => { port.drop = fn; } } };
   const ctx = vm.createContext({
     URL, URLSearchParams, console: { error() {}, log() {} },
     location: { search, protocol: 'chrome-extension:', ancestorOrigins },
@@ -2314,6 +2326,33 @@ test('on a page of the site that is not a title only «Загрузки» opens:
   page.element('retry').fire('click');
   await page.settle();
   assert.deepEqual([page.calls.writes, page.calls.loads, page.calls.snapshots, page.calls.enqueues], [[], [], [], []]);
+});
+
+test('opened on «Загрузки» from a title page, the window shows them at once and loads the title behind them; a failed load keeps them (R33)', async () => {
+  const page = panelPage({ me: { tabId: 7, url: panelUrl }, search: '?tab=7&section=downloads' });
+  let finish;
+  const realLoad = page.ctx.loadTitleData;
+  page.ctx.loadTitleData = args => new Promise(resolve => { finish = () => resolve(realLoad(args)); });
+  await page.settle();
+  assert.deepEqual(page.frames(), [{ src: 'downloads.html', active: true }]); // before the title has loaded
+  assert.equal(page.element('main').has('hidden'), false);
+  assert.equal(page.element('loading').has('hidden'), true);
+  assert.equal(page.element('foot').has('hidden'), true);
+  assert.deepEqual(page.menu().map(entry => entry.title), ['Загрузки']);
+  finish();
+  await page.settle();
+  assert.equal(page.body.classes.has('single'), false);
+  assert.equal(page.element('foot').has('hidden'), false);
+  assert.deepEqual(page.menu().filter(entry => entry.on).map(entry => entry.title), ['Загрузки']);
+  assert.equal(page.menu().length, 9); // the other sections are there now
+  assert.equal(page.frames().filter(frame => frame.active).length, 1);
+
+  const failing = panelPage({ me: { tabId: 7, url: panelUrl }, search: '?tab=7&section=downloads' });
+  failing.ctx.loadTitleData = async () => { throw Object.assign(new Error('load-failed'), { code: 'load-failed' }); };
+  await failing.settle();
+  assert.equal(failing.element('error').has('hidden'), true);
+  assert.equal(failing.element('main').has('hidden'), false);
+  assert.deepEqual(failing.frames(), [{ src: 'downloads.html', active: true }]);
 });
 
 test('a vouched title page loads with the tab and URL from whoami, writes siteType and sourceUrl first, and opens on «Главы»', async () => {
@@ -2430,6 +2469,7 @@ test('counters follow storage; «Ускорить» is stored when toggled and f
   page.element('speed').fire('change');
   await page.settle();
   assert.equal(page.data.speedMode, true);
+  assert.deepEqual(page.port.posted, [{ cmd: 'speedMode', on: true }]); // the running download speeds up at once, as in «Загрузки» (R11)
   await page.ctx.chrome.storage.local.set({ speedMode: false }); // «Ускорить» switched off in «Загрузки»
   await page.settle();
   assert.equal(page.element('speed').checked, false);
