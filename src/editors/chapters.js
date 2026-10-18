@@ -1,7 +1,11 @@
 // Глобальные переменные
 let allChapters = []; // Полный список глав (сохраняется в storage)
-let displayChapters = []; // Главы для отображения (по диапазону из popup)
+let displayChapters = []; // Главы для отображения: все главы тайтла, диапазон и выбор задаются в этом разделе
 let originalChapters = [];
+let uniqueChapters = []; // getUniqueChapters(displayChapters): индекс в списке = data-index в DOM и значения «от»/«до»
+let volumeChapters = new Map(); // том (строкой) -> его главы из uniqueChapters, все, а не только показанные
+let volumeCards = new Map(); // том (строкой) -> карточка тома в DOM (по мере показа глав)
+let chosenIds = new Set(); // id отмеченных глав (хранится в titleData[slug].selectedChapterIds)
 let userChapters = [];
 let currentSlug = null;
 let translatorPriority = [];
@@ -14,8 +18,126 @@ let loadMoreChapterCount = 500;
 let totalChaptersRendered = 0;
 let enablePagination = false;
 
-// Флаг для отслеживания изменений приоритета
-let priorityChanged = false;
+// Таймер отложенного применения приоритета (когда глав много)
+let priorityTimer = null;
+
+// Разметка чекбокса та же, что в настройках (стили - .checkbox-group в common.css)
+const CHECKBOX_MARKUP = '<svg class="svg-inline--fa fa-square-check fa-fw" aria-hidden="true" focusable="false" data-prefix="fas" data-icon="square-check" role="img" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512" data-state="checked"><path fill="currentColor" d="M64 32C28.7 32 0 60.7 0 96L0 416c0 35.3 28.7 64 64 64l320 0c35.3 0 64-28.7 64-64l0-320c0-35.3-28.7-64-64-64L64 32zM337 209L209 337c-9.4 9.4-24.6 9.4-33.9 0l-64-64c-9.4-9.4-9.4-24.6 0-33.9s24.6-9.4 33.9 0l47 47L303 175c9.4-9.4 24.6-9.4 33.9 0s9.4 24.6 0 33.9z"></path></svg><svg class="svg-inline--fa fa-square fa-fw" aria-hidden="true" focusable="false" data-prefix="far" data-icon="square" role="img" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512" data-state="default"><path fill="currentColor" d="M384 80c8.8 0 16 7.2 16 16l0 320c0 8.8-7.2 16-16 16L64 432c-8.8 0-16-7.2-16-16L48 96c0-8.8 7.2-16 16-16l320 0zM64 32C28.7 32 0 60.7 0 96L0 416c0 35.3 28.7 64 64 64l320 0c35.3 0 64-28.7 64-64l0-320c0-35.3-28.7-64-64-64L64 32z"></path></svg>';
+
+// 'all' | 'some' | 'none': сколько глав тома отмечено. chapters - главы тома или любой список (отбор по volume), selectedIds - Set или массив id
+function volumeState(chapters, selectedIds, volume) {
+  const chosen = selectedIds instanceof Set ? selectedIds : new Set(selectedIds);
+  const inVolume = chapters.filter(ch => String(ch.volume) === String(volume));
+  const count = inVolume.filter(ch => chosen.has(ch.id)).length;
+  if (count === 0) return 'none';
+  return count === inVolume.length ? 'all' : 'some';
+}
+
+function createCheckbox(className) {
+  const label = document.createElement('label');
+  label.className = 'checkbox-group';
+  const input = document.createElement('input');
+  input.type = 'checkbox';
+  input.className = className;
+  const indicator = document.createElement('span');
+  indicator.className = 'control__indicator';
+  indicator.dataset.type = 'checkbox';
+  indicator.innerHTML = CHECKBOX_MARKUP; // статичная разметка, данных сайта в ней нет
+  label.append(input, indicator);
+  return { label, input };
+}
+
+// Галочка и счётчик «6 / 6» тома: по всем главам тома, а не только по показанным
+function updateVolumeHeader(key) {
+  const card = volumeCards.get(key);
+  const chapters = volumeChapters.get(key) || [];
+  if (!card) return;
+  const state = volumeState(chapters, chosenIds, key);
+  const input = card.querySelector('.volume-checkbox');
+  input.checked = state === 'all';
+  input.indeterminate = state === 'some';
+  card.querySelector('.volume-count').textContent = `${chapters.filter(ch => chosenIds.has(ch.id)).length} / ${chapters.length}`;
+}
+
+function updateRangeCount() {
+  const countElement = document.getElementById('range-count');
+  if (countElement) countElement.textContent = `${chosenIds.size} из ${uniqueChapters.length}`;
+}
+
+// После массового изменения выбора (диапазон, «весь том»): галочки всех показанных глав, шапки томов, счётчик
+function refreshSelectionUi() {
+  document.querySelectorAll('.chapter-select').forEach(input => {
+    input.checked = chosenIds.has(uniqueChapters[parseInt(input.dataset.index)]?.id);
+  });
+  volumeCards.forEach((card, key) => updateVolumeHeader(key));
+  updateRangeCount();
+}
+
+function createVolumeCard(key) {
+  const card = document.createElement('div');
+  card.className = 'volume-card';
+
+  const header = document.createElement('div');
+  header.className = 'volume-header';
+  const select = createCheckbox('volume-checkbox');
+  select.input.title = 'Весь том';
+  select.input.addEventListener('change', () => {
+    (volumeChapters.get(key) || []).forEach(ch => {
+      if (select.input.checked) chosenIds.add(ch.id);
+      else chosenIds.delete(ch.id);
+    });
+    refreshSelectionUi();
+  });
+  const title = document.createElement('span');
+  title.className = 'volume-title';
+  title.textContent = `Том ${key}`;
+  const count = document.createElement('span');
+  count.className = 'volume-count';
+  header.append(select.label, title, count);
+
+  const body = document.createElement('div');
+  body.className = 'volume-body';
+  card.append(header, body);
+  return card;
+}
+
+// Тело карточки тома; карточка создаётся, когда в неё впервые попала глава (пагинация дописывает главы в уже показанные тома)
+function getVolumeBody(container, volume) {
+  const key = String(volume);
+  let card = volumeCards.get(key);
+  if (!card) {
+    card = createVolumeCard(key);
+    volumeCards.set(key, card);
+    container.appendChild(card);
+  }
+  return card.querySelector('.volume-body');
+}
+
+// Диапазон «от»/«до»: все главы тайтла по порядку; выбор = ровно главы диапазона
+function initRangeCard() {
+  const fromSelect = document.getElementById('range-from');
+  const toSelect = document.getElementById('range-to');
+  [fromSelect, toSelect].forEach(select => {
+    select.replaceChildren(...uniqueChapters.map((ch, index) => {
+      const option = document.createElement('option');
+      option.value = index;
+      option.textContent = chapterLabel(ch);
+      return option;
+    }));
+  });
+  const selected = uniqueChapters.map((ch, index) => chosenIds.has(ch.id) ? index : -1).filter(index => index >= 0);
+  fromSelect.value = selected.length ? selected[0] : 0;
+  toSelect.value = selected.length ? selected[selected.length - 1] : uniqueChapters.length - 1;
+
+  const apply = changed => {
+    [fromSelect.value, toSelect.value] = syncRange(Number(fromSelect.value), Number(toSelect.value), changed);
+    chosenIds = new Set(rangeChapterIds(uniqueChapters, Number(fromSelect.value), Number(toSelect.value)));
+    refreshSelectionUi();
+  };
+  fromSelect.addEventListener('change', () => apply('from'));
+  toSelect.addEventListener('change', () => apply('to'));
+  updateRangeCount();
+}
 
 // Слушатель сообщений для обновления темы
 setupThemeMessageListener();
@@ -69,55 +191,12 @@ function getChapterVariantsById(chapterId) {
   return variants;
 }
 
+// Карточка «Перевод»: приоритет переводчиков списком (по умолчанию - по числу глав)
 function populateTranslators() {
-  const translatorSelect = document.getElementById('translator-select');
-  const translatorField = document.getElementById('translator-field');
-  
-  const branchIds = Object.keys(branches);
-  if (branchIds.length === 0) {
-    if (translatorField) translatorField.style.display = 'none';
-    if (translatorSelect) translatorSelect.textContent = 'Основной перевод';
-    return;
-  }
-
-  if (translatorField) translatorField.style.display = 'block';
-
-  if (translatorPriority.length === 0) {
-    const translatorCounts = {};
-    allChapters.forEach(ch => {
-      if (ch.branches && Array.isArray(ch.branches)) {
-        ch.branches.forEach(branch => {
-          const key = getTranslatorKey(branch);
-          if (!translatorCounts[key]) {
-            translatorCounts[key] = 0;
-          }
-          translatorCounts[key]++;
-        });
-      }
-    });
-    
-    translatorPriority = Object.keys(translatorCounts).sort((a, b) => translatorCounts[b] - translatorCounts[a]);
-  }
-  
-  let priorityTranslatorName = null;
-  if (translatorPriority.length > 0) {
-    // Находим имя переводчика для первого ключа из приоритета
-    const priorityTranslatorKey = translatorPriority[0];
-    priorityTranslatorName = branches[priorityTranslatorKey];
-  }
-  
-  if (translatorSelect) {
-    if (priorityTranslatorName) {
-      translatorSelect.textContent = priorityTranslatorName;
-    } else if (branchIds.length > 0) {
-      // Если приоритет пуст или не найден, используем первый из branches
-      translatorSelect.textContent = branches[branchIds[0]];
-    } else {
-      translatorSelect.textContent = 'Основной перевод';
-    }
-  }
-  
-  initTranslatorPriorityPopup();
+  const card = document.getElementById('translator-card');
+  const list = document.getElementById('translator-list');
+  updatePriorityList(list);
+  card.style.display = list.children.length > 0 ? '' : 'none';
 }
 
 // Загружаем и применяем тему
@@ -187,14 +266,24 @@ document.addEventListener('DOMContentLoaded', async () => {
     allChapters = result.titleData[currentSlug].chapters || [];
   }
 
-  // Загружаем отфильтрованные главы для отображения (по диапазону из popup)
-  if (result.titleData && result.titleData[currentSlug] && result.titleData[currentSlug].filteredChapters) {
-    displayChapters = result.titleData[currentSlug].filteredChapters || [];
-  } else {
-    // Fallback: если filteredChapters нет, используем все главы
-    displayChapters = allChapters;
-  }
+  // Раздел показывает все главы тайтла: диапазон задаётся здесь, а не в popup
+  displayChapters = allChapters;
+  uniqueChapters = getUniqueChapters(allChapters);
+  volumeChapters = new Map();
+  uniqueChapters.forEach(ch => {
+    const key = String(ch.volume);
+    if (!volumeChapters.has(key)) volumeChapters.set(key, []);
+    volumeChapters.get(key).push(ch);
+  });
+  // Выбор: сохранённый, иначе прежний диапазон popup, иначе все главы. Чужие id (главы, которых уже нет в тайтле) отбрасываем
+  const storedTitle = (result.titleData && result.titleData[currentSlug]) || {};
+  const initialIds = Array.isArray(storedTitle.selectedChapterIds)
+    ? storedTitle.selectedChapterIds
+    : (storedTitle.filteredChapters || uniqueChapters).map(ch => ch.id);
+  const knownIds = new Set(uniqueChapters.map(ch => ch.id));
+  chosenIds = new Set(initialIds.filter(id => knownIds.has(id)));
   
+
   if (result.originalTitleData && result.originalTitleData[currentSlug] && result.originalTitleData[currentSlug].chapters) {
     originalChapters = (result.originalTitleData[currentSlug].chapters || []).map(ch => ({
       id: ch.id,
@@ -226,10 +315,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     translatorPriority = validPriority;
   }
   
-  const uniqueDisplayChapters = getUniqueChapters(displayChapters);
+  const uniqueDisplayChapters = uniqueChapters;
   const uniqueOriginalChapters = getUniqueChapters(originalChapters);
 
   renderChaptersList(uniqueDisplayChapters, uniqueOriginalChapters);
+  initRangeCard();
   populateTranslators();
 
   // Применяем сохраненные настройки переводчиков к загруженным главам
@@ -321,6 +411,7 @@ function renderChaptersList(chapters, originalChapters, startIndex = 0, append =
   
   if (!append) {
     container.innerHTML = '';
+    volumeCards = new Map();
     currentPage = 0;
     totalChaptersRendered = 0;
     // Для первой загрузки используем initialChapterCount
@@ -348,6 +439,17 @@ function renderChaptersList(chapters, originalChapters, startIndex = 0, append =
     const header = document.createElement('div');
     header.className = 'chapter-header';
     
+    const select = createCheckbox('chapter-select');
+    select.input.dataset.index = globalIndex;
+    select.input.checked = chosenIds.has(ch.id);
+    select.input.addEventListener('change', () => {
+      if (select.input.checked) chosenIds.add(ch.id);
+      else chosenIds.delete(ch.id);
+      updateVolumeHeader(String(ch.volume));
+      updateRangeCount();
+    });
+    header.appendChild(select.label);
+
     const label = document.createElement('div');
     label.className = 'chapter-title';
     label.textContent = `Том ${originalCh.volume}. Глава ${originalCh.number}.${originalCh.name ? ' ' + originalCh.name : ''}`;
@@ -463,8 +565,9 @@ function renderChaptersList(chapters, originalChapters, startIndex = 0, append =
     }
     
     div.appendChild(inputWrapper);
-    container.appendChild(div);
+    getVolumeBody(container, ch.volume).appendChild(div);
   });
+  volumeCards.forEach((card, key) => updateVolumeHeader(key));
   
   totalChaptersRendered = endIndex;
   updateEditorChaptersCount(chapters.length);
@@ -679,7 +782,8 @@ async function saveChapters() {
   }
 
   titleData[currentSlug].chapters = allChapters;
-  // НЕ перезаписываем filteredChapters - он должен создаваться только в popup по диапазону
+  // Выбор уходит и в selectedChapterIds, и в filteredChapters (из него снимок берёт главы, в том числе вне прежнего диапазона popup)
+  applySelectionToTitle(titleData[currentSlug], allChapters, uniqueAllChapters.filter(ch => chosenIds.has(ch.id)).map(ch => ch.id));
   titleData[currentSlug].chapterBranchOverrides = chapterBranchOverrides;
   titleData[currentSlug].translatorPriority = translatorPriority;
 
@@ -943,26 +1047,19 @@ function updatePriorityFromList(listElement) {
     newPriority.push(item.dataset.translatorKey);
   });
   translatorPriority = newPriority;
-  priorityChanged = true;
   notifyChanged();
   
-  const translatorSelect = document.getElementById('translator-select');
-  if (translatorSelect && newPriority.length > 0) {
-    const priorityTranslatorKey = newPriority[0];
-    // Используем branches для получения имени переводчика
-    const priorityTranslatorName = branches[priorityTranslatorKey];
-    if (priorityTranslatorName) {
-      translatorSelect.textContent = priorityTranslatorName;
-    }
-  }
-  
-  // Если глав меньше 800, обновляем сразу (старая схема)
+  // Если глав меньше 800, обновляем сразу, иначе после паузы в щелчках (оптимизация)
   // Обновляем только DOM без полного рендера (сохраняет пагинацию)
-  const uniqueDisplayChapters = getUniqueChapters(displayChapters);
-  if (uniqueDisplayChapters.length < 800) {
+  clearTimeout(priorityTimer);
+  if (getUniqueChapters(displayChapters).length < 800) {
     applyTranslatorPriorityToEditor(true, false, true); // updateDomOnly=true
+  } else {
+    priorityTimer = setTimeout(() => {
+      applyTranslatorPriorityToEditor(true, false, true);
+      notifyChanged(); // при >= 800 главах приоритет ложится на главы только сейчас
+    }, 500);
   }
-  // Если глав много (>800), приоритет не применяется сразу для оптимизации
 }
 
 // Очистить все названия глав с двухэтапным подтверждением
@@ -996,60 +1093,6 @@ function initClearAllButton() {
       }, 8000);
     }
   });
-}
-
-function initTranslatorPriorityPopup() {
-  const translatorSelect = document.getElementById('translator-select');
-  if (!translatorSelect) return;
-
-  if (typeof window.tippy === 'undefined') {
-    console.error('Tippy library not loaded');
-    return;
-  }
-
-  if (translatorSelect._tippy) {
-    translatorSelect._tippy.destroy();
-  }
-
-  const popupContent = document.createElement('div');
-  popupContent.className = 'translator-priority-popup';
-
-  const list = document.createElement('div');
-  list.className = 'translator-priority-list';
-  popupContent.appendChild(list);
-
-  const isDark = !document.documentElement.hasAttribute('data-theme');
-
-  try {
-    window.tippy(translatorSelect, {
-      content: popupContent,
-      placement: 'bottom',
-      trigger: 'mouseenter',
-      interactive: true,
-      arrow: false,
-      maxWidth: 420,
-      theme: isDark ? 'dark' : 'light',
-      onShow: () => {
-        updatePriorityList(list);
-      },
-      onHide: () => {
-        // Обновляем список глав только при закрытии tippy (уход мыши) если:
-        // 1. Были изменения в приоритете
-        // 2. И глав >= 800 (оптимизация)
-        // Обновляем только DOM без полного рендера (сохраняет пагинацию)
-        if (priorityChanged) {
-          const uniqueDisplayChapters = getUniqueChapters(displayChapters);
-          if (uniqueDisplayChapters.length >= 800) {
-            applyTranslatorPriorityToEditor(true, false, true); // updateDomOnly=true
-          }
-          priorityChanged = false;
-          notifyChanged(); // при >= 800 главах приоритет ложится на главы только сейчас
-        }
-      }
-    });
-  } catch (error) {
-    console.error('Error creating tippy instance:', error);
-  }
 }
 
 function applyTranslatorPriorityToChapter(chapter, variants, allowOverride = true) {

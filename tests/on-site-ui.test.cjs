@@ -2814,14 +2814,14 @@ test('the TOC reformat wipes displayTitle once per committed change (change / le
 function chaptersSaveContext({ slug = 's', allChapters = [{ id: 1 }] } = {}) {
   const writes = [];
   const ctx = vm.createContext({
-    allChapters, displayChapters: allChapters, originalChapters: allChapters, chapterBranchOverrides: {}, translatorPriority: [],
+    allChapters, displayChapters: allChapters, originalChapters: allChapters, chapterBranchOverrides: {}, translatorPriority: [], chosenIds: new Set(allChapters.map(ch => ch.id)),
     tocFormat: 'default', customTocFormat: '', hideChapterName: false, hideVolumeNumber: false,
     document: { querySelectorAll: () => [] },
-    getUniqueChapters: list => list, formatChapterTitle: () => 'T',
+    formatChapterTitle: () => 'T',
     getTitleStore: async () => ({ titleData: {}, currentSlug: slug }),
     setTitleStore: async items => { writes.push(items); }
   });
-  vm.runInContext(functionSource('src/editors/chapters.js', 'saveChapters') + '\nthis.saveChapters = saveChapters;', ctx);
+  vm.runInContext(source('src/core/chapter-range.js') + functionSource('src/editors/chapters.js', 'saveChapters') +'\nthis.saveChapters = saveChapters;', ctx);
   return { ctx, writes };
 }
 
@@ -2837,6 +2837,68 @@ test('saveChapters writes nothing without a slug (no titleData:undefined) and no
   assert.equal(loaded.writes.length, 1);
   assert.deepEqual(Object.keys(loaded.writes[0].titleData), ['s']);
   assert.equal(loaded.writes[0].titleData.s.chapters.length, 1);
+});
+
+// ---- Task 12: раздел «Главы» ----
+
+test('volumeState: none / some / all of the volume’s chapters are selected, other volumes do not count', () => {
+  const ctx = vm.createContext({});
+  vm.runInContext(functionSource('src/editors/chapters.js', 'volumeState') + '\nthis.volumeState = volumeState;', ctx);
+  const chapters = [{ id: 1, volume: '1' }, { id: 2, volume: '1' }, { id: 3, volume: '1' }, { id: 4, volume: '2' }];
+  assert.equal(ctx.volumeState(chapters, new Set(), '1'), 'none');
+  assert.equal(ctx.volumeState(chapters, new Set([1, 3]), '1'), 'some');
+  assert.equal(ctx.volumeState(chapters, [1, 2, 3], 1), 'all'); // an array of ids and a numeric volume work too
+  assert.equal(ctx.volumeState(chapters, new Set([4]), '1'), 'none');
+  assert.equal(ctx.volumeState(chapters, new Set([4]), '2'), 'all');
+});
+
+test('the chapters section’s selection reaches the panel and the snapshot even outside the old popup range (R24)', async () => {
+  const page = panelPage({ me: { tabId: 7, url: panelUrl } }); // filteredChapters = chapters 1..24
+  await page.settle();
+  assert.equal(page.element('download').textContent, 'Скачать 24 главы');
+  const selection = [50, 51, 100];
+  const saveCtx = vm.createContext({
+    allChapters: structuredClone(panelChapters), displayChapters: [], originalChapters: [], chapterBranchOverrides: {}, translatorPriority: [], chosenIds: new Set(selection),
+    tocFormat: 'default', customTocFormat: '', hideChapterName: false, hideVolumeNumber: false,
+    URLSearchParams, document: { querySelectorAll: () => [] }, formatChapterTitle: () => 'T', location: { protocol: 'chrome-extension:', search: '?slug=123--title' },
+    chrome: page.ctx.chrome
+  });
+  vm.runInContext(source('src/utils/title-store.js') + source('src/core/chapter-range.js') + functionSource('src/editors/chapters.js', 'saveChapters') + '\nthis.saveChapters = saveChapters;', saveCtx);
+  await saveCtx.saveChapters();
+  await page.settle();
+  assert.equal(page.element('download').textContent, 'Скачать 3 главы');
+  page.element('download').fire('click');
+  await page.settle();
+  assert.deepEqual(page.calls.snapshots[0].selectedChapterIds, selection);
+  const snap = await snapshotContext(page.data).buildDownloadSnapshot({ ...page.calls.snapshots[0] });
+  assert.deepEqual(snap.downloadData.chapters.map(ch => ch.id), selection); // the engine filters these by selectedChapterIds
+  assert.deepEqual(snap.downloadData.selectedChapterIds, selection);
+});
+
+test('the quick range overwrites an older selection from the chapters section', async () => {
+  const chapter = id => ({ id, volume: '1', number: String(id), name: '' });
+  const data = { 'titleData:s': { chapters: [1, 2, 3, 4].map(chapter), selectedChapterIds: [1, 4], metadata: {} } };
+  const info = { slug: 's', chapters: [1, 2, 3, 4].map(chapter), allChapters: [1, 2, 3, 4].map(chapter) };
+  await quickContext(data).startQuickDownload({ info, fromIdx: 1, toIdx: 2, tabId: 1, url: 'https://mangalib.me/ru/manga/s', format: 'cbz' });
+  assert.deepEqual(data['titleData:s'].selectedChapterIds, [2, 3]);
+  assert.deepEqual(data['titleData:s'].filteredChapters.map(ch => ch.id), [2, 3]);
+});
+
+test('the range card selects exactly rangeChapterIds over all chapters, volume cards count all chapters of the volume', () => {
+  const chapters = source('src/editors/chapters.js');
+  assert.match(functionSource('src/editors/chapters.js', 'initRangeCard'), /rangeChapterIds[(]uniqueChapters/);
+  assert.match(chapters, /displayChapters = allChapters;/);
+  assert.doesNotMatch(chapters, /displayChapters = result[.]titleData\[currentSlug\][.]filteredChapters/);
+  assert.match(functionSource('src/editors/chapters.js', 'updateVolumeHeader'), /volumeChapters[.]get[(]key[)]/); // the whole volume, not only rendered rows
+  assert.match(source('src/html/chapters.html'), /id="range-from"[\s\S]*id="range-to"[\s\S]*id="translator-list"/);
+});
+
+test('the image server select lives in the images group with the preparation window’s values and storage key, for manga only', () => {
+  const settings = source('src/core/settings.js');
+  assert.match(settings, /images: \[[^\]]*'imageServer'/);
+  const html = source('src/html/settings.html');
+  assert.match(html, /<div class="panel" data-group="images">[\s\S]*id="image-server-field"[\s\S]*<option value="normal">Оригиналы<\/option>\s*<option value="compressed" selected>JPEG<\/option>[\s\S]*data-group="toc"/);
+  assert.match(settings, /siteType === 'manga'/);
 });
 
 test('saveCovers leaves out empty covers from «Новая обложка» until a URL or a file is set, and metadata.cover follows the saved ones', async () => {

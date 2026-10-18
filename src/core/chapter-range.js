@@ -122,3 +122,20 @@ function chapterLabel(ch) {
 function rangeChapterIds(chapters, fromIdx, toIdx) {
   return chapters.slice(Math.min(fromIdx, toIdx), Math.max(fromIdx, toIdx) + 1).map(ch => ch.id);
 }
+
+// «До» не меньше «От» (как в popup): подтягиваем второй край, когда двигают первый
+function syncRange(fromIdx, toIdx, changed) {
+  if (changed === 'from' && toIdx < fromIdx) return [fromIdx, fromIdx];
+  if (changed === 'to' && fromIdx > toIdx) return [toIdx, toIdx];
+  return [fromIdx, toIdx];
+}
+
+// Записывает выбор глав в тайтл: снимок берёт главы из filteredChapters, а панель и «Подготовка» читают selectedChapterIds.
+// Один набор id в обоих полях: устаревший selectedChapterIds не должен перебить новый диапазон
+function applySelectionToTitle(title, allChapters, selectedIds) {
+  const chosen = new Set(selectedIds);
+  title.selectedChapterIds = Array.from(chosen);
+  title.filteredChapters = allChapters.filter(chapter => chosen.has(chapter.id));
+  title.fromIdx = allChapters.findIndex(chapter => chosen.has(chapter.id));
+  title.toIdx = allChapters.findLastIndex(chapter => chosen.has(chapter.id));
+}

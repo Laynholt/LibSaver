@@ -7,24 +7,14 @@ function quickFormatOptions(siteKey) {
   return formatOptionsFor(siteTypeOf(siteKey));
 }
 
-// «До» не меньше «От» (как в popup): подтягиваем второй край, когда двигают первый
-function syncRange(fromIdx, toIdx, changed) {
-  if (changed === 'from' && toIdx < fromIdx) return [fromIdx, fromIdx];
-  if (changed === 'to' && fromIdx > toIdx) return [toIdx, toIdx];
-  return [fromIdx, toIdx];
-}
-
 // Снимок выбранного диапазона -> очередь движка. { ok: true } | { ok: false, message }; прочие отказы - исключение
 async function startQuickDownload({ info, fromIdx, toIdx, tabId, url, format }) {
   const selectedChapterIds = rangeChapterIds(info.chapters, fromIdx, toIdx);
 
-  // Снимок берёт главы из titleData.filteredChapters (диапазон popup): без обновления в него не попадёт выбранное здесь
+  // Снимок берёт главы из titleData.filteredChapters, панель считает по selectedChapterIds: оба поля обновляем вместе
   const { titleData } = await getTitleStore(['titleData'], info.slug);
   if (titleData[info.slug]) {
-    const chosen = new Set(selectedChapterIds);
-    titleData[info.slug].filteredChapters = info.allChapters.filter(chapter => chosen.has(chapter.id));
-    titleData[info.slug].fromIdx = info.allChapters.findIndex(chapter => chosen.has(chapter.id));
-    titleData[info.slug].toIdx = info.allChapters.findLastIndex(chapter => chosen.has(chapter.id));
+    applySelectionToTitle(titleData[info.slug], info.allChapters, selectedChapterIds);
     await setTitleStore({ titleData });
   }
 

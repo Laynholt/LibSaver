@@ -248,6 +248,8 @@ function resetSiteMenuOrder() {
 function applySettingsToUI(settings) {
   document.getElementById('cover-quality').value = settings.coverQuality || 'ORIGINAL';
   document.getElementById('image-quality').value = settings.imageQuality || 'ORIGINAL';
+  // Те же значения и умолчание (JPEG), что у выбора в окне «Подготовка»
+  document.getElementById('image-server').value = ['normal', 'compressed'].includes(settings.imageServer) ? settings.imageServer : 'compressed';
   document.getElementById('resize-method').value = settings.resizeMethod || 'MIN_SIDE';
   document.getElementById('adaptive-ratio').value = settings.adaptiveRatio || 3;
   document.getElementById('adaptive-ratio-value').textContent = (settings.adaptiveRatio || 3) + ':1';
@@ -605,6 +607,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   const settings = await chrome.storage.local.get([
     'coverQuality',
     'imageQuality',
+    'imageServer',
     'resizeMethod',
     'adaptiveRatio',
     'jpegQuality',
@@ -635,6 +638,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   
   // Применяем сохраненные настройки
   applySettingsToUI(settings);
+  // Сервер картинок есть только у манги (сайт - по siteType, как в окне «Подготовка»)
+  const { siteType } = await chrome.storage.local.get('siteType');
+  document.getElementById('image-server-field').style.display = siteType === 'manga' ? '' : 'none';
   appliedToc = tocSignature(readTocControls()); // по этому формату главы уже оформлены
 
   // Инициализация видимости полей
@@ -831,7 +837,7 @@ function updateTocOptionTexts() {
 // Ключи storage по группам панелей. Раздел окна пишет только свои ключи: остальные разделы живут в соседних фреймах и могли изменить свои позже
 const SETTING_KEYS_BY_GROUP = {
   general: ['enableSiteMenu', 'customSiteLinks', 'debugLogging', 'updateNotifications', 'enablePagination', 'initialChapters', 'loadMoreChapters'],
-  images: ['coverQuality', 'imageQuality', 'resizeMethod', 'adaptiveRatio', 'jpegQuality', 'imageFormat', 'sameWidth'],
+  images: ['coverQuality', 'imageQuality', 'imageServer', 'resizeMethod', 'adaptiveRatio', 'jpegQuality', 'imageFormat', 'sameWidth'],
   toc: ['disableToc', 'tocFormat', 'customTocFormat', 'hideChapterName', 'hideVolumeNumber'],
   cbz: ['generateComicInfo'],
   pdf: ['pdfFont', 'pdfFontSize', 'pdfPageSize', 'pdfLineSpacing', 'pdfParagraphSpacing', 'pdfImageFormat', 'pdfJpegQuality'],
@@ -871,6 +877,7 @@ async function saveSettings() {
   const all = {
     coverQuality: document.getElementById('cover-quality').value,
     imageQuality: document.getElementById('image-quality').value,
+    imageServer: document.getElementById('image-server').value,
     resizeMethod: document.getElementById('resize-method').value,
     adaptiveRatio: parseFloat(document.getElementById('adaptive-ratio').value),
     jpegQuality: parseFloat(document.getElementById('jpeg-quality').value),
@@ -949,6 +956,7 @@ const DEFAULT_SETTINGS_BY_GROUP = {
   images: {
     'cover-quality': 'ORIGINAL',
     'image-quality': 'ORIGINAL',
+    'image-server': 'compressed',
     'resize-method': 'MIN_SIDE',
     'adaptive-ratio': 3,
     'jpeg-quality': 1.0,

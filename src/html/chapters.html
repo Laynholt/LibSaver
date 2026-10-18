@@ -86,36 +86,6 @@
     .toolbar-right .field select {
       min-width: 150px;
     }
-    .translator-selector {
-      position: relative;
-      display: flex;
-      align-items: center;
-    }
-    /* Текущий переводчик: такая же «пилюля», как кнопки тулбара */
-    #translator-select {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      height: 32px;
-      box-sizing: border-box;
-      padding: 0 12px;
-      background: var(--background-elevated-2);
-      border: 1px solid var(--border-color);
-      border-radius: var(--border-radius);
-      font-size: 12px;
-      font-weight: 600;
-      cursor: default;
-      transition: border-color 0.15s ease;
-    }
-    #translator-select::before {
-      content: '\f0c0';
-      font-family: 'Font Awesome 6 Free';
-      font-weight: 900;
-      color: var(--accent-color);
-    }
-    #translator-select:hover {
-      border-color: var(--border-hover);
-    }
     .counter {
       font-size: 12px;
       color: var(--text-secondary);
@@ -188,28 +158,6 @@
     .chapter-translator-option.selected {
       background: var(--accent-soft);
       color: var(--text-primary);
-    }
-    .translator-priority-popup {
-      padding: 16px;
-      min-width: 360px;
-      max-width: 420px;
-      background: var(--bg-secondary);
-      border: 1px solid var(--border-color);
-      border-radius: var(--radius-lg);
-      box-shadow: var(--card-shadow);
-    }
-    [data-theme="light"] .translator-priority-popup {
-      background: var(--bg-secondary);
-      border: 1px solid var(--border-color);
-    }
-    /* Переопределение стилей tippy */
-    .tippy-box {
-      background: transparent !important;
-      border: none !important;
-      box-shadow: none !important;
-    }
-    .tippy-content {
-      padding: 0 !important;
     }
     .translator-priority-header {
       font-size: 13px;
@@ -312,9 +260,6 @@
         <i class="fa-solid fa-eraser"></i>
         Очистить всё
       </button>
-      <div class="translator-selector" id="translator-field" style="display: none;">
-        <div class="chapter-translator" id="translator-select">Переводчик</div>
-      </div>
     </div>
     <div class="toolbar-right">
       <span class="counter">Всего: <span id="total-chapters">0</span></span>
@@ -324,6 +269,15 @@
   </div>
   
   <div class="container">
+    <div class="chapters-card" id="range-card">
+      <h4>Диапазон <span id="range-count">0 из 0</span></h4>
+      <label class="range-row"><span>от</span><select id="range-from"></select></label>
+      <label class="range-row"><span>до</span><select id="range-to"></select></label>
+    </div>
+    <div class="chapters-card" id="translator-card" style="display: none;">
+      <h4>Перевод <span>приоритет</span></h4>
+      <div class="translator-priority-list" id="translator-list"></div>
+    </div>
     <div class="chapters-list" id="chapters-list">
       <!-- Список глав для редактирования -->
     </div>
@@ -335,8 +289,6 @@
     </button>
   </div>
 
-  <script src="../libs/popper.min.js"></script>
-  <script src="../libs/tippy-bundle.umd.min.js"></script>
   <script src="../utils/header.js"></script>
   <script src="../core/theme.js"></script>
   <script src="../core/chapter-range.js"></script>
