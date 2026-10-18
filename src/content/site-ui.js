@@ -29,11 +29,11 @@ function frameQuery(pageUrl, tabId, parentOrigin) {
   return new URLSearchParams({ slug: titleSlug(pageUrl) || '', tab: String(tabId), url: pageUrl, parent: parentOrigin });
 }
 
-// Окно настроек; section - раздел, на котором открыться. В Task 10 html/workspace.html заменится на html/panel.html - это единственное место
+// Окно настроек; section - раздел, на котором открыться (id из PANEL_SECTIONS в core/panel.js)
 function buildPanelUrl(pageUrl, tabId, parentOrigin, section) {
   const query = frameQuery(pageUrl, tabId, parentOrigin);
   if (section) query.set('section', section);
-  return `${chrome.runtime.getURL('html/workspace.html')}?${query}`;
+  return `${chrome.runtime.getURL('html/panel.html')}?${query}`;
 }
 
 function buildQuickUrl(pageUrl, tabId, parentOrigin) {
@@ -494,9 +494,9 @@ function applyCorner(host) {
   Object.assign(host.style, { top: edge('top', vertical), bottom: edge('bottom', vertical), left: edge('left', horizontal), right: edge('right', horizontal) });
 }
 
-// До Task 10 плашка открывает раздел «Загрузки» напрямую (потом - openSettings('downloads'))
+// Плашка открывает окно настроек на разделе «Загрузки»
 function openDownloads() {
-  openOverlay(chrome.runtime.getURL('html/downloads.html'));
+  openSettings('downloads');
 }
 
 function saveCorner() {
@@ -603,6 +603,12 @@ function onPlaqueCornerChanged(changes, area) {
   if (plaque) applyCorner(plaque.host);
 }
 
+// Иконка расширения на странице тайтла: popup просит фон, фон передаёт просьбу вкладке (action 'openPanel' в background.js)
+function onRuntimeMessage(message, sender) {
+  if (message?.action !== 'libsaver:openPanel' || sender?.id !== chrome.runtime.id) return;
+  openSettings(typeof message.section === 'string' ? message.section : undefined);
+}
+
 // ---- Слежение за страницей ----
 
 // Дебаунс, но не дольше maxWait с первого вызова: на странице с постоянными изменениями DOM кнопки всё равно появятся
@@ -677,6 +683,7 @@ function startSiteUi() {
     window.removeEventListener('resize', schedule);
     stopEngineLink();
     try { chrome.storage.onChanged.removeListener(onPlaqueCornerChanged); } catch (e) { /* контекст недействителен */ }
+    try { chrome.runtime.onMessage.removeListener(onRuntimeMessage); } catch (e) { /* контекст недействителен */ }
     document.querySelector('[data-libsaver-buttons]')?.remove();
     removePlaque();
     closePopover();
@@ -685,6 +692,7 @@ function startSiteUi() {
 
   if (siteKeyByHost(location.href)) {
     chrome.storage.onChanged.addListener(onPlaqueCornerChanged);
+    chrome.runtime.onMessage.addListener(onRuntimeMessage);
     chrome.storage.local.get('plaqueCorner').then(stored => onPlaqueCornerChanged({ plaqueCorner: { newValue: stored.plaqueCorner } }, 'local')).catch(() => {});
     connectEngine();
   }

@@ -106,6 +106,16 @@ function isTitlePage(url) {
   }
 }
 
+// Окно расширения поверх сайта (html/quick.html, html/panel.html) встроено в страницу LIB-сайта? Кто встроил нас, знает только фон
+// (whoami: sender.tab); параметры адреса подделывает любая страница, потому что html расширения доступны всем сайтам.
+// requireTitle: false - годится любая страница сайта, не только тайтл. null - отказ.
+function verifiedEmbedder(me, tabParam, { requireTitle = true } = {}) {
+  if (typeof me?.tabId !== 'number' || typeof me.url !== 'string') return null;
+  if (tabParam != null && tabParam !== String(me.tabId)) return null;
+  if (!siteKeyByHost(me.url) || (requireTitle && !isTitlePage(me.url))) return null;
+  return { tabId: me.tabId, url: me.url, parentOrigin: new URL(me.url).origin };
+}
+
 // Ссылки на главные страницы сайта: https://<домен> (без поддоменных шаблонов)
 function siteLinks(siteKey) {
   return (SITE_TAB_PATTERNS[siteKey] || []).filter(pattern => !pattern.includes('*.')).map(pattern => pattern.slice(0, -2));

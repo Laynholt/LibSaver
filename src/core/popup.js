@@ -388,6 +388,16 @@ document.addEventListener('DOMContentLoaded', async () => {
   await loadTitle();
 });
 
+// На странице тайтла настройки открываются окном поверх сайта (фон передаёт просьбу вкладке). true - окно открыто, popup можно закрыть
+async function openPanelFromPopup(url) {
+  if (!siteKeyByHost(url) || !isTitlePage(url)) return false;
+  try {
+    return (await chrome.runtime.sendMessage({ action: 'openPanel' })) === true;
+  } catch (e) {
+    return false; // в странице нет нашего скрипта: остаётся прежний экран popup
+  }
+}
+
 // Загрузка данных тайтла из активной вкладки (при открытии popup и после перезагрузки страницы)
 async function loadTitle() {
   const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
@@ -397,6 +407,11 @@ async function loadTitle() {
   }
 
   const url = activeTab.url;
+
+  if (await openPanelFromPopup(url)) {
+    window.close();
+    return;
+  }
 
   // Применяем акцентный цвет по сайту
   window.applySiteAccent(url);

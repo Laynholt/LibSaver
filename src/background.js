@@ -293,6 +293,30 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   return true;
 });
 
+// Иконка расширения на странице тайтла: popup просит открыть окно настроек поверх сайта, а оно живёт в content script (content/site-ui.js).
+// true - вкладка приняла просьбу; false - не страница тайтла или скрипта в ней нет (popup тогда остаётся)
+async function openPanelOnActiveTab(section) {
+  try {
+    const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+    if (!tab?.url || !siteKeyByHost(tab.url) || !isTitlePage(tab.url)) return false;
+    await chrome.tabs.sendMessage(tab.id, { action: 'libsaver:openPanel', section });
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
+function handleOpenPanel(request, sender, sendResponse) {
+  if (request.action !== 'openPanel') return;
+  if (sender.tab) { // просит только popup; страница сайта окно по своей воле не открывает
+    sendResponse(false);
+    return;
+  }
+  openPanelOnActiveTab(typeof request.section === 'string' ? request.section : undefined).then(sendResponse);
+  return true;
+}
+chrome.runtime.onMessage.addListener(handleOpenPanel);
+
 // Фоновый движок загрузки (engine/engine.html). Одновременные вызовы делят одно создание документа
 let engineReady = null;
 function ensureEngine() {

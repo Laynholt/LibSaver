@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <link rel="icon" href="../assets/icons/icon32.png">
+  <title>LibSaver</title>
+  <script src="../core/theme-init.js"></script>
+  <script src="../utils/title-store.js"></script>
+  <link rel="stylesheet" href="../css/common.css">
+  <link rel="stylesheet" href="../libs/fontawesome/css/all.min.css">
+  <link rel="stylesheet" href="../css/panel.css">
+</head>
+<body>
+  <header class="pn-head">
+    <button type="button" class="pn-icon pn-back hidden" id="back" aria-label="Назад"><i class="fa-solid fa-chevron-left"></i></button>
+    <b class="pn-title" id="title">LibSaver</b>
+    <button type="button" class="pn-icon pn-close" id="close" aria-label="Закрыть"><i class="fa-solid fa-xmark"></i></button>
+  </header>
+
+  <p class="pn-msg" id="loading">Загружаю тайтл…</p>
+  <div class="pn-msg hidden" id="error">
+    <p id="error-text" role="alert"></p>
+    <button type="button" id="retry">Повторить</button>
+  </div>
+
+  <div class="pn-main hidden" id="main">
+    <nav class="pn-menu" id="menu" aria-label="Разделы"></nav>
+    <main class="pn-frames" id="frames"></main>
+  </div>
+
+  <footer class="pn-foot hidden" id="foot">
+    <p class="pn-status" id="status" role="status"></p>
+    <select id="format" aria-label="Формат"></select>
+    <label class="checkbox-group" id="speed-label">
+      <input type="checkbox" id="speed">
+      <span class="control__indicator" data-type="checkbox">
+        <svg class="svg-inline--fa fa-square-check fa-fw" aria-hidden="true" focusable="false" data-prefix="fas" data-icon="square-check" role="img" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512" data-state="checked"><path fill="currentColor" d="M64 32C28.7 32 0 60.7 0 96L0 416c0 35.3 28.7 64 64 64l320 0c35.3 0 64-28.7 64-64l0-320c0-35.3-28.7-64-64-64L64 32zM337 209L209 337c-9.4 9.4-24.6 9.4-33.9 0l-64-64c-9.4-9.4-9.4-24.6 0-33.9s24.6-9.4 33.9 0l47 47L303 175c9.4-9.4 24.6-9.4 33.9 0s9.4 24.6 0 33.9z"></path></svg>
+        <svg class="svg-inline--fa fa-square fa-fw" aria-hidden="true" focusable="false" data-prefix="far" data-icon="square" role="img" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512" data-state="default"><path fill="currentColor" d="M384 80c8.8 0 16 7.2 16 16l0 320c0 8.8-7.2 16-16 16L64 432c-8.8 0-16-7.2-16-16L48 96c0-8.8 7.2-16 16-16l320 0zM64 32C28.7 32 0 60.7 0 96L0 416c0 35.3 28.7 64 64 64l320 0c35.3 0 64-28.7 64-64l0-320c0-35.3-28.7-64-64-64L64 32z"></path></svg>
+      </span>
+      <span>Ускорить</span>
+    </label>
+    <button type="button" id="download" disabled>Скачать</button>
+  </footer>
+  <div id="toast-container"></div>
+
+  <script src="../core/theme.js"></script>
+  <script src="../utils/toast.js"></script>
+  <script src="../utils/header.js"></script>
+  <script src="../core/page-calls.js"></script>
+  <script src="../utils/page-call.js"></script>
+  <script src="../core/api.js"></script>
+  <script src="../core/chapter-range.js"></script>
+  <script src="../utils/formats.js"></script>
+  <script src="../core/title-loader.js"></script>
+  <script src="../core/snapshot.js"></script>
+  <script src="../utils/engine-client.js"></script>
+  <script src="../core/site-download.js"></script>
+  <script src="../core/panel.js"></script>
+</body>
+</html>

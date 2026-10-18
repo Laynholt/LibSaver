@@ -1,20 +1,10 @@
 // quick.js - быстрое окошко «Скачать» под кнопками на странице тайтла (html/quick.html во фрейме поверх сайта).
 // Скрипты страницы: title-store.js, header.js, page-calls.js, page-call.js, api.js, chapter-range.js, formats.js,
-// title-loader.js, snapshot.js, engine-client.js, этот файл. Сообщения странице сайта: { libsaver: true, type, ... } (content/site-ui.js).
-
-const QUICK_ALREADY_QUEUED = 'Этот тайтл уже в очереди';
+// title-loader.js, snapshot.js, engine-client.js, site-download.js, этот файл. Сообщения странице сайта: { libsaver: true, type, ... } (content/site-ui.js).
 
 // Те же форматы, что в окне «Подготовка» (formats.js)
 function quickFormatOptions(siteKey) {
   return formatOptionsFor(siteTypeOf(siteKey));
-}
-
-// «Скачать 1 главу / 2 главы / 5 глав»
-function downloadLabel(count) {
-  const lastTwo = count % 100;
-  const last = count % 10;
-  const word = lastTwo >= 11 && lastTwo <= 14 ? 'глав' : last === 1 ? 'главу' : last >= 2 && last <= 4 ? 'главы' : 'глав';
-  return `Скачать ${count} ${word}`;
 }
 
 // «До» не меньше «От» (как в popup): подтягиваем второй край, когда двигают первый
@@ -22,38 +12,6 @@ function syncRange(fromIdx, toIdx, changed) {
   if (changed === 'from' && toIdx < fromIdx) return [fromIdx, fromIdx];
   if (changed === 'to' && fromIdx > toIdx) return [toIdx, toIdx];
   return [fromIdx, toIdx];
-}
-
-// Значения по умолчанию - как у окна «Подготовка» (сервер картинок - JPEG, «только текст» выключен)
-function quickSettings(stored) {
-  return {
-    imageServer: ['normal', 'compressed'].includes(stored.imageServer) ? stored.imageServer : 'compressed',
-    textOnly: stored.textOnly === true
-  };
-}
-
-// Окошко открыто на странице тайтла LIB-сайта? Кто встроил нас, знает только фон (sender.tab); параметры адреса
-// подделывает любая страница, потому что html/quick.html доступна всем сайтам. null - отказ.
-function quickEmbedder(me, tabParam) {
-  if (typeof me?.tabId !== 'number' || typeof me.url !== 'string') return null;
-  if (tabParam != null && tabParam !== String(me.tabId)) return null;
-  if (!siteKeyByHost(me.url) || !isTitlePage(me.url)) return null;
-  return { tabId: me.tabId, url: me.url, parentOrigin: new URL(me.url).origin };
-}
-
-function loadErrorText(error) {
-  switch (error.code) {
-    case 'unsupported-site': return 'Перейдите на один из поддерживаемых сайтов.';
-    case 'not-title-page': return 'Перейдите на главную страницу нужного тайтла.';
-    case 'load-failed': return 'Не удалось получить данные из API.';
-    default: return error.message;
-  }
-}
-
-// Редакторы и снимок читают siteType и sourceUrl из storage; loadTitleData их не пишет (как и в popup)
-async function loadQuickTitle({ tabId, url, force = false }) {
-  await chrome.storage.local.set({ siteType: siteTypeOf(siteKeyOf(url)), sourceUrl: url });
-  return loadTitleData({ tabId, url, force });
 }
 
 // Снимок выбранного диапазона -> очередь движка. { ok: true } | { ok: false, message }; прочие отказы - исключение
@@ -70,13 +28,7 @@ async function startQuickDownload({ info, fromIdx, toIdx, tabId, url, format }) 
     await setTitleStore({ titleData });
   }
 
-  const settings = quickSettings(await chrome.storage.local.get(['imageServer', 'textOnly']));
-  // «Ускорить» снимок читает из storage сам
-  const snapshot = await buildDownloadSnapshot({ slug: info.slug, tabId, sourceUrl: url, selectedChapterIds, format, ...settings });
-  const result = await enqueueSnapshot(snapshot);
-  if (result.ok) return { ok: true };
-  if (result.reason === 'already-queued') return { ok: false, message: QUICK_ALREADY_QUEUED };
-  throw new Error('Очередь не приняла тайтл');
+  return enqueueSelection({ slug: info.slug, tabId, url, selectedChapterIds, format });
 }
 
 // ---- Страница ----
@@ -193,7 +145,7 @@ function startQuick() {
     try {
       me = await chrome.runtime.sendMessage({ action: 'whoami' });
     } catch (e) { /* расширение обновили */ }
-    const embedder = quickEmbedder(me, params.get('tab'));
+    const embedder = verifiedEmbedder(me, params.get('tab'));
     if (!embedder) {
       showError('Окошко работает только на странице тайтла.', false);
       return;

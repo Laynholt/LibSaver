@@ -117,6 +117,15 @@ button:focus-visible {
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
 }
 
+/* Телефон: окно на весь экран, без полей вокруг. Фрейм уже 768px (телефонный режим panel.js) при ширине страницы до 816px (768 + поля 2 x 24) */
+@media (max-width: 815px) {
+  .frame {
+    width: 100vw;
+    height: 100vh;
+    border-radius: 0;
+  }
+}
+
 /* Быстрое окошко «Скачать»: размер и место задаёт content script, фрейм занимает всё */
 .popover-frame {
   display: block;

@@ -1066,11 +1066,12 @@ function fakeTitleDoc(siteKey, { columns = '260px' } = {}) {
 
 function siteUiContext({ stored = {} } = {}) {
   const listeners = new Set();
+  const messageListeners = new Set();
   const ctx = {
-    console, URL, URLSearchParams, stored, listeners,
+    console, URL, URLSearchParams, stored, listeners, messageListeners,
     location: { href: 'https://mangalib.me/ru/manga/123--title', origin: 'https://mangalib.me' },
     chrome: {
-      runtime: { id: 'id', getURL: file => 'chrome-extension://id/' + file, sendMessage: async () => ({}) },
+      runtime: { id: 'id', getURL: file => 'chrome-extension://id/' + file, sendMessage: async () => ({}), onMessage: { addListener: fn => messageListeners.add(fn), removeListener: fn => messageListeners.delete(fn) } },
       storage: { local: { get: async () => structuredClone(stored) }, onChanged: { addListener: fn => listeners.add(fn), removeListener: fn => listeners.delete(fn) } }
     }
   };
@@ -1127,7 +1128,7 @@ test('title slug is parsed like title-loader does, and the settings URL carries 
   assert.equal(ctx.titleSlug('https://mangalib.me/ru/manga/123--title?section=info#top'), '123--title');
   assert.equal(ctx.titleSlug('https://ranobelib.me/ru/book/7--y'), '7--y');
   const url = new URL(ctx.buildPanelUrl('https://mangalib.me/ru/manga/123--title', 42, 'https://mangalib.me'));
-  assert.equal(url.href.split('?')[0], 'chrome-extension://id/html/workspace.html');
+  assert.equal(url.href.split('?')[0], 'chrome-extension://id/html/panel.html');
   assert.deepEqual(Object.fromEntries(url.searchParams), { slug: '123--title', tab: '42', url: 'https://mangalib.me/ru/manga/123--title', parent: 'https://mangalib.me' });
 });
 
@@ -1176,7 +1177,7 @@ test('whoami answers with the sender tab id and url', () => {
 
 test('format options are one list per site type, shared by the preparation window, the quick popover and the buttons', () => {
   const ctx = vm.createContext({ console });
-  vm.runInContext(['src/utils/formats.js', 'src/core/title-loader.js', 'src/core/quick.js'].map(source).join('\n'), ctx);
+  vm.runInContext(['src/utils/formats.js', 'src/core/title-loader.js', 'src/core/site-download.js', 'src/core/quick.js'].map(source).join('\n'), ctx);
   const values = siteKey => Array.from(ctx.quickFormatOptions(siteKey), option => option.value);
   assert.ok(!values('ranobelib').includes('cbz'));
   assert.deepEqual(values('ranobelib'), ['epub', 'fb2', 'pdf', 'txt', 'html']);
@@ -1202,7 +1203,7 @@ function quickContext(data = {}, { enqueueResult = { ok: true } } = {}) {
     buildDownloadSnapshot: async args => { calls.snapshot.push(structuredClone(args)); return { id: 'snap' }; },
     enqueueSnapshot: async snapshot => { calls.enqueue.push(snapshot); return enqueueResult; }
   });
-  vm.runInContext(['src/utils/title-store.js', 'src/utils/page-call.js', 'src/core/chapter-range.js', 'src/utils/formats.js', 'src/core/title-loader.js', 'src/core/quick.js'].map(source).join('\n'), ctx);
+  vm.runInContext(['src/utils/title-store.js', 'src/utils/page-call.js', 'src/core/chapter-range.js', 'src/utils/formats.js', 'src/core/title-loader.js', 'src/core/site-download.js', 'src/core/quick.js'].map(source).join('\n'), ctx);
   ctx.calls = calls;
   return ctx;
 }
@@ -1361,7 +1362,7 @@ test('a button row that left the page stops listening to storage', () => {
 
 test('quick.js takes the tab and URL from whoami and refuses forged or foreign embedders', () => {
   const ctx = quickContext();
-  const embedder = (me, tab) => JSON.parse(JSON.stringify(ctx.quickEmbedder(me, tab)));
+  const embedder = (me, tab) => JSON.parse(JSON.stringify(ctx.verifiedEmbedder(me, tab)));
   const title = 'https://mangalib.me/ru/manga/123--title';
   assert.deepEqual(embedder({ tabId: 5, url: title }, '5'), { tabId: 5, url: title, parentOrigin: 'https://mangalib.me' });
   assert.deepEqual(embedder({ tabId: 5, url: title }, null), { tabId: 5, url: title, parentOrigin: 'https://mangalib.me' });
@@ -1384,7 +1385,7 @@ test('startQuick learns the embedder before loading anything and never reads url
   const start = text.slice(text.indexOf('function startQuick'));
   assert.doesNotMatch(start, /params\.get\('(url|parent)'\)/);
   assert.ok(start.indexOf("action: 'whoami'") > 0 && start.indexOf("action: 'whoami'") < start.indexOf('load(false)'));
-  assert.match(start, /quickEmbedder\(me, params\.get\('tab'\)\)/);
+  assert.match(start, /verifiedEmbedder\(me, params\.get\('tab'\)\)/);
 });
 
 // quick.js with a fake page: startQuick wired to fake elements, whoami answered by me
@@ -1413,7 +1414,7 @@ function quickPage({ me, search = '?tab=7' }) {
       storage: { local: { get: async () => ({}), set: async values => Object.assign(data, values), remove: async () => {} } }
     }
   });
-  vm.runInContext(['src/utils/title-store.js', 'src/utils/page-call.js', 'src/core/chapter-range.js', 'src/utils/formats.js', 'src/core/title-loader.js', 'src/core/quick.js'].map(source).join('\n'), ctx);
+  vm.runInContext(['src/utils/title-store.js', 'src/utils/page-call.js', 'src/core/chapter-range.js', 'src/utils/formats.js', 'src/core/title-loader.js', 'src/core/site-download.js', 'src/core/quick.js'].map(source).join('\n'), ctx);
   // startQuick is waiting for whoami: swap the loader before it answers
   ctx.loadTitleData = async args => { loads.push(JSON.parse(JSON.stringify(args))); return { chapters: [] }; };
   return { element, data, loads, posted, settle: () => new Promise(resolve => setTimeout(resolve, 5)) };
@@ -1750,12 +1751,17 @@ test('an open «Скачать» popover closes when the page moves to another t
   ctx.closePopoverOnTitleChange('https://mangalib.me/ru/manga/456--other'); // nothing open: no error
 });
 
-test('the plaque click opens the downloads page in the overlay (until the new window in Task 10)', () => {
+test('the plaque click opens the settings window on the downloads section', async () => {
   const ctx = siteUiContext();
   const opened = [];
   ctx.openOverlay = src => opened.push(src);
+  ctx.chrome.runtime.sendMessage = async () => ({ tabId: 42, url: 'https://mangalib.me/ru/manga/123--title' });
   ctx.openDownloads();
-  assert.deepEqual(opened, ['chrome-extension://id/html/downloads.html']);
+  await settle();
+  assert.equal(opened.length, 1);
+  const url = new URL(opened[0]);
+  assert.equal(url.href.split('?')[0], 'chrome-extension://id/html/panel.html');
+  assert.deepEqual([url.searchParams.get('section'), url.searchParams.get('tab')], ['downloads', '42']);
 });
 
 test('the site name map lives in page-call.js and the downloads view no longer carries its own copy', () => {
@@ -1784,7 +1790,7 @@ function plaqueDragContext() {
   const saved = [];
   ctx.chrome.storage.local.set = async values => { saved.push(values); };
   const opened = [];
-  ctx.openOverlay = src => opened.push(src);
+  ctx.openSettings = section => opened.push(section); // the plaque asks for the settings window on its section
   vm.runInContext('engine.state = ' + JSON.stringify(stateOf(queueEntry('running', { progress: { current: 1, total: 4 } }))), ctx);
   ctx.renderPlaque(doc);
   const { button, host } = vm.runInContext('plaque', ctx);
@@ -1799,7 +1805,7 @@ function plaqueDragContext() {
   return { ctx, link, host, opened, saved, captured, event, fire, click, down, listenerCount, corner: () => vm.runInContext('plaqueCorner', ctx) };
 }
 
-test('plaque: a press with a move under 5px is a click that opens the downloads overlay', () => {
+test('plaque: a press with a move under 5px is a click that opens the downloads section', () => {
   const t = plaqueDragContext();
   const press = t.event('pointerdown', 950, 750);
   t.down(press);
@@ -1809,7 +1815,7 @@ test('plaque: a press with a move under 5px is a click that opens the downloads 
   t.fire(t.event('pointerup', 952, 751));
   assert.equal(t.listenerCount(), 0);
   t.click();
-  assert.deepEqual([t.opened, t.saved, t.captured, t.corner()], [['chrome-extension://id/html/downloads.html'], [], [], 'bottom-right']);
+  assert.deepEqual([t.opened, t.saved, t.captured, t.corner()], [['downloads'], [], [], 'bottom-right']);
   t.click({ isTrusted: false }); // a script click does nothing
   assert.equal(t.opened.length, 1);
 });
@@ -1872,6 +1878,7 @@ test('stopSiteUi takes everything down: observer, resize and storage listeners, 
   assert.deepEqual([observers.length, observer.target === doc, observer.options.subtree], [1, true, true]);
   assert.ok(windowListeners.has('resize'));
   assert.ok(ctx.listeners.has(ctx.onPlaqueCornerChanged));
+  assert.ok(ctx.messageListeners.has(ctx.onRuntimeMessage)); // the popup request reaches the page
   assert.equal(doc.querySelectorAll('[data-libsaver-buttons]').length, 1);
   link.ports[0].receive({ type: 'state', state: stateOf(queueEntry('running', { progress: { current: 1, total: 4 } })) });
   assert.notEqual(vm.runInContext('plaque', ctx), null);
@@ -1882,10 +1889,482 @@ test('stopSiteUi takes everything down: observer, resize and storage listeners, 
   assert.equal(observer.disconnected, true);
   assert.equal(windowListeners.has('resize'), false);
   assert.equal(ctx.listeners.has(ctx.onPlaqueCornerChanged), false);
+  assert.equal(ctx.messageListeners.has(ctx.onRuntimeMessage), false);
   assert.equal(doc.querySelectorAll('[data-libsaver-buttons]').length, 0);
   assert.equal(vm.runInContext('plaque', ctx), null);
   assert.ok(cleared.includes(pending)); // the scheduled check is canceled
   assert.equal(link.ports[0].disconnected, true);
   assert.equal(vm.runInContext('engine.stopped', ctx), true);
   vm.runInContext('stopSiteUi()', ctx); // a second call is harmless
+});
+
+// ---- Task 10: the settings window (panel.html) ----
+
+const panelScripts = ['src/utils/title-store.js', 'src/utils/page-call.js', 'src/core/chapter-range.js', 'src/utils/formats.js', 'src/core/title-loader.js', 'src/core/site-download.js', 'src/core/panel.js'];
+const jsonCopy = value => JSON.parse(JSON.stringify(value));
+
+function panelLogic() {
+  const ctx = vm.createContext({ URL, URLSearchParams, console });
+  vm.runInContext(['src/core/chapter-range.js', 'src/core/panel.js'].map(source).join('\n'), ctx);
+  return ctx;
+}
+
+test('the section list follows the format: settings for CBZ/ZIP, PDF and TXT only, in the fixed order with «Загрузки» last', () => {
+  const ctx = panelLogic();
+  const ids = format => Array.from(ctx.PANEL_SECTIONS(format), section => section.id);
+  const all = ['chapters', 'metadata', 'covers', 'images', 'toc', 'format', 'general', 'about', 'downloads'];
+  for (const hidden of ['epub', 'fb2', 'html', 'mkv', null]) assert.deepEqual(ids(hidden), all.filter(id => id !== 'format'), String(hidden));
+  for (const shown of ['cbz', 'zip', 'pdf', 'txt']) assert.deepEqual(ids(shown), all, shown);
+  const format = format => jsonCopy(ctx.PANEL_SECTIONS(format).find(section => section.id === 'format'));
+  assert.deepEqual(format('cbz'), { id: 'format', group: 'build', title: 'CBZ/ZIP', url: 'settings.html?group=cbz' });
+  assert.deepEqual([format('zip').title, format('zip').url], ['CBZ/ZIP', 'settings.html?group=cbz']);
+  assert.deepEqual([format('pdf').title, format('pdf').url], ['PDF', 'settings.html?group=pdf']);
+  assert.deepEqual([format('txt').title, format('txt').url], ['TXT', 'settings.html?group=txt']);
+  const urls = Object.fromEntries(Array.from(ctx.PANEL_SECTIONS('cbz'), section => [section.id, section.url]));
+  assert.deepEqual(urls, { chapters: 'chapters.html', metadata: 'metadata.html', covers: 'covers.html', images: 'settings.html?group=images', toc: 'settings.html?group=toc', format: 'settings.html?group=cbz', general: 'settings.html?group=general', about: 'settings.html?group=about', downloads: 'downloads.html' });
+  assert.equal(ctx.PANEL_SECTIONS('cbz').at(-1).group, null);
+});
+
+test('every section frame gets the title slug, after ? or &, and none when there is no title', () => {
+  const ctx = panelLogic();
+  assert.equal(ctx.panelFrameSrc({ url: 'chapters.html' }, '123--title'), 'chapters.html?slug=123--title');
+  assert.equal(ctx.panelFrameSrc({ url: 'settings.html?group=toc' }, '123--title'), 'settings.html?group=toc&slug=123--title');
+  assert.equal(ctx.panelFrameSrc({ url: 'chapters.html' }, 'a b&c'), 'chapters.html?slug=a%20b%26c');
+  assert.equal(ctx.panelFrameSrc({ url: 'downloads.html' }, ''), 'downloads.html');
+});
+
+test('phone subtitles: chapters, fields, covers, image quality, TOC format and the format name', () => {
+  const ctx = panelLogic();
+  const counts = { selected: 24, total: 109, fields: 12, covers: 3 };
+  assert.equal(ctx.sectionSubtitle('chapters', {}, { selected: 24, total: 109 }), '24 из 109');
+  assert.equal(ctx.sectionSubtitle('metadata', {}, counts), '12 полей');
+  assert.equal(ctx.sectionSubtitle('metadata', {}, { fields: 1 }), '1 поле');
+  assert.equal(ctx.sectionSubtitle('metadata', {}, { fields: 3 }), '3 поля');
+  assert.equal(ctx.sectionSubtitle('metadata', {}, { fields: 21 }), '21 поле');
+  assert.equal(ctx.sectionSubtitle('covers', {}, counts), '3');
+  assert.equal(ctx.sectionSubtitle('images', {}, counts), 'Без сжатия');
+  assert.equal(ctx.sectionSubtitle('images', { imageQuality: 'FHD' }, counts), '1080px');
+  assert.equal(ctx.sectionSubtitle('toc', {}, counts), 'Том X. Глава Y. Название');
+  assert.equal(ctx.sectionSubtitle('toc', { tocFormat: 'no_headers' }, counts), 'Без заголовков');
+  assert.equal(ctx.sectionSubtitle('format', { format: 'cbz' }, counts), 'CBZ');
+  for (const id of ['general', 'about', 'downloads']) assert.equal(ctx.sectionSubtitle(id, {}, counts), '', id);
+  assert.equal(ctx.sectionSubtitle('images', { imageQuality: 'bogus' }, counts), '');
+});
+
+test('selected chapters: the chapters section wins, then the range, then all; branch duplicates count once', () => {
+  const ctx = panelLogic();
+  const chapters = [{ id: 1 }, { id: 1 }, { id: 2 }, { id: 3 }];
+  assert.deepEqual(Array.from(ctx.selectedIds({ chapters, filteredChapters: [{ id: 2 }], selectedChapterIds: [3, 1] })), [3, 1]);
+  assert.deepEqual(Array.from(ctx.selectedIds({ chapters, filteredChapters: [{ id: 2 }, { id: 2 }, { id: 3 }] })), [2, 3]);
+  assert.deepEqual(Array.from(ctx.selectedIds({ chapters })), [1, 2, 3]);
+  assert.deepEqual(Array.from(ctx.selectedIds({ chapters, selectedChapterIds: [] })), []);
+  assert.deepEqual(Array.from(ctx.selectedIds(undefined)), []);
+  assert.deepEqual(jsonCopy(ctx.panelCounts({ chapters, filteredChapters: [{ id: 2 }], covers: [{}, {}] }, { a: true, b: false, c: true })), { selected: 1, total: 3, fields: 2, covers: 2 });
+  assert.deepEqual(jsonCopy(ctx.panelCounts(undefined, undefined)), { selected: 0, total: 0, fields: 15, covers: 0 });
+});
+
+test('verifiedEmbedder can accept any page of a LIB site when the title page is not required', () => {
+  const ctx = quickContext();
+  const catalog = { tabId: 5, url: 'https://mangalib.me/ru/catalog' };
+  assert.equal(ctx.verifiedEmbedder(catalog, '5'), null);
+  assert.deepEqual(jsonCopy(ctx.verifiedEmbedder(catalog, '5', { requireTitle: false })), { tabId: 5, url: catalog.url, parentOrigin: 'https://mangalib.me' });
+  assert.equal(ctx.verifiedEmbedder(catalog, '6', { requireTitle: false }), null);
+  assert.equal(ctx.verifiedEmbedder({ tabId: 5, url: 'https://mangalib.me.evil.example/' }, '5', { requireTitle: false }), null);
+  assert.equal(ctx.verifiedEmbedder({ tabId: 5, url: 'http://mangalib.me/' }, '5', { requireTitle: false }), null);
+  assert.equal(ctx.verifiedEmbedder(null, null, { requireTitle: false }), null);
+});
+
+// panel.js on a fake page: elements by id, whoami answered by `me`, storage with change events, a fake queue port
+class PanelEl {
+  constructor(tag = 'div') {
+    Object.assign(this, { tag, children: [], classes: new Set(), handlers: {}, attrs: {}, dataset: {}, textContent: '', className: '', value: '', checked: false, disabled: false });
+    this.classList = { toggle: (name, on) => { if (on ?? !this.classes.has(name)) this.classes.add(name); else this.classes.delete(name); }, add: name => this.classes.add(name), remove: name => this.classes.delete(name) };
+  }
+  append(...nodes) { this.children.push(...nodes); }
+  replaceChildren(...nodes) { this.children = nodes; }
+  setAttribute(name, value) { this.attrs[name] = value; }
+  addEventListener(type, handler) { (this.handlers[type] ||= []).push(handler); }
+  fire(type, event = {}) { for (const handler of this.handlers[type] || []) handler(event); }
+  has(name) { return this.classes.has(name) || this.className.split(' ').includes(name); }
+}
+
+const panelChapters = Array.from({ length: 109 }, (_, index) => ({ id: index + 1, volume: '1', number: String(index + 1), name: '' }));
+const panelTitleData = (extra = {}) => ({ chapters: panelChapters, metadata: { titleRu: 'Морино' }, covers: [{}, {}, {}], filteredChapters: panelChapters.slice(0, 24), ...extra });
+const panelUrl = 'https://mangalib.me/ru/manga/123--title';
+
+function panelPage({ me, search = '?tab=7', width = 1000, stored = {}, title = panelTitleData(), enqueueResult = { ok: true } }) {
+  const data = { 'titleData:123--title': title, ...structuredClone(stored) };
+  const calls = { loads: [], snapshots: [], enqueues: [], posted: [], writes: [], messages: [] };
+  const elements = {};
+  const element = id => elements[id] ||= new PanelEl(id);
+  const storageListeners = [];
+  const windowHandlers = {};
+  const documentHandlers = {};
+  const port = { onMessage: { addListener: fn => { port.receive = fn; } }, onDisconnect: { addListener: fn => { port.drop = fn; } } };
+  const ctx = vm.createContext({
+    URL, URLSearchParams, console: { error() {}, log() {} },
+    location: { search, protocol: 'chrome-extension:' },
+    window: {
+      innerWidth: width,
+      parent: { postMessage: (message, origin) => calls.posted.push([message, origin]) },
+      applySiteAccent: () => {},
+      addEventListener: (type, fn) => { (windowHandlers[type] ||= []).push(fn); }
+    },
+    document: { getElementById: element, createElement: tag => new PanelEl(tag), body: new PanelEl('body'), addEventListener: (type, fn) => { (documentHandlers[type] ||= []).push(fn); } },
+    loadAndApplyTheme: async () => {},
+    setupThemeMessageListener() {},
+    showToast() {},
+    buildDownloadSnapshot: async args => { calls.snapshots.push(structuredClone(args)); return { id: 'snap' }; },
+    enqueueSnapshot: async snapshot => { calls.enqueues.push(snapshot); return enqueueResult; },
+    chrome: {
+      runtime: {
+        sendMessage: async message => { calls.messages.push(message.action); return message.action === 'whoami' ? me : true; },
+        connect: () => port,
+        onMessage: { addListener() {} }
+      },
+      storage: {
+        local: {
+          get: async keys => structuredClone(Object.fromEntries((keys === null ? Object.keys(data) : [].concat(keys)).filter(key => key in data).map(key => [key, data[key]]))),
+          set: async values => {
+            calls.writes.push(Object.keys(values));
+            Object.assign(data, structuredClone(values));
+            for (const listener of storageListeners) listener(Object.fromEntries(Object.entries(values).map(([key, value]) => [key, { newValue: value }])), 'local');
+          },
+          remove: async () => {}
+        },
+        onChanged: { addListener: fn => storageListeners.push(fn) }
+      }
+    }
+  });
+  vm.runInContext(panelScripts.map(source).join('\n'), ctx);
+  // startPanel is waiting for whoami: swap the loader before it answers
+  ctx.loadTitleData = async args => {
+    calls.loads.push(jsonCopy(args));
+    return { slug: '123--title', siteKey: 'mangalib', siteType: 'manga', title: 'Морино (из API)', chapters: panelChapters, allChapters: panelChapters, covers: [] };
+  };
+  const page = {
+    ctx, data, calls, element, port,
+    body: ctx.document.body,
+    frames: () => element('frames').children.map(frame => ({ src: frame.src, active: frame.classes.has('active') })),
+    menu: () => element('menu').children.filter(node => node.tag === 'button').map(button => ({ title: button.children[0].textContent, note: button.children[1].textContent, on: button.has('on'), button })),
+    item: title => page.menu().find(entry => entry.title === title).button,
+    resize: newWidth => { ctx.window.innerWidth = newWidth; for (const fn of windowHandlers.resize) fn(); },
+    key: event => { for (const fn of documentHandlers.keydown) fn(event); },
+    settle
+  };
+  return page;
+}
+
+test('panel.js refuses an embedder that whoami does not vouch for: an error, no storage write, no load, no message to the page', async () => {
+  const forged = 'https://evil.example/ru/manga/x?mangalib.me/ru/manga/x';
+  for (const me of [{ tabId: 7, url: forged }, { tabId: 7, url: 'https://mangalib.me.evil.example/ru/manga/x' }, { tabId: 8, url: panelUrl }, null]) {
+    const page = panelPage({ me, search: '?tab=7&url=' + encodeURIComponent(panelUrl) + '&parent=https%3A%2F%2Fevil.example&section=downloads' });
+    const before = jsonCopy(page.data);
+    await page.settle();
+    assert.equal(page.element('error').has('hidden'), false);
+    assert.match(page.element('error-text').textContent, /только на страницах/);
+    assert.equal(page.element('retry').has('hidden'), true);
+    assert.equal(page.element('main').has('hidden'), true);
+    page.element('retry').fire('click'); // a clickjacked click on the hidden button, or a script
+    page.element('download').fire('click');
+    page.element('format').fire('change');
+    page.element('speed').fire('change');
+    page.element('close').fire('click');
+    page.key({ key: 'Escape' });
+    await page.settle();
+    assert.deepEqual(page.data, before);
+    assert.deepEqual([page.calls.writes, page.calls.loads, page.calls.snapshots, page.calls.enqueues, page.calls.posted], [[], [], [], [], []]);
+    assert.deepEqual(page.element('frames').children, []);
+    assert.deepEqual(page.calls.messages, ['whoami']); // not even the engine is woken
+  }
+});
+
+test('on a page of the site that is not a title only «Загрузки» opens: no title is loaded and nothing is written', async () => {
+  const page = panelPage({ me: { tabId: 7, url: 'https://mangalib.me/ru/catalog' }, search: '?tab=7&slug=&section=chapters' });
+  await page.settle();
+  assert.deepEqual([page.calls.writes, page.calls.loads, page.calls.snapshots], [[], [], []]);
+  assert.deepEqual(page.frames(), [{ src: 'downloads.html', active: true }]); // the forged ?section= is ignored: only downloads exist
+  assert.equal(page.body.classes.has('single'), true);
+  assert.equal(page.element('foot').has('hidden'), true);
+  assert.equal(page.element('title').textContent, 'Загрузки');
+  page.element('close').fire('click');
+  assert.deepEqual(jsonCopy(page.calls.posted), [[{ libsaver: true, type: 'close' }, 'https://mangalib.me']]);
+  page.element('download').fire('click');
+  page.element('retry').fire('click');
+  await page.settle();
+  assert.deepEqual([page.calls.writes, page.calls.loads, page.calls.snapshots, page.calls.enqueues], [[], [], [], []]);
+});
+
+test('a vouched title page loads with the tab and URL from whoami, writes siteType and sourceUrl first, and opens on «Главы»', async () => {
+  const page = panelPage({ me: { tabId: 7, url: panelUrl }, search: '?tab=7&url=' + encodeURIComponent('https://evil.example/') + '&parent=https%3A%2F%2Fevil.example' });
+  await page.settle();
+  assert.deepEqual(page.calls.loads, [{ tabId: 7, url: panelUrl, force: false }]);
+  assert.deepEqual([page.data.siteType, page.data.sourceUrl], ['manga', panelUrl]);
+  assert.deepEqual(page.frames(), [{ src: 'chapters.html?slug=123--title', active: true }]); // other sections are not created until opened
+  assert.equal(page.element('title').textContent, 'Морино');
+  const entries = page.menu().map(entry => [entry.title, entry.note, entry.on]);
+  assert.deepEqual(entries, [['Главы', '24', true], ['Метаданные', '15', false], ['Обложки', '3', false], ['Картинки', '', false], ['Оглавление', '', false], ['CBZ/ZIP', '', false], ['Общие', '', false], ['О LibSaver', '', false], ['Загрузки', '', false]]);
+  assert.equal(page.element('download').textContent, 'Скачать 24 главы');
+  assert.equal(page.element('download').disabled, false);
+  assert.equal(page.element('format').value, 'cbz');
+  assert.deepEqual(page.element('format').children.map(option => option.value), ['cbz', 'zip', 'pdf', 'epub', 'html']);
+  assert.equal(page.element('foot').has('hidden'), false);
+  assert.deepEqual(page.calls.messages, ['whoami', 'ensureEngine']);
+});
+
+test('sections open lazily, keep their frame, and a section named in the address opens first (unknown names do not)', async () => {
+  const page = panelPage({ me: { tabId: 7, url: panelUrl }, search: '?tab=7&section=toc' });
+  await page.settle();
+  assert.deepEqual(page.frames(), [{ src: 'settings.html?group=toc&slug=123--title', active: true }]);
+  page.item('Метаданные').fire('click');
+  assert.deepEqual(page.frames(), [{ src: 'settings.html?group=toc&slug=123--title', active: false }, { src: 'metadata.html?slug=123--title', active: true }]);
+  page.item('Оглавление').fire('click');
+  assert.deepEqual(page.frames().map(frame => frame.active), [true, false]); // the toc frame is kept, not recreated
+  assert.deepEqual(page.menu().filter(entry => entry.on).map(entry => entry.title), ['Оглавление']);
+
+  const bogus = panelPage({ me: { tabId: 7, url: panelUrl }, search: '?tab=7&section=evil' });
+  await bogus.settle();
+  assert.equal(bogus.frames()[0].src, 'chapters.html?slug=123--title');
+});
+
+test('the format select is the stored format; a format without settings drops its section and a change reloads the format frame', async () => {
+  const page = panelPage({ me: { tabId: 7, url: panelUrl }, search: '?tab=7&section=format', stored: { selectedFormat_manga: 'pdf' } });
+  await page.settle();
+  assert.equal(page.element('format').value, 'pdf');
+  assert.deepEqual(page.frames(), [{ src: 'settings.html?group=pdf&slug=123--title', active: true }]);
+  page.element('format').value = 'cbz';
+  page.element('format').fire('change');
+  await page.settle();
+  assert.equal(page.data.selectedFormat_manga, 'cbz');
+  assert.deepEqual(page.frames(), [{ src: 'settings.html?group=cbz&slug=123--title', active: true }]); // same frame, new address
+  page.element('format').value = 'epub';
+  page.element('format').fire('change');
+  await page.settle();
+  assert.equal(page.menu().some(entry => entry.title === 'CBZ/ZIP'), false);
+  assert.deepEqual(page.menu().filter(entry => entry.on).map(entry => entry.title), ['Главы']); // the open section vanished: back to the default
+  assert.deepEqual(page.frames().map(frame => frame.active), [false, true]);
+});
+
+test('«Скачать N глав» queues the selected chapters, leaves «Ускорить» to the snapshot, then opens «Загрузки»', async () => {
+  const page = panelPage({ me: { tabId: 7, url: panelUrl }, stored: { imageServer: 'normal' } });
+  await page.settle();
+  page.element('download').fire('click');
+  await page.settle();
+  const [args] = page.calls.snapshots;
+  assert.deepEqual(args.selectedChapterIds, panelChapters.slice(0, 24).map(chapter => chapter.id));
+  assert.deepEqual({ ...args, selectedChapterIds: null }, { slug: '123--title', tabId: 7, sourceUrl: panelUrl, selectedChapterIds: null, format: 'cbz', imageServer: 'normal', textOnly: false });
+  assert.equal('speedMode' in args, false);
+  assert.deepEqual(page.calls.enqueues, [{ id: 'snap' }]);
+  assert.deepEqual(page.frames().at(-1), { src: 'downloads.html?slug=123--title', active: true });
+  assert.equal(page.element('download').disabled, false);
+});
+
+test('the chapters section’s selection beats the range, and an empty selection disables the button', async () => {
+  const page = panelPage({ me: { tabId: 7, url: panelUrl }, title: panelTitleData({ selectedChapterIds: [5, 6, 7] }) });
+  await page.settle();
+  assert.equal(page.element('download').textContent, 'Скачать 3 главы');
+  page.element('download').fire('click');
+  await page.settle();
+  assert.deepEqual(page.calls.snapshots[0].selectedChapterIds, [5, 6, 7]);
+
+  const none = panelPage({ me: { tabId: 7, url: panelUrl }, title: panelTitleData({ selectedChapterIds: [] }) });
+  await none.settle();
+  assert.equal(none.element('download').textContent, 'Скачать');
+  assert.equal(none.element('download').disabled, true);
+});
+
+test('a refusal from the queue shows its message and stays on the section', async () => {
+  const page = panelPage({ me: { tabId: 7, url: panelUrl }, enqueueResult: { ok: false, reason: 'already-queued' } });
+  await page.settle();
+  page.element('download').fire('click');
+  await page.settle();
+  assert.equal(page.element('status').textContent, 'Этот тайтл уже в очереди');
+  assert.equal(page.frames().length, 1);
+  assert.equal(page.element('download').disabled, false);
+});
+
+test('counters follow storage; «Ускорить» is stored when toggled and follows the stored value', async () => {
+  const page = panelPage({ me: { tabId: 7, url: panelUrl }, stored: { metadataFields: { a: true, b: true, c: false } } });
+  await page.settle();
+  assert.equal(page.menu()[1].note, '2');
+  await page.ctx.chrome.storage.local.set({ metadataFields: { a: true } });
+  await page.ctx.chrome.storage.local.set({ 'titleData:123--title': panelTitleData({ selectedChapterIds: [1, 2], covers: [{}] }) });
+  await page.settle();
+  assert.deepEqual(page.menu().slice(0, 3).map(entry => entry.note), ['2', '1', '1']);
+  assert.equal(page.element('download').textContent, 'Скачать 2 главы');
+
+  page.element('speed').checked = true;
+  page.element('speed').fire('change');
+  await page.settle();
+  assert.equal(page.data.speedMode, true);
+  await page.ctx.chrome.storage.local.set({ speedMode: false }); // «Ускорить» switched off in «Загрузки»
+  await page.settle();
+  assert.equal(page.element('speed').checked, false);
+});
+
+test('the «Загрузки» counter is the number of titles in work in the queue state', async () => {
+  const page = panelPage({ me: { tabId: 7, url: panelUrl } });
+  await page.settle();
+  const state = statuses => ({ type: 'state', state: { items: statuses.map(status => ({ status })) } });
+  page.port.receive(state(['running', 'queued', 'done', 'error', 'waiting-tab']));
+  assert.equal(page.menu().at(-1).note, '3');
+  page.port.receive({ type: 'log' }); // only «state» matters
+  assert.equal(page.menu().at(-1).note, '3');
+  page.port.drop();
+  assert.equal(page.menu().at(-1).note, '');
+});
+
+test('on a phone the window opens on the list of sections with subtitles, a tap opens one section full-screen, back returns to the list', async () => {
+  const page = panelPage({ me: { tabId: 7, url: panelUrl }, width: 375, stored: { imageQuality: 'FHD' } });
+  await page.settle();
+  assert.equal(page.body.classes.has('phone'), true);
+  assert.equal(page.body.classes.has('in-section'), false);
+  assert.deepEqual(page.frames(), []); // no frame until a section is opened
+  assert.equal(page.element('back').has('hidden'), true);
+  assert.deepEqual(page.menu().map(entry => entry.note), ['24 из 109', '15 полей', '3', '1080px', 'Том X. Глава Y. Название', 'CBZ', '', '', '']);
+  assert.equal(page.menu().some(entry => entry.on), false);
+  assert.equal(page.element('foot').has('hidden'), false); // the footer stays pinned
+
+  page.item('Картинки').fire('click');
+  assert.equal(page.body.classes.has('in-section'), true);
+  assert.equal(page.element('back').has('hidden'), false);
+  assert.equal(page.element('title').textContent, 'Картинки');
+  assert.deepEqual(page.frames(), [{ src: 'settings.html?group=images&slug=123--title', active: true }]);
+  page.element('back').fire('click');
+  assert.equal(page.body.classes.has('in-section'), false);
+  assert.equal(page.element('title').textContent, 'Морино');
+  assert.equal(page.element('back').has('hidden'), true);
+  assert.equal(page.frames().length, 1); // kept alive
+});
+
+test('the phone layout is re-evaluated on resize', async () => {
+  const page = panelPage({ me: { tabId: 7, url: panelUrl }, width: 375 });
+  await page.settle();
+  page.resize(1000);
+  assert.equal(page.body.classes.has('phone'), false);
+  assert.deepEqual(page.frames(), [{ src: 'chapters.html?slug=123--title', active: true }]);
+  assert.deepEqual(page.menu().filter(entry => entry.on).map(entry => entry.title), ['Главы']);
+  assert.equal(page.menu()[0].note, '24');
+  page.resize(767);
+  assert.equal(page.body.classes.has('phone'), true);
+  page.resize(768);
+  assert.equal(page.body.classes.has('phone'), false);
+});
+
+test('Esc and ✕ ask the page to close the window, at the origin whoami vouched for; Esc that a section handled does not', async () => {
+  const page = panelPage({ me: { tabId: 7, url: panelUrl } });
+  await page.settle();
+  page.key({ key: 'Enter' });
+  page.key({ key: 'Escape', defaultPrevented: true });
+  assert.deepEqual(page.calls.posted, []);
+  page.key({ key: 'Escape' });
+  page.element('close').fire('click');
+  assert.deepEqual(jsonCopy(page.calls.posted), [[{ libsaver: true, type: 'close' }, 'https://mangalib.me'], [{ libsaver: true, type: 'close' }, 'https://mangalib.me']]);
+  // a section frame hands its own Esc to the same handler once it has loaded
+  const frame = page.element('frames').children[0];
+  let keydown;
+  frame.contentDocument = { addEventListener: (type, fn) => { if (type === 'keydown') keydown = fn; } };
+  frame.fire('load');
+  keydown({ key: 'Escape' });
+  assert.equal(page.calls.posted.length, 3);
+});
+
+test('a load error shows its text with «Повторить», which loads again with force', async () => {
+  const page = panelPage({ me: { tabId: 7, url: panelUrl } });
+  await page.settle();
+  page.ctx.loadTitleData = async args => {
+    page.calls.loads.push(jsonCopy(args));
+    throw Object.assign(new Error('load-failed'), { code: 'load-failed' });
+  };
+  page.element('retry').fire('click');
+  await page.settle();
+  assert.equal(page.element('error-text').textContent, 'Не удалось получить данные из API.');
+  assert.equal(page.element('retry').has('hidden'), false);
+  assert.equal(page.element('foot').has('hidden'), true);
+  assert.deepEqual(page.calls.loads.at(-1), { tabId: 7, url: panelUrl, force: true });
+});
+
+test('panel.html loads its scripts in dependency order and panel.js never reads the embedder from the address', () => {
+  const html = source('src/html/panel.html');
+  const scripts = [...html.matchAll(/<script src="\.\.\/([^"]+)"/g)].map(match => match[1]);
+  const order = ['utils/page-call.js', 'core/api.js', 'core/chapter-range.js', 'utils/formats.js', 'core/title-loader.js', 'core/snapshot.js', 'utils/engine-client.js', 'core/site-download.js', 'core/panel.js'];
+  assert.deepEqual(scripts.filter(script => order.includes(script)), order);
+  assert.ok(scripts.includes('utils/title-store.js') && scripts.includes('utils/toast.js') && scripts.includes('core/theme.js'));
+  assert.ok(html.includes('css/panel.css'));
+  const text = source('src/core/panel.js');
+  const start = text.slice(text.indexOf('function startPanel'));
+  assert.doesNotMatch(start, /params\.get\('(url|parent)'\)/);
+  assert.ok(start.indexOf("action: 'whoami'") > 0 && start.indexOf("action: 'whoami'") < start.indexOf('load(false)'));
+  assert.match(start, /verifiedEmbedder\(me, tabParam\)/);
+  assert.match(source('src/html/quick.html'), /core\/site-download\.js[\s\S]*core\/quick\.js/);
+});
+
+test('the settings window is opened from the page by the popup request, and only by the extension', () => {
+  const ctx = siteUiContext();
+  const opened = [];
+  ctx.openSettings = section => opened.push(section);
+  ctx.onRuntimeMessage({ action: 'libsaver:openPanel', section: 'chapters' }, { id: 'id' });
+  ctx.onRuntimeMessage({ action: 'libsaver:openPanel' }, { id: 'id' });
+  ctx.onRuntimeMessage({ action: 'libsaver:openPanel', section: { x: 1 } }, { id: 'id' });
+  ctx.onRuntimeMessage({ action: 'libsaver:openPanel', section: 'chapters' }, { id: 'other-extension' });
+  ctx.onRuntimeMessage({ action: 'showToast' }, { id: 'id' });
+  ctx.onRuntimeMessage(null, { id: 'id' });
+  assert.deepEqual(opened, ['chapters', undefined, undefined]);
+});
+
+test('background forwards the popup request to the active title tab only', async () => {
+  const sent = [];
+  let tabs = [{ id: 3, url: 'https://mangalib.me/ru/manga/1--a' }];
+  let failSend = false;
+  const ctx = vm.createContext({ URL, console, chrome: { tabs: {
+    query: async () => tabs,
+    sendMessage: async (id, message) => { if (failSend) throw new Error('Could not establish connection'); sent.push([id, message]); }
+  } } });
+  vm.runInContext(source('src/utils/page-call.js') + functionSource('src/background.js', 'openPanelOnActiveTab') + functionSource('src/background.js', 'handleOpenPanel'), ctx);
+  const ask = async (request, sender = {}) => {
+    let answer;
+    const kept = ctx.handleOpenPanel(request, sender, value => { answer = value; });
+    if (kept === true) await settle();
+    return [kept, answer];
+  };
+  assert.deepEqual(await ask({ action: 'openPanel' }), [true, true]);
+  assert.deepEqual(await ask({ action: 'openPanel', section: 'downloads' }), [true, true]);
+  assert.deepEqual(await ask({ action: 'openPanel', section: 5 }), [true, true]);
+  assert.deepEqual(jsonCopy(sent), [[3, { action: 'libsaver:openPanel' }], [3, { action: 'libsaver:openPanel', section: 'downloads' }], [3, { action: 'libsaver:openPanel' }]]);
+  assert.deepEqual(await ask({ action: 'openPanel' }, { tab: { id: 9 } }), [undefined, false]); // a page script cannot ask
+  assert.deepEqual(await ask({ action: 'whoami' }), [undefined, undefined]);
+  tabs = [{ id: 3, url: 'https://mangalib.me/ru/catalog' }];
+  assert.deepEqual(await ask({ action: 'openPanel' }), [true, false]);
+  tabs = [{ id: 3, url: 'https://evil.example/ru/manga/1--a?mangalib.me' }];
+  assert.deepEqual(await ask({ action: 'openPanel' }), [true, false]);
+  tabs = [];
+  assert.deepEqual(await ask({ action: 'openPanel' }), [true, false]);
+  tabs = [{ id: 3, url: 'https://mangalib.me/ru/manga/1--a' }];
+  failSend = true; // no content script in the tab
+  assert.deepEqual(await ask({ action: 'openPanel' }), [true, false]);
+  assert.equal(sent.length, 3);
+});
+
+test('the popup asks the background for the settings window on a title page and keeps its own screen elsewhere or on failure', async () => {
+  const messages = [];
+  let reply = true;
+  const ctx = vm.createContext({ URL, console, chrome: { runtime: { sendMessage: async message => { messages.push(message); if (reply instanceof Error) throw reply; return reply; } } } });
+  vm.runInContext(source('src/utils/page-call.js') + functionSource('src/core/popup.js', 'openPanelFromPopup'), ctx);
+  assert.equal(await ctx.openPanelFromPopup('https://mangalib.me/ru/manga/1--a'), true);
+  assert.deepEqual(jsonCopy(messages), [{ action: 'openPanel' }]);
+  assert.equal(await ctx.openPanelFromPopup('https://mangalib.me/ru/catalog'), false);
+  assert.equal(await ctx.openPanelFromPopup('https://example.org/'), false);
+  assert.equal(messages.length, 1); // off a title page nothing is asked
+  reply = false;
+  assert.equal(await ctx.openPanelFromPopup('https://mangalib.me/ru/manga/1--a'), false);
+  reply = new Error('no receiver');
+  assert.equal(await ctx.openPanelFromPopup('https://ranobelib.me/ru/book/7--y'), false);
+  const text = source('src/core/popup.js');
+  const load = text.slice(text.indexOf('async function loadTitle'));
+  assert.ok(load.indexOf('openPanelFromPopup(url)') > 0 && load.indexOf('openPanelFromPopup(url)') < load.indexOf('chrome.storage.local.set'));
+});
+
+test('the old windows are no longer opened from the page or the background', () => {
+  assert.doesNotMatch(source('src/content/site-ui.js'), /workspace\.html|html\/downloads\.html/);
+  assert.doesNotMatch(source('src/background.js'), /workspace\.html/);
 });

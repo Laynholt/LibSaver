@@ -1,0 +1,211 @@
+/* Окно настроек поверх сайта (html/panel.html): шапка, меню разделов слева (список на телефоне), раздел справа и закреплённый низ */
+
+html, body {
+  height: 100%;
+  overflow: hidden;
+}
+
+body {
+  display: flex;
+  flex-direction: column;
+}
+
+.pn-head {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  height: 48px;
+  padding: 0 var(--spacing-md) 0 var(--spacing-lg);
+  flex-shrink: 0;
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border-color);
+}
+
+.pn-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--font-size-lg);
+}
+
+.pn-icon {
+  flex: none;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  background: none;
+  color: var(--text-secondary);
+}
+
+.pn-icon:hover {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+}
+
+.pn-msg {
+  margin: 0;
+  padding: var(--spacing-lg);
+  color: var(--text-secondary);
+}
+
+.pn-msg p {
+  margin: 0 0 var(--spacing-sm);
+  color: var(--text-primary);
+}
+
+.pn-main {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+}
+
+/* Меню */
+.pn-menu {
+  flex: none;
+  width: 220px;
+  box-sizing: border-box;
+  padding: var(--spacing-sm);
+  overflow-y: auto;
+  background: var(--bg-secondary);
+  border-right: 1px solid var(--border-color);
+}
+
+.pn-group {
+  margin: var(--spacing-lg) var(--spacing-xs) var(--spacing-xs);
+  color: var(--text-secondary);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+.pn-group:first-child {
+  margin-top: var(--spacing-xs);
+}
+
+.pn-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-sm);
+  width: 100%;
+  box-sizing: border-box;
+  padding: 7px var(--spacing-md);
+  background: none;
+  color: var(--text-primary);
+  font-weight: 500;
+  text-align: left;
+}
+
+.pn-item:hover {
+  background: var(--bg-tertiary);
+}
+
+.pn-item.on {
+  background: color-mix(in srgb, var(--accent-color) 18%, transparent);
+  color: var(--accent-color);
+}
+
+.pn-item small {
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.pn-item.on small {
+  color: inherit;
+}
+
+.pn-rule {
+  margin: var(--spacing-md) var(--spacing-xs) var(--spacing-sm);
+  border-top: 1px solid var(--border-color);
+}
+
+/* Разделы: у каждого свой iframe, видим один */
+.pn-frames {
+  flex: 1;
+  position: relative;
+  min-width: 0;
+}
+
+.pn-frames iframe {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  display: none;
+}
+
+.pn-frames iframe.active {
+  display: block;
+}
+
+/* Низ закреплён всегда */
+.pn-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--spacing-sm) var(--spacing-md);
+  padding: var(--spacing-sm) var(--spacing-lg);
+  flex-shrink: 0;
+  background: var(--bg-secondary);
+  border-top: 1px solid var(--border-color);
+}
+
+.pn-foot select {
+  width: auto;
+  min-width: 96px;
+}
+
+.pn-foot #download {
+  margin-left: auto;
+  height: 36px;
+  white-space: nowrap;
+}
+
+.pn-status {
+  flex-basis: 100%;
+  order: -1;
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+}
+
+.pn-status:empty {
+  display: none;
+}
+
+/* Телефон (ширина окна < 768, класс ставит panel.js): список разделов или один раздел на весь экран */
+body.phone .pn-menu {
+  width: 100%;
+  border-right: 0;
+}
+
+body.phone .pn-item {
+  padding: 12px var(--spacing-md);
+  font-size: var(--font-size-lg);
+}
+
+body.phone .pn-item::after {
+  content: '\203A';
+  order: 3;
+  color: var(--text-secondary);
+}
+
+body.phone .pn-item small {
+  margin-left: auto;
+}
+
+body.phone:not(.in-section) .pn-frames,
+body.phone.in-section .pn-menu,
+body.single .pn-menu {
+  display: none;
+}
+
+body.phone .pn-foot #download {
+  flex: 1;
+}
