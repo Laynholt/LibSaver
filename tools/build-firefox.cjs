@@ -15,7 +15,7 @@ function firefoxManifest(chromeManifest) {
     permissions: chromeManifest.permissions.filter(permission => permission !== 'offscreen' && permission !== 'system.display'),
     background: { page: 'engine/background-firefox.html' },
     browser_specific_settings: {
-      gecko: { id: 'libsaver@laynholt', strict_min_version: '128.0' },
+      gecko: { id: 'libsaver@laynholt', strict_min_version: '128.0', data_collection_permissions: { required: ['none'] } }, // AMO требует для подписи; данные пользователя не собираются
       gecko_android: { strict_min_version: '128.0' }
     }
   };
