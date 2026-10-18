@@ -2,7 +2,7 @@
 
 # ~ LibSaver ~
 
-[![LICENSE](https://img.shields.io/github/license/dfy-dpg/LibSaver?style=flat-square&label=License&color=BD0000)](https://github.com/dfy-dpg/LibSaver/blob/main/LICENSE)
+[![LICENSE](https://img.shields.io/github/license/dfy-dpg/LibSaver?style=flat-square&label=License&color=bd0000)](https://github.com/dfy-dpg/LibSaver/blob/main/LICENSE)
 [![RELEASE](https://img.shields.io/github/v/release/dfy-dpg/LibSaver?sort=date&display_name=tag&style=flat-square&label=Release)](https://github.com/dfy-dpg/LibSaver/releases/latest)
 
 ![MangaLIB](https://img.shields.io/badge/MangaLIB-ef6c00?style=flat-square)
@@ -53,7 +53,7 @@
 - FB2 (только для RanobeLIB)
 - TXT + картинки (только для RanobeLIB)
 - CBZ / ZIP (только манга-сайты)
-- HTML (в разработке)
+- HTML (страница-читалка, картинки рядом в архиве)
 
 ## Установка
 
@@ -124,7 +124,6 @@ npx web-ext sign --source-dir dist/firefox --channel unlisted --api-key $AMO_JWT
 
 ## Заметки
 
-- Скачивание в формате HTML уже в разработке.
 - Поддержка AnimeLIB планируется (прям в мечтах)...
 
 ## Лицензия
@@ -133,7 +132,7 @@ npx web-ext sign --source-dir dist/firefox --channel unlisted --api-key $AMO_JWT
 
 <div align="center">
 
-# ~ Авторы и благодарности ~
+# ~ Контрибьюторы и благодарности ~
 
 Спасибо всем, кто пользуется **LibSaver**!<br>
 Огромное спасибо тем, кто находит ошибки и баги!<br>
@@ -152,4 +151,15 @@ npx web-ext sign --source-dir dist/firefox --channel unlisted --api-key $AMO_JWT
 <a href="https://github.com/Laynholt"><b>Laynholt</b></a><br>
 <sub>автор обновления 2.0 · <a href="https://github.com/Laynholt/LibSaver">Laynholt/LibSaver</a></sub>
 
+<br>
+<br>
+
 </div>
+
+<p align="center">
+
+<a href="https://github.com/dfy-dpg/LibSaver/graphs/contributors">
+  <img src="https://contrib.rocks/image?repo=dfy-dpg/LibSaver" />
+</a>
+
+</p>
