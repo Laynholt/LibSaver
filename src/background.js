@@ -36,9 +36,10 @@ restoreLoggingIfNeeded();
 
 // Логирование размера storage каждые 10 секунд
 async function logStorageSize() {
-  // Окна расширения (popup, окно поверх сайта) показывает getContexts; без них идёт отсчёт до выключения
-  const contexts = await chrome.runtime.getContexts({ contextTypes: ['TAB', 'POPUP'] });
-  if (contexts.length === 0) {
+  // Окна расширения (popup, окно поверх сайта) показывает getContexts; без них идёт отсчёт до выключения.
+  // В Firefox getContexts нет: окна не видны, поэтому логирование не выключается само
+  const contexts = chrome.runtime.getContexts ? await chrome.runtime.getContexts({ contextTypes: ['TAB', 'POPUP'] }) : null;
+  if (contexts && contexts.length === 0) {
     // Если нет открытых окон - проверяем время закрытия
     const sessionResult = await chrome.storage.session.get(['lastWindowCloseTime']);
     if (!sessionResult.lastWindowCloseTime) {

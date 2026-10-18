@@ -1156,6 +1156,7 @@ test('site-ui content script is registered for the four sites, with its styleshe
   // SiteMenuRestorer.js also runs on AnimeLIB and fetches the menu icons there: only they are exposed to those origins
   assert.deepEqual([anime.resources, anime.matches, rest.length], [['assets/svg/*.svg'], manifest.content_scripts[0].matches.filter(match => !script.matches.includes(match)), 0]);
   assert.equal(JSON.stringify(manifest).includes('<all_urls>'), JSON.stringify(manifest.host_permissions).includes('<all_urls>'));
+  assert.equal(libs.resources.some(resource => resource.startsWith('assets/fonts')), false); // pages load their own fonts, the site never asks for them
   assert.equal(manifest.permissions.some(name => name.startsWith('system.')), false);
 });
 
@@ -2421,11 +2422,50 @@ test('the popup closes after opening the window on a title page and otherwise sa
   assert.deepEqual([stale.calls.closed, stale.shown('btn-reload-page'), stale.shown('btn-mangalib'), stale.element('error-text').textContent], [0, true, false, 'Не удалось открыть окно LibSaver. Перезагрузите страницу.']);
 });
 
+test('the popup ⚙ on the screens off a title page opens the full settings page in a tab and closes the popup', async () => {
+  const handlers = {};
+  const calls = { tabs: [], closed: 0 };
+  const ctx = vm.createContext({
+    window: { close: () => { calls.closed++; } },
+    document: { getElementById: id => ({ addEventListener: (type, fn) => { handlers[id] = fn; } }) },
+    chrome: { tabs: { create: async options => { calls.tabs.push(options); } }, runtime: { getURL: file => 'chrome-extension://self/' + file } }
+  });
+  vm.runInContext(between('src/core/popup.js', "document.getElementById('btn-settings')", '// Кнопки открытия LIB сайтов'), ctx);
+  await handlers['btn-settings']();
+  assert.deepEqual(jsonCopy(calls), { tabs: [{ url: 'chrome-extension://self/html/settings.html' }], closed: 1 });
+  // the button sits in the error view, which every off-title screen shows
+  const html = source('src/html/popup.html');
+  assert.ok(html.indexOf('id="btn-settings"') > html.indexOf('id="error-view"') && html.indexOf('id="btn-settings"') < html.indexOf('id="btn-reload-page"'));
+});
+
+test('storage logging never throws without getContexts (Firefox) and does not switch itself off there', async () => {
+  const session = {};
+  const logs = [];
+  const ctx = vm.createContext({
+    console: { log: message => logs.push(message) },
+    disableLogging: () => logs.push('disabled'),
+    chrome: { runtime: {}, storage: {
+      session: { get: async () => session, set: async values => Object.assign(session, values), remove: async () => {} },
+      local: { getBytesInUse: (_keys, done) => done(1048576) }
+    } }
+  });
+  vm.runInContext(functionSource('src/background.js', 'logStorageSize'), ctx);
+  await ctx.logStorageSize();
+  assert.deepEqual(logs, ['[LibSaver] Storage size: 1.00 MB (1048576 bytes)']);
+  // with getContexts and no windows the timer starts and later switches logging off
+  ctx.chrome.runtime.getContexts = async () => [];
+  await ctx.logStorageSize();
+  assert.equal(typeof session.lastWindowCloseTime, 'number');
+  session.lastWindowCloseTime = Date.now() - 121000;
+  await ctx.logStorageSize();
+  assert.equal(logs.at(-1), 'disabled');
+});
+
 test('the popup keeps no range, preparation or editor-window code', () => {
   const popup = source('src/core/popup.js');
   assert.doesNotMatch(popup, /chapter-from|chapter-to|btn-download|loadTitleData|openPopupWindow|syncOpenWindows|canOpenWindow|windowNames/);
   const html = source('src/html/popup.html');
-  assert.doesNotMatch(html, /chapter-from|btn-download|btn-settings|title-loader|chapter-range/);
+  assert.doesNotMatch(html, /chapter-from|btn-download|title-loader|chapter-range/);
 });
 
 test('the old windows are no longer opened from the page or the background', () => {

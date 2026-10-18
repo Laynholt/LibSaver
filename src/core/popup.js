@@ -154,7 +154,7 @@ function updateLoader(text, progress) {
 
 // Показ сообщения (isError = true включает красный цвет, errorType определяет кнопку)
 // errorType: 'not_on_site' - кнопки LIB сайтов
-// errorType: 'no_title' - без кнопки
+// errorType: 'no_title' - кнопки LIB сайтов
 // errorType: 'chapters_error' - кнопка "Перезагрузить страницу"
 // errorType: 'auth_required' - кнопки LIB сайтов для авторизации
 function showMessage(text, isError = false, errorType = null) {
@@ -215,6 +215,12 @@ document.getElementById('btn-reload-page').addEventListener('click', async () =>
     });
     await loadTitle();
   }
+});
+
+// Общие настройки вне страницы тайтла: полная страница настроек во вкладке (окно поверх сайта есть только на странице тайтла)
+document.getElementById('btn-settings').addEventListener('click', async () => {
+  await chrome.tabs.create({ url: chrome.runtime.getURL('html/settings.html') });
+  window.close();
 });
 
 // Кнопки открытия LIB сайтов
