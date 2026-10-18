@@ -139,9 +139,25 @@ body {
   margin-left: auto;
 }
 
-/* Часть глав тома отмечена */
+/* Часть глав тома отмечена: акцентный квадрат с чертой (цвет акцента виден в обеих темах) */
+.volume-checkbox:indeterminate ~ .control__indicator {
+  position: relative;
+}
+
 .volume-checkbox:indeterminate ~ .control__indicator svg[data-state="default"] {
   color: var(--accent-color);
+}
+
+.volume-checkbox:indeterminate ~ .control__indicator::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 8px;
+  height: 2px;
+  margin: -1px 0 0 -4px;
+  border-radius: 1px;
+  background: var(--accent-color);
 }
 
 .chapter-input {

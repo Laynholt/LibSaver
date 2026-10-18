@@ -15,6 +15,10 @@ async function startQuickDownload({ info, fromIdx, toIdx, tabId, url, format }) 
   const { titleData } = await getTitleStore(['titleData'], info.slug);
   if (titleData[info.slug]) {
     applySelectionToTitle(titleData[info.slug], info.allChapters, selectedChapterIds);
+    // Границы диапазона для popup (раздел «Главы» их не пишет: его выбор может быть не подряд)
+    const chosen = new Set(selectedChapterIds);
+    titleData[info.slug].fromIdx = info.allChapters.findIndex(chapter => chosen.has(chapter.id));
+    titleData[info.slug].toIdx = info.allChapters.findLastIndex(chapter => chosen.has(chapter.id));
     await setTitleStore({ titleData });
   }
 

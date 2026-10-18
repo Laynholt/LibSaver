@@ -2811,14 +2811,14 @@ test('the TOC reformat wipes displayTitle once per committed change (change / le
 });
 
 // saveChapters / saveCovers / saveMetadata над фейковым хранилищем: что и когда они пишут
-function chaptersSaveContext({ slug = 's', allChapters = [{ id: 1 }] } = {}) {
+function chaptersSaveContext({ slug = 's', allChapters = [{ id: 1 }], titleData = {}, selectionDirty = true, chosen = allChapters.map(ch => ch.id) } = {}) {
   const writes = [];
   const ctx = vm.createContext({
-    allChapters, displayChapters: allChapters, originalChapters: allChapters, chapterBranchOverrides: {}, translatorPriority: [], chosenIds: new Set(allChapters.map(ch => ch.id)),
+    allChapters, displayChapters: allChapters, originalChapters: allChapters, chapterBranchOverrides: {}, translatorPriority: [], chosenIds: new Set(chosen), selectionDirty,
     tocFormat: 'default', customTocFormat: '', hideChapterName: false, hideVolumeNumber: false,
     document: { querySelectorAll: () => [] },
     formatChapterTitle: () => 'T',
-    getTitleStore: async () => ({ titleData: {}, currentSlug: slug }),
+    getTitleStore: async () => ({ titleData, currentSlug: slug }),
     setTitleStore: async items => { writes.push(items); }
   });
   vm.runInContext(source('src/core/chapter-range.js') + functionSource('src/editors/chapters.js', 'saveChapters') +'\nthis.saveChapters = saveChapters;', ctx);
@@ -2858,7 +2858,7 @@ test('the chapters section’s selection reaches the panel and the snapshot even
   assert.equal(page.element('download').textContent, 'Скачать 24 главы');
   const selection = [50, 51, 100];
   const saveCtx = vm.createContext({
-    allChapters: structuredClone(panelChapters), displayChapters: [], originalChapters: [], chapterBranchOverrides: {}, translatorPriority: [], chosenIds: new Set(selection),
+    allChapters: structuredClone(panelChapters), displayChapters: [], originalChapters: [], chapterBranchOverrides: {}, translatorPriority: [], chosenIds: new Set(selection), selectionDirty: true,
     tocFormat: 'default', customTocFormat: '', hideChapterName: false, hideVolumeNumber: false,
     URLSearchParams, document: { querySelectorAll: () => [] }, formatChapterTitle: () => 'T', location: { protocol: 'chrome-extension:', search: '?slug=123--title' },
     chrome: page.ctx.chrome
@@ -2873,6 +2873,59 @@ test('the chapters section’s selection reaches the panel and the snapshot even
   const snap = await snapshotContext(page.data).buildDownloadSnapshot({ ...page.calls.snapshots[0] });
   assert.deepEqual(snap.downloadData.chapters.map(ch => ch.id), selection); // the engine filters these by selectedChapterIds
   assert.deepEqual(snap.downloadData.selectedChapterIds, selection);
+});
+
+test('an autosave that did not touch the selection (a rename) keeps the selection set from outside; a touched selection is written', async () => {
+  const chapters = [1, 2, 3, 4].map(id => ({ id, volume: '1' }));
+  const titleData = { s: { chapters, selectedChapterIds: [2, 3], filteredChapters: chapters.slice(1, 3) } }; // the quick popover set 2..3 meanwhile
+  const renamed = chaptersSaveContext({ allChapters: structuredClone(chapters), titleData: structuredClone(titleData), selectionDirty: false, chosen: [1, 2, 3, 4] });
+  await renamed.ctx.saveChapters();
+  assert.deepEqual(jsonCopy(renamed.writes[0].titleData.s.selectedChapterIds), [2, 3]);
+  assert.deepEqual(renamed.writes[0].titleData.s.filteredChapters.map(ch => ch.id), [2, 3]);
+
+  const edited = chaptersSaveContext({ allChapters: structuredClone(chapters), titleData: structuredClone(titleData), selectionDirty: true, chosen: [1, 4] });
+  await edited.ctx.saveChapters();
+  assert.deepEqual(jsonCopy(edited.writes[0].titleData.s.selectedChapterIds), [1, 4]);
+  assert.deepEqual(edited.writes[0].titleData.s.filteredChapters.map(ch => ch.id), [1, 4]);
+  assert.equal(vm.runInContext('selectionDirty', edited.ctx), false); // written: the next autosave leaves it alone
+});
+
+test('the chapters frame follows a selection changed outside while it has no unsaved selection of its own, and ignores it otherwise', () => {
+  const chapters = [1, 2, 3, 4].map(id => ({ id, volume: '1' }));
+  const make = dirty => {
+    const refreshed = [];
+    const ctx = vm.createContext({
+      currentSlug: 's', uniqueChapters: chapters, chosenIds: new Set([1, 2, 3, 4]), selectionDirty: dirty,
+      titleStoreKey: (kind, slug) => `${kind}:${slug}`, refreshSelectionUi: () => refreshed.push('ui'), syncRangeSelects: () => refreshed.push('range')
+    });
+    vm.runInContext(functionSource('src/editors/chapters.js', 'initialSelection') + functionSource('src/editors/chapters.js', 'followStoredSelection') + '\nthis.followStoredSelection = followStoredSelection;', ctx);
+    return { ctx, refreshed };
+  };
+  const changes = { 'titleData:s': { newValue: { selectedChapterIds: [2, 3] } } };
+  const idle = make(false);
+  idle.ctx.followStoredSelection(changes);
+  assert.deepEqual(jsonCopy([...vm.runInContext('chosenIds', idle.ctx)]), [2, 3]);
+  assert.deepEqual(idle.refreshed, ['ui', 'range']);
+  const busy = make(true);
+  busy.ctx.followStoredSelection(changes);
+  assert.deepEqual(jsonCopy([...vm.runInContext('chosenIds', busy.ctx)]), [1, 2, 3, 4]);
+  idle.ctx.followStoredSelection({ 'titleData:other': changes['titleData:s'] }); // another title
+  assert.deepEqual(jsonCopy([...vm.runInContext('chosenIds', idle.ctx)]), [2, 3]);
+});
+
+test('the starting selection: stored ids, else the old popup range, else everything; a stored list of only unknown ids never becomes an empty selection', () => {
+  const chapters = [1, 2, 3, 4].map(id => ({ id, volume: '1' }));
+  const ctx = vm.createContext({ uniqueChapters: chapters });
+  vm.runInContext(functionSource('src/editors/chapters.js', 'initialSelection') + '\nthis.initialSelection = initialSelection;', ctx);
+  const pick = title => jsonCopy([...ctx.initialSelection(title)]);
+  assert.deepEqual(pick({ selectedChapterIds: [3, 9, 1], filteredChapters: [{ id: 2 }] }), [3, 1]);
+  assert.deepEqual(pick({ selectedChapterIds: [], filteredChapters: [{ id: 2 }] }), []); // deselected on purpose
+  assert.deepEqual(pick({ selectedChapterIds: [8, 9], filteredChapters: [{ id: 2 }, { id: 3 }] }), [2, 3]); // chapters were refetched
+  assert.deepEqual(pick({ selectedChapterIds: [8, 9], filteredChapters: [{ id: 7 }] }), [1, 2, 3, 4]);
+  assert.deepEqual(pick({ selectedChapterIds: [8, 9] }), [1, 2, 3, 4]);
+  assert.deepEqual(pick({ filteredChapters: [] }), [1, 2, 3, 4]); // [] is truthy but is no range
+  assert.deepEqual(pick({ filteredChapters: [{ id: 4 }] }), [4]);
+  assert.deepEqual(pick({}), [1, 2, 3, 4]);
 });
 
 test('the quick range overwrites an older selection from the chapters section', async () => {

@@ -6,6 +6,7 @@ let uniqueChapters = []; // getUniqueChapters(displayChapters): индекс в 
 let volumeChapters = new Map(); // том (строкой) -> его главы из uniqueChapters, все, а не только показанные
 let volumeCards = new Map(); // том (строкой) -> карточка тома в DOM (по мере показа глав)
 let chosenIds = new Set(); // id отмеченных глав (хранится в titleData[slug].selectedChapterIds)
+let selectionDirty = false; // выбор правили здесь и ещё не записали: без этого saveChapters чужой выбор (быстрое окошко) не трогает
 let userChapters = [];
 let currentSlug = null;
 let translatorPriority = [];
@@ -82,6 +83,7 @@ function createVolumeCard(key) {
   const select = createCheckbox('volume-checkbox');
   select.input.title = 'Весь том';
   select.input.addEventListener('change', () => {
+    selectionDirty = true;
     (volumeChapters.get(key) || []).forEach(ch => {
       if (select.input.checked) chosenIds.add(ch.id);
       else chosenIds.delete(ch.id);
@@ -113,6 +115,36 @@ function getVolumeBody(container, volume) {
   return card.querySelector('.volume-body');
 }
 
+// «от»/«до» показывают границы текущего выбора (без выбора - весь список)
+function syncRangeSelects() {
+  const selected = uniqueChapters.map((ch, index) => chosenIds.has(ch.id) ? index : -1).filter(index => index >= 0);
+  document.getElementById('range-from').value = selected.length ? selected[0] : 0;
+  document.getElementById('range-to').value = selected.length ? selected[selected.length - 1] : uniqueChapters.length - 1;
+}
+
+// Выбор тайтла из хранилища: сохранённый selectedChapterIds, иначе диапазон popup, иначе все главы. Id глав, которых уже нет в тайтле, отбрасываются.
+// Если из сохранённого не осталось ни одного известного id (главы загрузили заново), берём диапазон popup, а не пустой выбор
+function initialSelection(title) {
+  const known = new Set(uniqueChapters.map(ch => ch.id));
+  const keep = ids => new Set(ids.filter(id => known.has(id)));
+  const stored = Array.isArray(title.selectedChapterIds) ? title.selectedChapterIds : null;
+  if (stored) {
+    const ids = keep(stored);
+    if (ids.size > 0 || stored.length === 0) return ids;
+  }
+  const ranged = keep((title.filteredChapters || []).map(ch => ch.id));
+  return ranged.size > 0 ? ranged : keep(uniqueChapters.map(ch => ch.id));
+}
+
+// Выбор поменяли снаружи (быстрое окошко, другое окно): пока здесь нет несохранённой правки, подхватываем его
+function followStoredSelection(changes) {
+  const change = changes[titleStoreKey('titleData', currentSlug)];
+  if (selectionDirty || !change?.newValue || uniqueChapters.length === 0) return;
+  chosenIds = initialSelection(change.newValue);
+  refreshSelectionUi();
+  syncRangeSelects();
+}
+
 // Диапазон «от»/«до»: все главы тайтла по порядку; выбор = ровно главы диапазона
 function initRangeCard() {
   const fromSelect = document.getElementById('range-from');
@@ -125,11 +157,10 @@ function initRangeCard() {
       return option;
     }));
   });
-  const selected = uniqueChapters.map((ch, index) => chosenIds.has(ch.id) ? index : -1).filter(index => index >= 0);
-  fromSelect.value = selected.length ? selected[0] : 0;
-  toSelect.value = selected.length ? selected[selected.length - 1] : uniqueChapters.length - 1;
+  syncRangeSelects();
 
   const apply = changed => {
+    selectionDirty = true;
     [fromSelect.value, toSelect.value] = syncRange(Number(fromSelect.value), Number(toSelect.value), changed);
     chosenIds = new Set(rangeChapterIds(uniqueChapters, Number(fromSelect.value), Number(toSelect.value)));
     refreshSelectionUi();
@@ -275,13 +306,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (!volumeChapters.has(key)) volumeChapters.set(key, []);
     volumeChapters.get(key).push(ch);
   });
-  // Выбор: сохранённый, иначе прежний диапазон popup, иначе все главы. Чужие id (главы, которых уже нет в тайтле) отбрасываем
-  const storedTitle = (result.titleData && result.titleData[currentSlug]) || {};
-  const initialIds = Array.isArray(storedTitle.selectedChapterIds)
-    ? storedTitle.selectedChapterIds
-    : (storedTitle.filteredChapters || uniqueChapters).map(ch => ch.id);
-  const knownIds = new Set(uniqueChapters.map(ch => ch.id));
-  chosenIds = new Set(initialIds.filter(id => knownIds.has(id)));
+  chosenIds = initialSelection((result.titleData && result.titleData[currentSlug]) || {});
   
 
   if (result.originalTitleData && result.originalTitleData[currentSlug] && result.originalTitleData[currentSlug].chapters) {
@@ -336,6 +361,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
 chrome.storage.onChanged.addListener((changes, areaName) => {
   if (areaName === 'local') {
+    followStoredSelection(changes);
     let settingsChanged = false;
     
     if (changes.tocFormat) {
@@ -443,6 +469,7 @@ function renderChaptersList(chapters, originalChapters, startIndex = 0, append =
     select.input.dataset.index = globalIndex;
     select.input.checked = chosenIds.has(ch.id);
     select.input.addEventListener('change', () => {
+      selectionDirty = true;
       if (select.input.checked) chosenIds.add(ch.id);
       else chosenIds.delete(ch.id);
       updateVolumeHeader(String(ch.volume));
@@ -524,6 +551,7 @@ function renderChaptersList(chapters, originalChapters, startIndex = 0, append =
         option.dataset.translatorKey = translatorKey;
         option.addEventListener('click', (e) => {
           e.stopPropagation();
+          selectionDirty = true; // перевод главы лежит и в копиях глав filteredChapters
           chapterBranchOverrides[ch.id] = translatorKey;
           notifyChanged();
           translatorSelect.textContent = name;
@@ -783,14 +811,24 @@ async function saveChapters() {
 
   titleData[currentSlug].chapters = allChapters;
   // Выбор уходит и в selectedChapterIds, и в filteredChapters (из него снимок берёт главы, в том числе вне прежнего диапазона popup)
-  applySelectionToTitle(titleData[currentSlug], allChapters, uniqueAllChapters.filter(ch => chosenIds.has(ch.id)).map(ch => ch.id));
+  // Только если выбор правили здесь: иначе устаревший выбор перебил бы новый диапазон из быстрого окошка при любом другом автосохранении
+  const selectionSaved = selectionDirty;
+  if (selectionSaved) {
+    selectionDirty = false; // правка во время записи снова поднимет флаг
+    applySelectionToTitle(titleData[currentSlug], allChapters, uniqueAllChapters.filter(ch => chosenIds.has(ch.id)).map(ch => ch.id));
+  }
   titleData[currentSlug].chapterBranchOverrides = chapterBranchOverrides;
   titleData[currentSlug].translatorPriority = translatorPriority;
 
   // Обновляем timestamp кэша (продлеваем срок действия на 10 минут)
   titleData[currentSlug].cacheTimestamp = Date.now();
 
-  await setTitleStore({ titleData });
+  try {
+    await setTitleStore({ titleData });
+  } catch (error) {
+    if (selectionSaved) selectionDirty = true; // не записали: выбор остаётся несохранённым
+    throw error;
+  }
 }
 
 document.getElementById('btn-reset').addEventListener('click', () => {
@@ -807,6 +845,7 @@ document.getElementById('btn-reset').addEventListener('click', () => {
   
   chapterBranchOverrides = {};
   translatorPriority = [];
+  selectionDirty = true; // перевод глав сброшен: копии в filteredChapters обновятся вместе с выбором
   
   // Сначала вычисляем новый приоритет на основе частоты
   const translatorCounts = {};
@@ -847,6 +886,7 @@ function initChapterResetButtons() {
       const displayChapter = uniqueDisplayChapters[index];
       if (displayChapter) {
         delete chapterBranchOverrides[displayChapter.id];
+        selectionDirty = true;
 
         const variants = getChapterVariantsById(displayChapter.id);
         // Находим соответствующую главу в allChapters по ID
@@ -1047,6 +1087,7 @@ function updatePriorityFromList(listElement) {
     newPriority.push(item.dataset.translatorKey);
   });
   translatorPriority = newPriority;
+  selectionDirty = true;
   notifyChanged();
   
   // Если глав меньше 800, обновляем сразу, иначе после паузы в щелчках (оптимизация)
