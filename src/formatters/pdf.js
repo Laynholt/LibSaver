@@ -10,6 +10,9 @@ function loadPdfLibs() {
   return loadPdfLibs.promise;
 }
 
+// Глифов корейского, китайского и японского в шрифтах из assets/fonts нет: такие символы рисуются этим шрифтом
+const PDF_FALLBACK_FONT = 'assets/fonts/DroidSansFallbackFull.ttf';
+
 class PdfFormatter extends BaseFormatter {
   constructor(options) {
     super(options);
@@ -34,6 +37,8 @@ class PdfFormatter extends BaseFormatter {
 
     // Создаём PDF документ
     const pdfDoc = await PDFDocument.create();
+    this.fallbackFont = undefined; // undefined - ещё не нужен, null - не загрузился
+    this.fontChars = new Map();
 
     // Регистрируем fontkit для поддержки кастомных шрифтов
     if (typeof fontkit !== 'undefined') {
@@ -662,6 +667,7 @@ class PdfFormatter extends BaseFormatter {
       // Парсим HTML и извлекаем текст и картинки
       const parser = new DOMParser();
       const doc = parser.parseFromString(htmlContent, 'text/html');
+      await this.loadFallbackFontFor(pdfDoc, `${ch.displayTitle || ''}${doc.body.textContent}`, [font, boldFont], addLog);
 
       // Сохраняем индекс страницы начала главы
       const startPageIndex = pdfDoc.getPageCount();
@@ -677,7 +683,7 @@ class PdfFormatter extends BaseFormatter {
         const chapterTitle = ch.displayTitle || `Глава ${i + 1}`;
         const titleLines = this.wrapText(chapterTitle, maxLineWidth, fontSize + 2, boldFont);
         for (const line of titleLines) {
-          page.drawText(line, {
+          this.drawTextRuns(page, line, {
             x: textMargin,
             y: y,
             size: fontSize + 2,
@@ -808,7 +814,7 @@ class PdfFormatter extends BaseFormatter {
                 page = pdfDoc.addPage([pageWidth, pageHeight]);
                 y = pageHeight - margin;
               }
-              page.drawText(line, {
+              this.drawTextRuns(page, line, {
                 x: textMargin,
                 y: y,
                 size: fontSize,
@@ -1174,7 +1180,7 @@ class PdfFormatter extends BaseFormatter {
 
     for (const word of words) {
       const testLine = currentLine ? `${currentLine} ${word}` : word;
-      const width = font.widthOfTextAtSize(testLine, fontSize);
+      const width = this.textWidth(testLine, fontSize, font);
 
       if (width < maxWidth) {
         currentLine = testLine;
@@ -1191,5 +1197,54 @@ class PdfFormatter extends BaseFormatter {
     }
 
     return lines;
+  }
+
+  charsOf(font) {
+    if (!this.fontChars.has(font)) this.fontChars.set(font, new Set(font.getCharacterSet()));
+    return this.fontChars.get(font);
+  }
+
+  // Запасной шрифт встраивается подмножеством и только в PDF, где есть символы без глифа в выбранном шрифте
+  async loadFallbackFontFor(pdfDoc, text, fonts, addLog) {
+    if (this.fallbackFont !== undefined) return;
+    const missing = [...text].some(char => fonts.some(font => !this.charsOf(font).has(char.codePointAt(0))));
+    if (!missing) return;
+    this.fallbackFont = null;
+    try {
+      const response = await fetch(chrome.runtime.getURL(PDF_FALLBACK_FONT));
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      this.fallbackFont = await pdfDoc.embedFont(await response.arrayBuffer(), { subset: true });
+    } catch (error) {
+      addLog(`Не загрузился шрифт для иероглифов, они могут не отобразиться: ${error.message}`, true);
+    }
+  }
+
+  // Строка -> куски одного шрифта: символ без глифа в основном шрифте берётся из запасного, если там он есть
+  textRuns(text, font) {
+    const fallback = this.fallbackFont;
+    if (!fallback) return [{ text, font }];
+    const own = this.charsOf(font);
+    const extra = this.charsOf(fallback);
+    const runs = [];
+    for (const char of text) {
+      const code = char.codePointAt(0);
+      const runFont = own.has(code) || !extra.has(code) ? font : fallback;
+      const last = runs[runs.length - 1];
+      if (last?.font === runFont) last.text += char;
+      else runs.push({ text: char, font: runFont });
+    }
+    return runs;
+  }
+
+  textWidth(text, size, font) {
+    return this.textRuns(text, font).reduce((width, run) => width + run.font.widthOfTextAtSize(run.text, size), 0);
+  }
+
+  drawTextRuns(page, text, options) {
+    let x = options.x;
+    for (const run of this.textRuns(text, options.font)) {
+      page.drawText(run.text, { ...options, x, font: run.font });
+      x += run.font.widthOfTextAtSize(run.text, options.size);
+    }
   }
 }

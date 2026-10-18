@@ -116,6 +116,7 @@ function renderLog(logTail) {
 let enginePort = null;
 let pingTimer = 0;
 let autoScrollLog = true;
+let finishedIds = []; // для «Очистить завершённые»: готовые, с ошибкой и отменённые из последнего состояния
 const rendered = {}; // последняя разметка по id: state приходит часто, без изменений DOM не трогаем
 
 function setHtml(id, html) {
@@ -128,6 +129,8 @@ function setHtml(id, html) {
 function renderState({ items = [], stats = null, logTail = [] }) {
   const byId = id => document.getElementById(id);
   byId('dl-empty').hidden = items.length > 0;
+  finishedIds = items.filter(item => !ACTIVE_STATUSES.includes(item.status)).map(item => item.id);
+  byId('dl-clear-finished').hidden = !finishedIds.length;
   setHtml('dl-list', items.map(renderQueueItem).join(''));
   byId('dl-current').hidden = !logTail.length && !stats;
   setHtml('dl-stats', renderStats(stats));
@@ -211,6 +214,11 @@ async function initDownloadsView() {
     }
     const button = event.target.closest('[data-cmd]');
     if (button && enginePort) sendCommand(button.dataset.cmd, button.dataset.id);
+  });
+
+  // Движок убирает по одному: те же команды remove, что и у кнопки на карточке
+  byId('dl-clear-finished').addEventListener('click', () => {
+    finishedIds.forEach(id => sendCommand('remove', id));
   });
 
   const panel = byId('dl-log-panel');

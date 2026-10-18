@@ -768,6 +768,18 @@ test('view ensures the engine, connects to the port and draws the state it recei
   assert.equal(element('dl-list').innerHTML, '');
 });
 
+test('«Очистить завершённые» shows only with finished items and removes all of them at once, leaving the active ones', async () => {
+  const { ctx, element, ports } = wiringContext();
+  await ctx.initDownloadsView();
+  const port = ports[1];
+  port.receive({ type: 'state', state: { items: [queueItem({ id: 'run', status: 'running' }), queueItem({ id: 'q', status: 'queued' })], stats: null, logTail: [] } });
+  assert.equal(element('dl-clear-finished').hidden, true);
+  port.receive({ type: 'state', state: { items: [queueItem({ id: 'run', status: 'running' }), queueItem({ id: 'd', status: 'done' }), queueItem({ id: 'e', status: 'error' }), queueItem({ id: 'c', status: 'canceled' })], stats: null, logTail: [] } });
+  assert.equal(element('dl-clear-finished').hidden, false);
+  element('dl-clear-finished').listeners.click();
+  assert.deepEqual(port.posted, [{ cmd: 'remove', id: 'd' }, { cmd: 'remove', id: 'e' }, { cmd: 'remove', id: 'c' }]);
+});
+
 test('view buttons become protocol commands; links open tabs; speed mode is sent and remembered', async () => {
   const { ctx, element, ports, created, stored } = wiringContext();
   await ctx.initDownloadsView();
@@ -3466,4 +3478,36 @@ test('«Сообщить о проблеме» opens the issue form of the 2.x r
   assert.deepEqual(Object.fromEntries(url.searchParams), { template: 'bug_report.yml', version: '2.0.0', page: 'https://mangalib.me/ru/manga/1--a', browser: 'UA 1' });
   const form = source('.github/ISSUE_TEMPLATE/bug_report.yml');
   for (const id of ['version', 'page', 'browser']) assert.match(form, new RegExp(`id: ${id}\n`));
+});
+
+test('ranobe PDF draws characters missing from the chosen font (Korean, Chinese) with the fallback font, loaded only when needed', async () => {
+  const ctx = vm.createContext({ BaseFormatter: class { constructor(options) { this.options = options; } }, chrome: { runtime: { getURL: p => p } } });
+  vm.runInContext(source('src/formatters/pdf.js') + ';this.Formatter = PdfFormatter;', ctx);
+  const formatter = new ctx.Formatter({});
+  const fakeFont = chars => ({ getCharacterSet: () => [...chars].map(char => char.codePointAt(0)), widthOfTextAtSize: (text, size) => [...text].length * size });
+  const main = fakeFont('Ах ты~(),! ');
+  const cjk = fakeFont('아나도,');
+  const fetched = [];
+  ctx.fetch = async url => { fetched.push(url); return { ok: true, arrayBuffer: async () => 'bytes' }; };
+  const pdfDoc = { embedFont: async (bytes, options) => { assert.deepEqual(jsonCopy(options), { subset: true }); return cjk; } };
+  formatter.fallbackFont = undefined;
+  formatter.fontChars = new Map();
+  await formatter.loadFallbackFontFor(pdfDoc, 'Ах ты~', [main], () => {});
+  assert.deepEqual([fetched, formatter.fallbackFont], [[], undefined]); // nothing missing - no extra font in the PDF
+  assert.deepEqual(jsonCopy(formatter.textRuns('Ах (아)', main)), [{ text: 'Ах (아)', font: jsonCopy(main) }]);
+  await formatter.loadFallbackFontFor(pdfDoc, 'Ах (아, 나도!)', [main], () => {});
+  assert.deepEqual(fetched, ['assets/fonts/DroidSansFallbackFull.ttf']);
+  const runs = formatter.textRuns('Ах (아, 나도!) 中', main);
+  assert.deepEqual(jsonCopy(runs.map(run => [run.text, run.font === cjk])), [['Ах (', false], ['아', true], [', ', false], ['나도', true], ['!) 中', false]]); // the comma stays in the main font; 中 is in neither
+  const drawn = [];
+  formatter.drawTextRuns({ drawText: (text, options) => drawn.push([text, options.x]) }, 'Ах 아', { x: 10, size: 2, font: main });
+  assert.deepEqual(jsonCopy(drawn), [['Ах ', 10], ['아', 16]]);
+  assert.equal(formatter.textWidth('Ах 아', 2, main), 8);
+  // a missing font file leaves the old behaviour and says so in the log
+  const logs = [];
+  formatter.fallbackFont = undefined;
+  ctx.fetch = async () => ({ ok: false, status: 404 });
+  await formatter.loadFallbackFontFor(pdfDoc, '아', [main], message => logs.push(message));
+  assert.equal(formatter.fallbackFont, null);
+  assert.match(logs[0], /HTTP 404/);
 });

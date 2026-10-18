@@ -18,7 +18,7 @@ body {
 }
 
 .dl-header h2 {
-  margin: 0;
+  margin: 0 auto 0 0;
   font-size: 14px;
   font-weight: 650;
   display: flex;
@@ -200,6 +200,14 @@ body {
 
 .dl-btn i {
   font-size: 11px;
+}
+
+.dl-btn[hidden] {
+  display: none;
+}
+
+.dl-clear {
+  height: 32px;
 }
 
 .dl-zone {
