@@ -512,6 +512,69 @@ test('scripts of the engine page use neither storage, tabs, downloads nor the wi
   }
 });
 
+// --- Firefox: the engine runs as the background page, merged with background.js ---
+
+test('firefoxManifest: background page instead of the service worker, gecko id, no Chrome-only permissions', () => {
+  const { firefoxManifest } = require('../tools/build-firefox.cjs');
+  const chromeManifest = JSON.parse(source('src/manifest.json'));
+  const manifest = firefoxManifest(chromeManifest);
+  assert.equal(manifest.manifest_version, 3);
+  assert.equal(manifest.background.service_worker, undefined);
+  assert.deepEqual(manifest.background, { page: 'engine/background-firefox.html' });
+  assert.ok(fs.existsSync(path.join(root, 'src', manifest.background.page)));
+  assert.equal(manifest.browser_specific_settings.gecko.id, 'libsaver@laynholt');
+  assert.deepEqual(manifest.browser_specific_settings, { gecko: { id: 'libsaver@laynholt', strict_min_version: '128.0' }, gecko_android: { strict_min_version: '128.0' } });
+  assert.equal(manifest.permissions.includes('offscreen'), false);
+  assert.equal(manifest.permissions.includes('system.display'), false);
+  assert.deepEqual(manifest.permissions, chromeManifest.permissions.filter(permission => permission !== 'offscreen' && permission !== 'system.display'));
+  assert.deepEqual(manifest.web_accessible_resources, chromeManifest.web_accessible_resources);
+  assert.ok(chromeManifest.background.service_worker); // the Chrome manifest itself is left as is
+});
+
+test('Firefox background page loads background.js and every engine.html script once, with no top-level name clash', () => {
+  const scripts = file => [...source(file).matchAll(/<script src="\.\.\/([^"]+)"/g)].map(match => match[1]);
+  const page = scripts('src/engine/background-firefox.html');
+  assert.deepEqual(page.filter(file => file !== 'background.js'), scripts('src/engine/engine.html'));
+  assert.equal(page.filter(file => file === 'background.js').length, 1);
+  // a const declared twice in one page is a SyntaxError for the whole script; a second function silently replaces the first
+  const names = file => [...source('src/' + file).matchAll(/^(?:async )?(?:const|let|var|function|class) +([\w$]+)/gm)].map(match => match[1]);
+  const engineNames = new Set(page.filter(file => file !== 'background.js' && !file.startsWith('libs/')).flatMap(names));
+  assert.deepEqual(names('background.js').filter(name => engineNames.has(name)), []);
+});
+
+test('in the Firefox background page the engine calls the page, saves and fetches images directly, not via runtime.sendMessage', async () => {
+  const sent = [], executed = [], downloads = [], fetched = [];
+  const tab = { id: 7, url: 'https://mangalib.me/ru/manga/x', status: 'complete' };
+  const chrome = {
+    // the page does not receive its own message: nobody answers
+    runtime: { sendMessage: (message, reply) => { sent.push(message.action); reply?.(undefined); return Promise.resolve(undefined); } },
+    tabs: { get: async () => tab, query: async () => [tab] },
+    scripting: { executeScript: async ({ target }) => { executed.push(target.tabId); return [{ result: 'ok' }]; } },
+    downloads: { download: async options => { downloads.push({ ...options }); return 1; } }
+  };
+  const ctx = vm.createContext({
+    chrome, URL, console, setTimeout,
+    fetch: async url => { fetched.push(url); return { ok: true, blob: async () => ({}) }; },
+    FileReader: class { readAsDataURL() { this.result = 'data:image/png;base64,'; this.onloadend(); } }
+  });
+  vm.runInContext(source('src/core/page-calls.js') + source('src/utils/page-call.js') + functionSource('src/background.js', 'directFetch')
+    + functionSource('src/engine/engine.js', 'safeDownloadFilename') + functionSource('src/engine/engine.js', 'saveFile')
+    + source('src/formatters/base.js') + '\nthis.Formatter = BaseFormatter;', ctx);
+  assert.equal(await ctx.pageCall('mangalib', 'chapters', []), 'ok');
+  assert.deepEqual(executed, [7]);
+  await ctx.saveFile('blob:x', 'a.cbz');
+  assert.deepEqual(downloads, [{ url: 'blob:x', filename: 'a.cbz', saveAs: false }]);
+  await new ctx.Formatter({}).downloadAndResizeImage('https://img3.cdnlibs.org/p.png', 'ORIGINAL').catch(() => {}); // no Image in the vm: only the fetch matters
+  assert.deepEqual(fetched, ['https://img3.cdnlibs.org/p.png']);
+  assert.deepEqual(sent, []);
+});
+
+test('ensureEngine answers true without chrome.offscreen (Firefox: the engine is the background page itself)', async () => {
+  const ctx = vm.createContext({ chrome: {} });
+  vm.runInContext('let engineReady = null;\n' + functionSource('src/background.js', 'ensureEngine'), ctx);
+  assert.equal(await ctx.ensureEngine(), true);
+});
+
 // --- Downloads view: pure markup of the queue, the log and the stats ---
 
 // downloads-view.js in a vm without a document: only the pure renderers load, the port wiring waits for DOMContentLoaded

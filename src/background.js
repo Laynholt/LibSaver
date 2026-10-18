@@ -1,4 +1,5 @@
-// Вызовы в странице сайта (выбор вкладки, PAGE_CALLS)
+// Вызовы в странице сайта (выбор вкладки, PAGE_CALLS). В Firefox background.js - часть фоновой страницы
+// engine/background-firefox.html: эти скрипты она грузит своими <script>, importScripts там нет
 if (typeof importScripts === 'function') importScripts('core/page-calls.js', 'utils/page-call.js');
 
 // Хранилище auth токенов с TTL
@@ -318,7 +319,8 @@ function handleOpenPanel(request, sender, sendResponse) {
 }
 chrome.runtime.onMessage.addListener(handleOpenPanel);
 
-// Фоновый движок загрузки (engine/engine.html). Одновременные вызовы делят одно создание документа
+// Фоновый движок загрузки (engine/engine.html). Одновременные вызовы делят одно создание документа.
+// В Firefox chrome.offscreen нет: движок уже работает в этой же фоновой странице, ответ сразу true
 let engineReady = null;
 function ensureEngine() {
   engineReady ??= (async () => {

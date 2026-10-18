@@ -314,7 +314,10 @@ class BaseFormatter {
       }
       
       // Always use content script through tab context (like RanobeLIB)
-      const fetchImage = imageUrl => new Promise(resolve => chrome.runtime.sendMessage({ action: 'fetchImage', url: imageUrl }, resolve));
+      // В Firefox движок и background.js - одна фоновая страница, а своё сообщение страница не получает: directFetch зовём напрямую
+      const fetchImage = imageUrl => new Promise(resolve => typeof directFetch === 'function'
+        ? directFetch({ url: imageUrl }, resolve)
+        : chrome.runtime.sendMessage({ action: 'fetchImage', url: imageUrl }, resolve));
       let response = await fetchImage(url);
 
       // Сервер оригиналов бывает закрыт целиком (403 на любой файл или нет ответа) — тот же файл в полном размере,

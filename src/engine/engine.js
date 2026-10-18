@@ -1,4 +1,6 @@
-// engine.js - фоновый движок загрузки (offscreen-документ в Chrome): очередь, события download.js, порт 'libsaver-engine'
+// engine.js - фоновый движок загрузки (offscreen-документ в Chrome): очередь, события download.js, порт 'libsaver-engine'.
+// В Firefox движок - сама фоновая страница (engine/background-firefox.html): chrome.downloads, chrome.tabs и chrome.scripting там есть,
+// поэтому saveFile и page-call.js идут в них напрямую, без runtime.sendMessage (своё сообщение страница не получает)
 
 const LOG_TAIL_SIZE = 500;
 const STATE_INTERVAL = 250; // state уходит в порты не чаще раза в 250 мс
