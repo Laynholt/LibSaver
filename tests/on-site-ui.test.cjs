@@ -2735,9 +2735,42 @@ test('the popup ⚙ on the screens off a title page opens the full settings page
   vm.runInContext(between('src/core/popup.js', "document.getElementById('btn-settings')", '// Кнопки открытия LIB сайтов'), ctx);
   await handlers['btn-settings']();
   assert.deepEqual(jsonCopy(calls), { tabs: [{ url: 'chrome-extension://self/html/settings.html' }], closed: 1 });
-  // the button sits in the error view, which every off-title screen shows
+  // the button sits in the error view, which every off-title screen shows, as its own row under the site logos (not over the text)
   const html = source('src/html/popup.html');
-  assert.ok(html.indexOf('id="btn-settings"') > html.indexOf('id="error-view"') && html.indexOf('id="btn-settings"') < html.indexOf('id="btn-reload-page"'));
+  const at = html.indexOf('id="btn-settings"');
+  assert.ok(at > html.indexOf('class="lib-buttons"') && at < html.indexOf('id="toast-container"'));
+  assert.doesNotMatch(source('src/css/popup.css'), /[.]btn-settings [{][^}]*position: absolute/);
+});
+
+test('the settings tab (no ?group=) lists the sections on the left and shows only the panels of the one in the address', () => {
+  const groups = ['general', 'storage', 'images', 'toc', 'cbz', 'pdf', 'txt', 'about'];
+  const panels = groups.map(group => ({ dataset: { group }, classList: { toggle(name, on) { this.on = on; } } }));
+  const links = [];
+  const nav = { append: link => links.push(link) };
+  const classes = [];
+  let onHash = null;
+  const element = () => ({ dataset: {}, attrs: {}, append() {}, setAttribute(name, value) { this.attrs[name] = value; }, removeAttribute(name) { delete this.attrs[name]; }, classList: { toggle(name, on) { this.on = on; } } });
+  const ctx = vm.createContext({
+    location: { hash: '#formats' }, settingsGroups: null,
+    window: { scrollTo() {}, addEventListener: (type, fn) => { onHash = fn; } },
+    document: {
+      body: { classList: { add: name => classes.push(name) } },
+      getElementById: id => id === 'settings-nav' ? nav : null,
+      createElement: element, createTextNode: text => text,
+      querySelectorAll: selector => selector === '.settings-nav a' ? links : panels
+    }
+  });
+  vm.runInContext(between('src/core/settings.js', '// Вкладка настроек (без ?group=)', '// Отображение версии расширения'), ctx);
+  assert.deepEqual(classes, ['tab-mode']);
+  assert.deepEqual(links.map(link => link.href), ['#general', '#images', '#toc', '#formats', '#about']);
+  const shown = () => panels.filter(panel => panel.classList.on === false).map(panel => panel.dataset.group);
+  assert.deepEqual(shown(), ['cbz', 'pdf', 'txt']);
+  assert.equal(links.find(link => link.attrs['aria-current'] === 'page').dataset.section, 'formats');
+  ctx.location.hash = '#nonsense'; // an unknown section falls back to the first
+  onHash();
+  assert.deepEqual(shown(), ['general', 'storage']);
+  // every panel group is in exactly one section of the tab
+  assert.deepEqual(jsonCopy(vm.runInContext('TAB_SECTIONS', ctx).flatMap(section => section.groups).sort()), [...groups].sort());
 });
 
 test('storage logging never throws without getContexts (Firefox) and does not switch itself off there', async () => {

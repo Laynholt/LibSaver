@@ -28,6 +28,48 @@ const defaultSiteLinks = {
   animelib: 'https://animelib.org'
 };
 
+// Вкладка настроек (без ?group=): слева разделы, справа панели одного раздела. Раздел - в #адресе: ссылка и «назад» его помнят
+const TAB_SECTIONS = [
+  { id: 'general', title: 'Общие', icon: 'fa-sliders', groups: ['general', 'storage'] },
+  { id: 'images', title: 'Картинки', icon: 'fa-image', groups: ['images'] },
+  { id: 'toc', title: 'Оглавление', icon: 'fa-list-ol', groups: ['toc'] },
+  { id: 'formats', title: 'Форматы', icon: 'fa-file-export', groups: ['cbz', 'pdf', 'txt'] },
+  { id: 'about', title: 'О LibSaver', icon: 'fa-circle-info', groups: ['about'] }
+];
+
+function showTabSection(id) {
+  const section = TAB_SECTIONS.find(candidate => candidate.id === id) || TAB_SECTIONS[0];
+  document.querySelectorAll('.panel[data-group]').forEach(panel => {
+    panel.classList.toggle('hidden', !section.groups.includes(panel.dataset.group));
+  });
+  document.querySelectorAll('.settings-nav a').forEach(link => {
+    const on = link.dataset.section === section.id;
+    link.classList.toggle('on', on);
+    if (on) link.setAttribute('aria-current', 'page');
+    else link.removeAttribute('aria-current');
+  });
+  window.scrollTo(0, 0);
+}
+
+function applyTabMode() {
+  const nav = document.getElementById('settings-nav');
+  if (settingsGroups || !nav) return;
+  document.body.classList.add('tab-mode');
+  for (const section of TAB_SECTIONS) {
+    const link = document.createElement('a');
+    link.href = `#${section.id}`;
+    link.dataset.section = section.id;
+    const icon = document.createElement('i');
+    icon.className = `fa-solid ${section.icon}`;
+    link.append(icon, document.createTextNode(section.title));
+    nav.append(link);
+  }
+  window.addEventListener('hashchange', () => showTabSection(location.hash.slice(1)));
+  showTabSection(location.hash.slice(1));
+}
+
+applyTabMode();
+
 // Отображение версии расширения
 function displayVersion() {
   const manifest = chrome.runtime.getManifest();
