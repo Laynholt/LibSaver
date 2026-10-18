@@ -10,11 +10,12 @@ const source = file => fs.readFileSync(path.join(root, file), 'utf8');
 // engine/anime.js in a vm: fetch, pageCall and saving are fakes
 function animeContext({ fetch, pageCall } = {}) {
   const ctx = vm.createContext({
-    console, URL, URLSearchParams, Blob, atob, btoa, setTimeout: fn => fn(),
+    console, URL, URLSearchParams, Blob, atob, btoa, setTimeout: fn => fn(), AbortController, TextEncoder,
     fetch, pageCall,
     canceledError: () => Object.assign(new Error('Загрузка отменена'), { canceled: true })
   });
-  ctx.URL.createObjectURL = () => 'blob:nfo';
+  ctx.blobs = [];
+  ctx.URL.createObjectURL = blob => (ctx.blobs.push(blob), 'blob:video');
   ctx.URL.revokeObjectURL = () => {};
   vm.runInContext(source('src/engine/anime.js'), ctx);
   return ctx;
@@ -55,21 +56,75 @@ test('player: Kodik of the chosen team, otherwise the first Kodik; other players
   assert.equal(ctx.pickAnimePlayer([players[0]], '1'), null);
 });
 
-test('tvshow.nfo carries titles, plot, genres, tags, studio, year and escapes text', () => {
+// Маленький MP4: ftyp, moov (trak/.../stco со смещением куска видео, старый udta), mdat. moovLast - moov после mdat
+function fakeMp4(ctx, moovLast) {
+  const box = ctx.mp4Box;
+  const ftyp = box('ftyp', new TextEncoder().encode('isom'));
+  const moov = offset => box('moov', box('trak', box('mdia', box('minf', box('stbl', box('stco', ctx.u32(0, 1, offset)))))), box('udta', box('©too', ctx.u32(7))));
+  const mdat = box('mdat', new TextEncoder().encode('VIDEO'));
+  const parts = moovLast ? [ftyp, mdat, moov(ftyp.length + 8)] : [ftyp, moov(ftyp.length + moov(0).length + 8), mdat];
+  return new Blob(parts, { type: 'video/mp4' });
+}
+
+// Смещение из stco и что лежит по нему
+const readChunk = bytes => {
+  const at = Buffer.from(bytes).indexOf('stco') + 12;
+  const offset = new DataView(bytes.buffer).getUint32(at);
+  return Buffer.from(bytes.subarray(offset, offset + 5)).toString();
+};
+
+test('tags go into moov/udta: the old udta is replaced, chunk offsets follow a grown moov, a trailing moov keeps them', async () => {
   const ctx = animeContext();
-  const nfo = ctx.buildTvshowNfo({
-    titleRu: 'Пони <&>', titleOriginal: 'Umayuru', description: 'Описание', year: '2026-09-27', status: 'Онгоинг', ageRestriction: 'PG-13',
-    publisher: 'Atorie A.B.C.', genres: 'Комедия, Повседневность', tags: 'Еда, Чиби', rating: '6.3', shikimori: 'https://shikimori.io/animes/64867'
-  }, 'https://cover/x.jpg');
-  for (const line of ['<title>Пони &lt;&amp;&gt;</title>', '<originaltitle>Umayuru</originaltitle>', '<plot>Описание</plot>', '<year>2026</year>',
-    '<premiered>2026-09-27</premiered>', '<studio>Atorie A.B.C.</studio>', '<genre>Комедия</genre>', '<genre>Повседневность</genre>', '<tag>Чиби</tag>',
-    '<mpaa>PG-13</mpaa>', '<uniqueid type="shikimori">64867</uniqueid>', '<thumb aspect="poster">https://cover/x.jpg</thumb>']) {
-    assert.ok(nfo.includes(line), line);
+  const tags = ctx.animeTags({ titleRu: 'Пони', titleOriginal: 'Pony', year: '2026-09-27', genres: 'Комедия', description: 'Описание', publisher: 'Studio', tags: 'Еда' }, { volume: '1', number: '2' });
+  assert.deepEqual(Array.from(tags, ([type]) => type), ['©nam', 'tvsh', '©alb', 'tvsn', 'tves', '©day', '©gen', 'desc', 'ldes', '©cmt', 'stik']);
+  for (const moovLast of [false, true]) {
+    const source = fakeMp4(ctx, moovLast);
+    const tagged = new Uint8Array(await (await ctx.tagMp4(source, tags)).arrayBuffer());
+    const text = Buffer.from(tagged);
+    assert.ok(tagged.length > source.size);
+    assert.equal(readChunk(tagged), 'VIDEO', moovLast ? 'moov в конце' : 'moov в начале');
+    for (const part of ['udta', 'meta', 'hdlr', 'mdirappl', 'ilst', 'tvsh', 'Пони', 'Серия 2', 'Студия: Studio']) assert.ok(text.includes(part), part);
+    assert.ok(text.includes(Buffer.from([0xA9, 0x6E, 0x61, 0x6D])), '©nam одним байтом 0xA9');
+    assert.ok(!text.includes(Buffer.from([0xA9, 0x74, 0x6F, 0x6F])), 'старый udta убран');
+    const tves = text.indexOf('tves');
+    assert.equal(new DataView(tagged.buffer).getUint32(tves + 20), 2, 'номер серии - целое');
   }
-  assert.doesNotMatch(ctx.buildTvshowNfo({ titleRu: 'X' }, ''), /<plot>|<thumb|<uniqueid/);
+  await assert.rejects(ctx.tagMp4(new Blob([ctx.mp4Box('mdat', new Uint8Array(4))]), tags), /нет блока moov/);
 });
 
-test('downloadAnime resolves each selected episode through Kodik and hands the MP4 to the browser, skipping episodes without Kodik', async () => {
+test('fetchVideo: the size from the first byte, then 4 MB parts in parallel, retried; no Range - the whole file', async () => {
+  const file = Buffer.alloc((4 << 20) * 2 + 5, 0);
+  file.write('END', file.length - 3);
+  const calls = [];
+  let inFlight = 0;
+  let maxInFlight = 0;
+  let failOnce = true;
+  const fetch = async (url, { headers }) => {
+    const [from, to] = headers.Range.match(/(\d+)-(\d+)/).slice(1).map(Number);
+    calls.push(from);
+    inFlight++;
+    maxInFlight = Math.max(maxInFlight, inFlight);
+    await new Promise(resolve => setImmediate(resolve));
+    inFlight--;
+    if (from === 4 << 20 && failOnce) { failOnce = false; return { ok: false, status: 503 }; }
+    return { ok: true, status: 206, headers: { get: () => `bytes ${from}-${to}/${file.length}` }, body: { cancel() {} }, blob: async () => new Blob([file.subarray(from, to + 1)]) };
+  };
+  const ctx = animeContext({ fetch });
+  const parts = [];
+  const blob = await ctx.fetchVideo('https://cdn/x.mp4', part => parts.push(part), () => {});
+  assert.equal(blob.size, file.length);
+  assert.equal(Buffer.from(await blob.slice(-3).arrayBuffer()).toString(), 'END');
+  assert.equal(maxInFlight, 3);
+  assert.deepEqual(calls.filter(from => from === 4 << 20).length, 2, 'упавшая часть запрошена ещё раз');
+  assert.equal(parts.at(-1), 1);
+
+  const whole = animeContext({ fetch: async () => ({ ok: true, status: 200, headers: { get: () => null }, blob: async () => new Blob(['all']) }) });
+  assert.equal(await (await whole.fetchVideo('https://cdn/x.mp4', () => {}, () => {})).text(), 'all');
+  const broken = animeContext({ fetch: async () => ({ ok: false, status: 404 }) });
+  await assert.rejects(broken.fetchVideo('https://cdn/x.mp4', () => {}, () => {}), /HTTP 404/);
+});
+
+test('downloadAnime resolves each selected episode through Kodik, tags the MP4 and saves it, skipping episodes without Kodik', async () => {
   const html = `<script src="/assets/js/app.player_single.abc.js"></script>
     var urlParams = '{"d":"kodikplayer.com","d_sign":"s1","pd":"kodikplayer.com","pd_sign":"s2","ref":"","ref_sign":"s3","advert_debug":true}';
     vInfo.type = 'seria'; vInfo.hash = 'h1'; vInfo.id = '42';`;
@@ -81,6 +136,7 @@ test('downloadAnime resolves each selected episode through Kodik and hands the M
       posts.push([url, Object.fromEntries(options.body)]);
       return { ok: true, json: async () => ({ links: { 360: [{ src: encodeKodik('//cdn/360.mp4:hls:manifest.m3u8') }], 720: [{ src: encodeKodik('//cdn/720.mp4:hls:manifest.m3u8') }] } }) };
     }
+    if (url.startsWith('https://cdn/')) return { ok: true, status: 200, headers: { get: () => null }, blob: async () => mp4 };
     return { ok: true, text: async () => html };
   };
   const players = { 11: [{ player: 'Kodik', src: '//kodikplayer.com/seria/42/h1/720p', team: { id: 7, name: 'SHIZA' } }], 12: [] };
@@ -89,6 +145,7 @@ test('downloadAnime resolves each selected episode through Kodik and hands the M
     return { success: true, data: { players: players[apiPath.split('/').pop()] } };
   };
   const ctx = animeContext({ fetch, pageCall });
+  const mp4 = fakeMp4(ctx, false);
   const saved = [];
   const logs = [];
   const progress = [];
@@ -107,7 +164,9 @@ test('downloadAnime resolves each selected episode through Kodik and hands the M
     save: async (url, name, folder) => saved.push([url, name, folder])
   });
   assert.equal(result.filename, 'Пони');
-  assert.deepEqual(saved, [['blob:nfo', 'tvshow.nfo', 'Пони'], ['https://cover/p.png', 'poster.png', 'Пони'], ['https://cdn/360.mp4', 'Пони - S01E01.mp4', 'Пони']]);
+  assert.deepEqual(saved, [['blob:video', 'Пони - S01E01.mp4', 'Пони']]);
+  const file = Buffer.from(await ctx.blobs[0].arrayBuffer());
+  assert.ok(file.includes('tvsh') && file.includes('Пони'), 'описание записано в MP4');
   assert.equal(posts[0][0], 'https://kodikplayer.com/ftor2');
   assert.deepEqual([posts[0][1].hash, posts[0][1].id, posts[0][1].type, posts[0][1].d_sign, 'advert_debug' in posts[0][1]], ['h1', '42', 'seria', 's1', false]);
   assert.ok(logs.some(([line, isError]) => isError && line.includes('Серия 2') && line.includes('нет плеера Kodik')));

@@ -1,11 +1,14 @@
-// anime.js - загрузка серий AnimeLIB: плеер Kodik серии -> прямая ссылка на MP4 -> загрузчик браузера (engine.js, runTitle).
-// Видео качает сам браузер (chrome.downloads): движок по очереди отдаёт ему ссылки, ход тайтла - сколько серий передано.
+// anime.js - загрузка серий AnimeLIB: плеер Kodik серии -> прямая ссылка на MP4 -> файл качается частями -> описание в MP4 -> загрузчик браузера (engine.js, runTitle).
 // Цепочка Kodik проверена 2026-10-19: HTML плеера (urlParams, vInfo) -> POST на адрес из JS плеера -> ссылки в ROT18 + base64,
-// ссылка вида .../720.mp4:hls:manifest.m3u8 без суффикса - цельный MP4 (H.264 + AAC). Referer Kodik не проверяет.
+// ссылка вида .../720.mp4:hls:manifest.m3u8 без суффикса - цельный MP4 (H.264 + AAC, moov в начале). Referer Kodik не проверяет.
 // Собственный плеер AnimeLIB (без Kodik) не поддерживается: серии без Kodik пропускаются с записью в журнал.
 
 const KODIK_ENDPOINT_FALLBACK = '/ftor';
 const ANIME_EPISODE_PAUSE_MS = 300;
+// CDN Kodik отдаёт ~0.3 МБ/с на соединение, 8 соединений - ~2.3 МБ/с (замер 2026-10-19): серия качается частями по 4 МБ в 8 потоков
+const VIDEO_CONNECTIONS = 8;
+const VIDEO_CHUNK = 4 << 20;
+const VIDEO_CHUNK_TRIES = 3;
 
 // Kodik кодирует ссылки так же, как раскодирует их его плеер: сдвиг букв на 18, затем base64
 function decodeKodikLink(encoded) {
@@ -92,35 +95,162 @@ async function resolveKodik(src, qualityLimit) {
 
 const pad2 = value => String(value).padStart(2, '0');
 
-function escapeXml(text) {
-  return String(text).replace(/[<>&"']/g, char => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;', "'": '&apos;' }[char]));
+// MP4 частями по VIDEO_CHUNK в VIDEO_CONNECTIONS потоков -> Blob. Размер узнаётся запросом первого байта; сервер без Range отдаёт файл целиком.
+// onPart(доля) - ход серии, stop() бросает отмену. Части - Blob: большие браузер держит на диске, а не в памяти страницы
+async function fetchVideo(url, onPart, stop) {
+  const abort = new AbortController();
+  const get = async (from, to) => {
+    for (let attempt = 1; ; attempt++) {
+      try {
+        const response = await fetch(url, { headers: { Range: `bytes=${from}-${to}` }, signal: abort.signal });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        return response;
+      } catch (e) {
+        if (abort.signal.aborted || attempt >= VIDEO_CHUNK_TRIES) throw e;
+        await new Promise(resolve => setTimeout(resolve, 1000 * attempt));
+      }
+    }
+  };
+  const probe = await get(0, 0);
+  const total = probe.status === 206 ? Number(probe.headers.get('content-range')?.match(/\/(\d+)$/)?.[1]) : 0;
+  if (!total) return probe.blob();
+  probe.body?.cancel();
+  const count = Math.ceil(total / VIDEO_CHUNK);
+  const parts = [];
+  let next = 0;
+  let done = 0;
+  const worker = async () => {
+    while (next < count) {
+      stop();
+      const index = next++;
+      const from = index * VIDEO_CHUNK;
+      const to = Math.min(from + VIDEO_CHUNK, total) - 1;
+      const response = await get(from, to);
+      parts[index] = await response.blob();
+      if (response.status !== 206 || parts[index].size !== to - from + 1) throw new Error('сервер прислал не ту часть файла');
+      onPart(++done / count);
+    }
+  };
+  try {
+    await Promise.all(Array.from({ length: Math.min(VIDEO_CONNECTIONS, count) }, worker));
+  } catch (e) {
+    abort.abort(); // остальные потоки не докачивают серию, которая уже не сохранится
+    throw e;
+  }
+  return new Blob(parts, { type: 'video/mp4' });
 }
 
-const splitList = text => String(text || '').split(',').map(item => item.trim()).filter(Boolean);
-
-// tvshow.nfo (Kodi, Jellyfin, Plex с плагином): название, описание, жанры, теги, студия, год, статус, возраст, постер
-function buildTvshowNfo(metadata, poster) {
-  const tag = (name, value) => value ? `  <${name}>${escapeXml(value)}</${name}>\n` : '';
-  const year = String(metadata.year || '').match(/\d{4}/)?.[0];
-  const shikimoriId = String(metadata.shikimori || '').match(/\d+$/)?.[0];
-  return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<tvshow>\n'
-    + tag('title', metadata.titleRu || metadata.titleOriginal || metadata.titleEn)
-    + tag('originaltitle', metadata.titleOriginal || metadata.titleEn)
-    + tag('plot', metadata.description)
-    + tag('year', year)
-    + tag('premiered', /^\d{4}-\d{2}-\d{2}/.test(metadata.year || '') ? metadata.year.slice(0, 10) : '')
-    + tag('status', metadata.status)
-    + tag('mpaa', metadata.ageRestriction)
-    + splitList(metadata.publisher).map(studio => tag('studio', studio)).join('')
-    + splitList(metadata.genres).map(genre => tag('genre', genre)).join('')
-    + splitList(metadata.tags).map(name => tag('tag', name)).join('')
-    + (metadata.rating ? `  <ratings><rating name="shikimori" max="10" default="true"><value>${escapeXml(metadata.rating)}</value></rating></ratings>\n` : '')
-    + (poster ? `  <thumb aspect="poster">${escapeXml(poster)}</thumb>\n` : '')
-    + (shikimoriId ? `  <uniqueid type="shikimori">${shikimoriId}</uniqueid>\n` : '')
-    + '</tvshow>\n';
+// Блоки MP4: [размер 4 байта][тип 4 байта][содержимое]
+function mp4Box(type, ...parts) {
+  const size = 8 + parts.reduce((sum, part) => sum + part.length, 0);
+  const box = new Uint8Array(size);
+  new DataView(box.buffer).setUint32(0, size);
+  for (let i = 0; i < 4; i++) box[4 + i] = type.charCodeAt(i); // «©» тегов iTunes - один байт 0xA9
+  let offset = 8;
+  for (const part of parts) {
+    box.set(part, offset);
+    offset += part.length;
+  }
+  return box;
 }
 
-// Серии снимка по очереди. hooks: { log(line, isError), progress(current, total), isCanceled(), save(url, name, folder) }
+function u32(...values) {
+  const bytes = new Uint8Array(values.length * 4);
+  values.forEach((value, i) => new DataView(bytes.buffer).setUint32(i * 4, value));
+  return bytes;
+}
+
+function* mp4Children(view, start, end) {
+  for (let offset = start; offset + 8 <= end;) {
+    const size = view.getUint32(offset);
+    if (size < 8 || offset + size > end) throw new Error('MP4: неожиданное устройство файла');
+    yield { type: String.fromCharCode(...new Uint8Array(view.buffer, view.byteOffset + offset + 4, 4)), start: offset, end: offset + size };
+    offset += size;
+  }
+}
+
+// Таблицы stco/co64 хранят смещения кусков видео от начала файла: moov перед mdat вырос на delta - куски за ним сдвигаются
+function shiftChunkOffsets(view, start, end, from, delta) {
+  for (const box of mp4Children(view, start, end)) {
+    if (['trak', 'mdia', 'minf', 'stbl'].includes(box.type)) shiftChunkOffsets(view, box.start + 8, box.end, from, delta);
+    if (box.type !== 'stco' && box.type !== 'co64') continue;
+    const wide = box.type === 'co64';
+    const count = view.getUint32(box.start + 12);
+    for (let i = 0; i < count; i++) {
+      const at = box.start + 16 + i * (wide ? 8 : 4);
+      if (wide) {
+        const value = view.getBigUint64(at);
+        if (value >= BigInt(from)) view.setBigUint64(at, value + BigInt(delta));
+      } else {
+        const value = view.getUint32(at);
+        if (value < from) continue;
+        if (value + delta > 0xFFFFFFFF) throw new Error('MP4: файл слишком большой для описания');
+        view.setUint32(at, value + delta);
+      }
+    }
+  }
+}
+
+// Теги iTunes (moov/udta/meta/ilst) - их читают ffmpeg, Jellyfin, Plex, Kodi, VLC, проводник Windows
+function animeTags(metadata, episode) {
+  const show = metadata.titleRu || metadata.titleOriginal || metadata.titleEn || '';
+  const whole = value => Number.isInteger(Number(value)) && Number(value) > 0 ? Number(value) : null;
+  const comment = [
+    metadata.titleOriginal && `Оригинальное название: ${metadata.titleOriginal}`,
+    metadata.publisher && `Студия: ${metadata.publisher}`,
+    metadata.author && `Автор: ${metadata.author}`,
+    metadata.status && `Статус: ${metadata.status}`,
+    metadata.ageRestriction && `Возраст: ${metadata.ageRestriction}`,
+    metadata.tags && `Метки: ${metadata.tags}`,
+    metadata.rating && `Оценка Shikimori: ${metadata.rating}`,
+    metadata.shikimori
+  ].filter(Boolean).join('\n');
+  return [
+    ['©nam', episode.name || `Серия ${episode.number}`],
+    ['tvsh', show],
+    ['©alb', show],
+    ['tvsn', whole(episode.volume)],
+    ['tves', whole(episode.number)],
+    ['©day', String(metadata.year || '').match(/\d{4}/)?.[0]],
+    ['©gen', metadata.genres],
+    ['desc', metadata.description],
+    ['ldes', metadata.description],
+    ['©cmt', comment],
+    ['stik', 10] // вид ролика: сериал
+  ].filter(([, value]) => value || value === 0);
+}
+
+function ilstItem(type, value) {
+  const number = typeof value === 'number';
+  const data = number ? (type === 'stik' ? Uint8Array.of(value) : u32(value)) : new TextEncoder().encode(value);
+  return mp4Box(type, mp4Box('data', u32(number ? 21 : 1, 0), data)); // 1 - текст UTF-8, 21 - целое
+}
+
+// Новый moov: старые блоки без udta + udta с тегами. Остальной файл не читается в память - Blob ссылается на исходный
+async function tagMp4(blob, tags) {
+  let moov = null;
+  for (let offset = 0; offset + 8 <= blob.size && !moov;) {
+    const head = new DataView(await blob.slice(offset, offset + 16).arrayBuffer());
+    const short = head.getUint32(0);
+    const size = short === 1 ? Number(head.getBigUint64(8)) : short || blob.size - offset;
+    if (size < 8) throw new Error('MP4: неожиданное устройство файла');
+    if (String.fromCharCode(head.getUint8(4), head.getUint8(5), head.getUint8(6), head.getUint8(7)) === 'moov') {
+      if (short === 1) throw new Error('MP4: moov больше 4 ГБ');
+      moov = { start: offset, end: offset + size };
+    }
+    offset += size;
+  }
+  if (!moov) throw new Error('MP4: нет блока moov');
+  const bytes = new Uint8Array(await blob.slice(moov.start, moov.end).arrayBuffer());
+  const kept = [...mp4Children(new DataView(bytes.buffer), 8, bytes.length)].filter(box => box.type !== 'udta').map(box => bytes.subarray(box.start, box.end));
+  const hdlr = mp4Box('hdlr', u32(0, 0), new TextEncoder().encode('mdirappl'), u32(0, 0), Uint8Array.of(0));
+  const meta = mp4Box('meta', u32(0), hdlr, mp4Box('ilst', ...tags.map(([type, value]) => ilstItem(type, value))));
+  const tagged = mp4Box('moov', ...kept, mp4Box('udta', meta));
+  shiftChunkOffsets(new DataView(tagged.buffer), 8, tagged.length, moov.start, tagged.length - bytes.length);
+  return new Blob([blob.slice(0, moov.start), tagged, blob.slice(moov.end)], { type: 'video/mp4' });
+}
+
+// Серии снимка по очереди. hooks: { log(line, isError), progress(done, total, part), isCanceled(), save(url, name, folder) }
 async function downloadAnime(snapshot, hooks) {
   const data = snapshot.downloadData;
   const metadata = data.metadata || {};
@@ -130,23 +260,11 @@ async function downloadAnime(snapshot, hooks) {
   if (!episodes.length) throw new Error('Не выбрано ни одной серии');
   const folder = snapshot.title || data.slug;
   const quality = snapshot.stored?.animeQuality || 'max';
+  const withInfo = snapshot.stored?.animeSaveInfo !== false;
   const stop = () => { if (hooks.isCanceled()) throw canceledError(); };
 
-  if (snapshot.stored?.animeSaveInfo !== false) {
-    const firstCover = data.allCovers?.[0]; // обложки из редактора, первая - главная
-    const cover = (firstCover?.url ?? firstCover) || metadata.cover || '';
-    const nfo = URL.createObjectURL(new Blob([buildTvshowNfo(metadata, cover)], { type: 'text/xml' }));
-    try {
-      await hooks.save(nfo, 'tvshow.nfo', folder);
-      if (cover) await hooks.save(cover, `poster.${cover.match(/\.(jpe?g|png|webp)(?=$|\?)/i)?.[1] || 'jpg'}`, folder);
-    } catch (e) {
-      hooks.log(`Не удалось сохранить описание или постер: ${e.message}`, true);
-    }
-    setTimeout(() => URL.revokeObjectURL(nfo), 60000); // загрузчик браузера читает blob уже после download()
-  }
-
   let saved = 0;
-  hooks.progress(0, episodes.length);
+  hooks.progress(0, episodes.length, 0);
   for (const [index, episode] of episodes.entries()) {
     stop();
     const label = `Сезон ${episode.volume}. Серия ${episode.number}${episode.name ? '. ' + episode.name : ''}`;
@@ -158,18 +276,32 @@ async function downloadAnime(snapshot, hooks) {
       if (!player) throw new Error('нет плеера Kodik');
       const video = await resolveKodik(player.src, quality);
       stop();
-      await hooks.save(video.url, `${folder} - S${pad2(episode.volume)}E${pad2(episode.number)}.mp4`, folder);
+      let file = await fetchVideo(video.url, part => hooks.progress(index, episodes.length, part), stop);
+      stop();
+      if (withInfo) {
+        try {
+          file = await tagMp4(file, animeTags(metadata, episode));
+        } catch (e) {
+          hooks.log(`${label}: описание в файл не записано (${e.message}), серия сохранена без него`, true);
+        }
+      }
+      const url = URL.createObjectURL(file);
+      try {
+        await hooks.save(url, `${folder} - S${pad2(episode.volume)}E${pad2(episode.number)}.mp4`, folder);
+      } finally {
+        setTimeout(() => URL.revokeObjectURL(url), 60000); // загрузчик браузера читает blob уже после download()
+      }
       saved++;
-      hooks.log(`${label} - ${player.team?.name || 'без команды'}, ${video.quality}p: передана загрузчику браузера`);
+      hooks.log(`${label} - ${player.team?.name || 'без команды'}, ${video.quality}p, ${(file.size / 1048576).toFixed(0)} МБ: сохранена`);
     } catch (e) {
       if (e.canceled) throw e;
       hooks.log(`${label}: пропущена (${e.message})`, true);
     }
-    hooks.progress(index + 1, episodes.length);
+    hooks.progress(index + 1, episodes.length, 0);
     if (index < episodes.length - 1) await new Promise(resolve => setTimeout(resolve, ANIME_EPISODE_PAUSE_MS));
   }
   if (!saved) throw new Error('Ни одна серия не скачана: подробности в журнале');
-  hooks.progress(saved, episodes.length); // меньше выбранного - «Готово с пропусками» в списке загрузок
-  hooks.log(`Готово: ${saved} из ${episodes.length} серий. Файлы докачивает браузер (список загрузок)`);
+  hooks.progress(saved, episodes.length, 0); // меньше выбранного - «Готово с пропусками» в списке загрузок
+  hooks.log(`Готово: ${saved} из ${episodes.length} серий`);
   return { filename: folder };
 }

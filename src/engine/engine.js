@@ -76,7 +76,7 @@ async function runTitle(item, snapshot) {
     if (snapshot.siteType === 'anime') {
       return await downloadAnime(snapshot, {
         log: (line, isError) => onDownloadEvent({ type: 'log', line, isError }),
-        progress: (done, total) => onDownloadEvent({ type: 'progress', current: done, total }),
+        progress: (done, total, part) => onDownloadEvent({ type: 'progress', current: done, total, part }),
         isCanceled: () => current.canceled,
         save: saveFile
       });
