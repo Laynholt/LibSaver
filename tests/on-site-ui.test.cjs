@@ -991,6 +991,9 @@ test('«Ускорить» in the downloads view follows storage changes', async
   assert.equal(speed.checked, false); // other areas are ignored
   storageListeners[0]({ speedMode: { newValue: true } }, 'local');
   assert.equal(speed.checked, true);
+  storageListeners[0]({ speedMode: { newValue: false } }, 'local');
+  storageListeners[0]({ speedMode: {} }, 'local'); // key removed: back to the default, on
+  assert.equal(speed.checked, true);
 });
 
 test('the snapshot takes «Ускорить» from storage, so the windows pass no value of their own', async () => {
@@ -1987,6 +1990,11 @@ test('reopening within 1.5 s reuses the closing window on the same address; on a
   assert.equal(page.timers.size, 0); // the delayed removal is canceled
   assert.deepEqual(page.hosts(), [host]);
   assert.ok(page.listeners.keydown && page.listeners.message);
+  // ✕ in the reused window: its message is checked against the same frame (it used to throw on frame.contentWindow)
+  reopened.frame.contentWindow = {};
+  page.listeners.message({ source: reopened.frame.contentWindow, origin: 'chrome-extension://id', data: { libsaver: true, type: 'close' } });
+  assert.equal(vm.runInContext('overlay', ctx), null);
+  ctx.openOverlay(src);
 
   ctx.closeOverlay();
   ctx.openOverlay(src + '&section=downloads');
@@ -2349,7 +2357,6 @@ test('panel.js refuses an embedder that whoami does not vouch for: an error, no 
     page.element('retry').fire('click'); // a clickjacked click on the hidden button, or a script
     page.element('download').fire('click');
     page.element('format').fire('change');
-    page.element('speed').fire('change');
     page.element('close').fire('click');
     page.key({ key: 'Escape' });
     await page.settle();
@@ -2503,7 +2510,7 @@ test('a failure while queueing shows the error and gives the button back', async
   assert.equal(page.frames().length, 1);
 });
 
-test('counters follow storage; «Ускорить» is stored when toggled and follows the stored value', async () => {
+test('counters follow storage; the only «Ускорить» lives in «Загрузки»', async () => {
   const page = panelPage({ me: { tabId: 7, url: panelUrl }, stored: { metadataFields: { a: true, b: true, c: false } } });
   await page.settle();
   assert.equal(page.menu()[1].note, '2');
@@ -2512,15 +2519,8 @@ test('counters follow storage; «Ускорить» is stored when toggled and f
   await page.settle();
   assert.deepEqual(page.menu().slice(0, 3).map(entry => entry.note), ['2', '1', '1']);
   assert.equal(page.element('download').textContent, 'Скачать 2 главы');
-
-  page.element('speed').checked = true;
-  page.element('speed').fire('change');
-  await page.settle();
-  assert.equal(page.data.speedMode, true);
-  assert.deepEqual(page.port.posted, [{ cmd: 'speedMode', on: true }]); // the running download speeds up at once, as in «Загрузки» (R11)
-  await page.ctx.chrome.storage.local.set({ speedMode: false }); // «Ускорить» switched off in «Загрузки»
-  await page.settle();
-  assert.equal(page.element('speed').checked, false);
+  assert.doesNotMatch(source('src/html/panel.html'), /id="speed"/);
+  assert.doesNotMatch(source('src/core/panel.js'), /speedMode/);
 });
 
 test('the «Загрузки» counter is the number of titles in work in the queue state', async () => {
@@ -3477,7 +3477,7 @@ test('«Сообщить о проблеме» opens the issue form of the 2.x r
   assert.equal(url.origin + url.pathname, 'https://github.com/Laynholt/LibSaver/issues/new');
   assert.deepEqual(Object.fromEntries(url.searchParams), { template: 'bug_report.yml', version: '2.0.0', page: 'https://mangalib.me/ru/manga/1--a', browser: 'UA 1' });
   const form = source('.github/ISSUE_TEMPLATE/bug_report.yml');
-  for (const id of ['version', 'page', 'browser']) assert.match(form, new RegExp(`id: ${id}\n`));
+  for (const id of ['version', 'page', 'browser']) assert.match(form, new RegExp(`id: ${id}\r?\n`));
 });
 
 test('ranobe PDF draws characters missing from the chosen font with the first fallback font that has them, embedding only the fonts it needs', async () => {

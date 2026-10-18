@@ -87,8 +87,8 @@ function sectionSubtitle(id, settings, counts) {
 function startPanel() {
   const params = new URLSearchParams(location.search);
   const $ = id => document.getElementById(id);
-  const [titleEl, backButton, loadingEl, errorEl, mainEl, menuEl, framesEl, footEl, statusEl, formatSelect, speedBox, downloadButton] =
-    ['title', 'back', 'loading', 'error', 'main', 'menu', 'frames', 'foot', 'status', 'format', 'speed', 'download'].map($);
+  const [titleEl, backButton, loadingEl, errorEl, mainEl, menuEl, framesEl, footEl, statusEl, formatSelect, downloadButton] =
+    ['title', 'back', 'loading', 'error', 'main', 'menu', 'frames', 'foot', 'status', 'format', 'download'].map($);
 
   // Вкладка, адрес и origin страницы - от фона (whoami), не из параметров адреса
   let embedder = null;
@@ -216,13 +216,13 @@ function startPanel() {
     update();
   }
 
-  // Данные тайтла и настройки из storage -> счётчики, формат, «Ускорить», кнопка «Скачать»
+  // Данные тайтла и настройки из storage -> счётчики, формат, кнопка «Скачать»
   async function refresh() {
     const ticket = ++refreshTicket;
     const formatKey = formatKeyFor(info.siteType);
     const [{ titleData }, values] = await Promise.all([
       getTitleStore(['titleData'], slug),
-      chrome.storage.local.get(['metadataFields', 'imageQuality', 'tocFormat', 'speedMode', formatKey])
+      chrome.storage.local.get(['metadataFields', 'imageQuality', 'tocFormat', formatKey])
     ]);
     if (ticket !== refreshTicket) return; // пришёл более свежий ответ
     const title = titleData[slug];
@@ -231,7 +231,6 @@ function startPanel() {
     headerTitle = title?.metadata?.titleRu || info.title;
     format = formatOptionsFor(info.siteType).some(option => option.value === values[formatKey]) ? values[formatKey] : defaultFormatFor(info.siteType);
     formatSelect.value = format;
-    speedBox.checked = !!values.speedMode;
     downloadButton.textContent = counts.selected > 0 ? downloadLabel(counts.selected) : 'Скачать';
     downloadButton.disabled = busy || counts.selected === 0;
     update();
@@ -285,19 +284,13 @@ function startPanel() {
     show('main');
     update();
     chrome.storage.onChanged.addListener((changes, area) => {
-      if (area === 'local' && ['titleData:' + slug, 'metadataFields', 'imageQuality', 'tocFormat', 'speedMode', formatKeyFor(info.siteType)].some(key => key in changes)) refresh().catch(error => console.error('[LibSaver] panel', error));
+      if (area === 'local' && ['titleData:' + slug, 'metadataFields', 'imageQuality', 'tocFormat', formatKeyFor(info.siteType)].some(key => key in changes)) refresh().catch(error => console.error('[LibSaver] panel', error));
     });
     watchQueue();
   }
 
   formatSelect.addEventListener('change', () => {
     if (info) chrome.storage.local.set({ [formatKeyFor(info.siteType)]: formatSelect.value });
-  });
-  // Как в «Загрузках» (R11): идущая загрузка ускоряется сразу командой движку, флаг в storage - для следующих
-  speedBox.addEventListener('change', () => {
-    if (!info) return;
-    queuePort?.postMessage({ cmd: 'speedMode', on: speedBox.checked });
-    chrome.storage.local.set({ speedMode: speedBox.checked });
   });
   downloadButton.addEventListener('click', async () => {
     if (!embedder || single || !info || busy) return;

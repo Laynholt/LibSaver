@@ -572,12 +572,13 @@ class EpubFormatter extends BaseFormatter {
       // Создаем HTML страницу с картинками
       let chapterHtml = '';
       let pageIndex = 0;
+      const takePage = this.pageLoader(pagesResult.pages.map(page => page.url), url => this.downloadAndResizeImage(url, imageQuality, this.options.imageFormat, 'картинка'));
       while (pageIndex < pagesResult.pages.length) {
         this.options.updateImageProgress?.(pageIndex, pagesResult.pages.length);
         const page = pagesResult.pages[pageIndex];
         try {
           const imgNum = String(globalImageCounter++).padStart(4, '0');
-          const imageResult = await this.downloadAndResizeImage(page.url, imageQuality, this.options.imageFormat, 'картинка');
+          const imageResult = await takePage(pageIndex);
           if (imageResult && imageResult.blob) {
             const imageBlob = imageResult.blob;
             const imageFormat = this.options.imageFormat || 'original';
@@ -592,10 +593,6 @@ class EpubFormatter extends BaseFormatter {
               this.options.addFileSize(imageBlob.size);
             }
 
-            // Пауза между картинками
-            if (typeof window.maybeAddImagePause === 'function') {
-              await window.maybeAddImagePause(addLog);
-            }
             pageIndex++; // Переходим к следующей картинке
           } else {
             chapterImagesFailed++;

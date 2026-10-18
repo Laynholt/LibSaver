@@ -452,17 +452,13 @@ class PdfFormatter extends BaseFormatter {
 
       // Добавляем каждую картинку как отдельную страницу
       let pageIndex = 0;
+      const takePage = this.pageLoader(pages.map(page => page.url || page), url => this.downloadAndResizeImage(url, this.options.quality || 'ORIGINAL', this.options.pdfImageFormat, 'картинка'));
       while (pageIndex < pages.length) {
         this.options.updateImageProgress?.(pageIndex, pages.length);
         const pageUrl = pages[pageIndex].url || pages[pageIndex];
 
         try {
-          // Случайная пауза между картинками
-          if (typeof window.maybeAddImagePause === 'function') {
-            await window.maybeAddImagePause(addLog);
-          }
-
-          const imageResult = await this.downloadAndResizeImage(pageUrl, this.options.quality || 'ORIGINAL', this.options.pdfImageFormat, 'картинка');
+          const imageResult = await takePage(pageIndex);
           if (!imageResult || !imageResult.blob) {
             throw new Error('Не удалось скачать изображение');
           }

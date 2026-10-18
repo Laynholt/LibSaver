@@ -229,15 +229,15 @@ async function initDownloadsView() {
   setConnection('connecting');
 
   const speed = byId('speed-mode-checkbox');
-  // «Ускорить» в низу окна и здесь - один флаг в storage
+  // «Ускорить» - флаг speedMode в storage, по умолчанию включён; его могут сменить и в другом окне
   chrome.storage.onChanged.addListener((changes, area) => {
-    if (area === 'local' && changes.speedMode) speed.checked = !!changes.speedMode.newValue;
+    if (area === 'local' && changes.speedMode) speed.checked = changes.speedMode.newValue !== false;
   });
   speed.addEventListener('change', () => {
     enginePort?.postMessage({ cmd: 'speedMode', on: speed.checked });
     chrome.storage.local.set({ speedMode: speed.checked });
   });
-  speed.checked = !!(await chrome.storage.local.get('speedMode')).speedMode;
+  speed.checked = (await chrome.storage.local.get('speedMode')).speedMode !== false;
 
   await connectEngine();
 }

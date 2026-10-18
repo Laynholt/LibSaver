@@ -323,11 +323,12 @@ class HtmlFormatter extends BaseFormatter {
           let mangaHtml = '<div class="manga-chapter">';
           let chapterImageIndex = 0;
 
+          const takePage = this.pageLoader(pagesResult.pages.map(page => page.url || page), url => this.downloadAndResizeImage(url, imageQuality, this.options.imageFormat, 'картинка манги'));
           for (const [pageIndex, page] of pagesResult.pages.entries()) {
             this.options.updateImageProgress?.(pageIndex, pagesResult.pages.length);
             const imgUrl = page.url || page; // Обработка если это объект или строка
             try {
-              const imageResult = await this.downloadAndResizeImage(imgUrl, imageQuality, this.options.imageFormat, 'картинка манги');
+              const imageResult = await takePage(pageIndex);
               if (imageResult && imageResult.blob) {
                 const extension = this.getImageExtension(imageResult.blob, this.options.imageFormat, imgUrl);
                 const fileName = this.generatePageFilename(ch, chapterImageIndex, extension);

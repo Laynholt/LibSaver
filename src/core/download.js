@@ -357,6 +357,12 @@ async function processQueue() {
     isProcessingQueue = false;
 }
 
+// Картинки: RateLimiter и случайная пауза, как у глав; с «Ускорить» оба пропускаются сами, пауза и отмена загрузки действуют всегда
+async function trackImageRequest() {
+    await trackRequest();
+    await window.maybeAddImagePause?.();
+}
+
 function handleRateLimitError() {
     const now = Date.now();
     lastErrorTime = now;
@@ -579,7 +585,7 @@ async function startDownload(snapshot) {
 
         // Устанавливаем режим ускорения
         if (window.setSpeedMode) {
-            window.setSpeedMode(result.speedMode || false);
+            window.setSpeedMode(result.speedMode !== false); // «Ускорить» по умолчанию включён
         }
         
         if (!snapshot.downloadData) {
@@ -670,6 +676,7 @@ async function startDownload(snapshot) {
             format: options.selectedFormat,
             // Передаем функции для RateLimiter и статистики
             trackRequest: trackRequest,
+            trackImageRequest: trackImageRequest,
             addLog: addLog,
             updateProgress: updateProgress,
             updateImageProgress: updateImageProgress,
