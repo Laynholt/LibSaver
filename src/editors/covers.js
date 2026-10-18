@@ -158,12 +158,6 @@ function preventDrag(element) {
   });
 }
 
-// Вспомогательная функция для настройки фона превью
-function setPreviewBackground(preview, isLoaded) {
-  preview.style.backgroundColor = 'var(--bg-tertiary)';
-  preview.style.borderRadius = '8px';
-}
-
 // Создание одного элемента обложки
 function createCoverItem(cover, index) {
   const item = document.createElement('div');
@@ -213,7 +207,6 @@ function createCoverItem(cover, index) {
         imgWrapper.appendChild(errorIcon);
         preview.classList.remove('loading');
         preview.classList.add('error');
-        setPreviewBackground(preview, false);
       }
     }).catch(() => {
       const loadingIcon = imgWrapper.querySelector('.loading-icon');
@@ -222,7 +215,6 @@ function createCoverItem(cover, index) {
       imgWrapper.appendChild(errorIcon);
       preview.classList.remove('loading');
       preview.classList.add('error');
-      setPreviewBackground(preview, false);
     });
     
     preview.appendChild(imgWrapper);
@@ -246,7 +238,6 @@ function createCoverItem(cover, index) {
     imgWrapper.appendChild(emptyIcon);
     preview.appendChild(imgWrapper);
     preview.classList.add('empty');
-    setPreviewBackground(preview, false);
   }
   
   const inputs = document.createElement('div');
@@ -346,7 +337,6 @@ function setupImage(img, dataUrl, preview, imgWrapper, imageInfo) {
     preview.classList.remove('loading');
     preview.classList.add('has-image');
     imgWrapper.classList.add('has-image');
-    setPreviewBackground(preview, true);
   };
   
   if (img.complete) {

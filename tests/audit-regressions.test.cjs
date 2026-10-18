@@ -742,3 +742,13 @@ test('chapter cards skip off-screen rendering, except the one whose translator l
   assert.match(source('src/editors/chapters.js'), /div\.classList\.add\('menu-open'\)/);
 });
 
+test('cover previews: no inline background over the CSS one, badges sit on the loaded image, a click on it opens the cover', () => {
+  const js = source('src/editors/covers.js');
+  assert.doesNotMatch(js, /setPreviewBackground|preview\.style\.backgroundColor/);
+  assert.match(js, /img\.onclick = /);
+  const html = source('src/html/covers.html');
+  assert.match(html, /\.cover-preview\.has-image \{\s*background-color: var\(--bg-secondary\);/);
+  assert.match(html, /img\.loaded \{[^}]*cursor: zoom-in;/);
+  assert.match(html, /\.cover-item:has\(img\.loaded\)::after \{\s*display: none;/);
+  assert.match(html, /\.cover-item:first-child \.img-container:has\(> img\.loaded\)::before \{\s*content: 'Основная';/);
+});
