@@ -641,12 +641,12 @@ test('pageLoader keeps 3 chapter pages in flight and refetches a page on retry',
   assert.deepEqual(started, ['a', 'b', 'c', 'd', 'b', 'e']);
 });
 
-test('images bypass the API rate limiter unless imageRateLimit is on', () => {
+test('images follow «Ускорить»: rate limiter and random pauses only when it is off, on by default', () => {
   const body = between('src/core/download.js', 'async function trackImageRequest() {', 'function handleRateLimitError() {');
-  assert.match(body, /if \(imageRateLimit\) \{\s*await trackRequest\(\);\s*await window\.maybeAddImagePause/);
-  assert.match(body, /throwIfCanceled\(\);\s*await checkPause\(\);/);
-  assert.match(source('src/core/download.js'), /imageRateLimit = result\.imageRateLimit === true;/);
-  assert.match(source('src/core/snapshot.js'), /'imageRateLimit'/);
+  assert.match(body, /await trackRequest\(\);\s*await window\.maybeAddImagePause\?\.\(\);/);
+  assert.match(source('src/core/download.js'), /window\.setSpeedMode\(result\.speedMode !== false\)/);
+  assert.match(source('src/html/downloads.html'), /<label class="checkbox-group" title="Без пауз[^"]*60-90 в минуту/);
+  for (const file of ['src/core/settings.js', 'src/html/settings.html', 'src/core/snapshot.js']) assert.doesNotMatch(source(file), /imageRateLimit|image-rate-limit/, file);
   for (const file of ['cbz', 'epub', 'pdf', 'html']) {
     assert.doesNotMatch(source(`src/formatters/${file}.js`), /maybeAddImagePause/, file);
     assert.match(source(`src/formatters/${file}.js`), /this\.pageLoader\(/, file);

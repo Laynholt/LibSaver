@@ -991,6 +991,9 @@ test('«Ускорить» in the downloads view follows storage changes', async
   assert.equal(speed.checked, false); // other areas are ignored
   storageListeners[0]({ speedMode: { newValue: true } }, 'local');
   assert.equal(speed.checked, true);
+  storageListeners[0]({ speedMode: { newValue: false } }, 'local');
+  storageListeners[0]({ speedMode: {} }, 'local'); // key removed: back to the default, on
+  assert.equal(speed.checked, true);
 });
 
 test('the snapshot takes «Ускорить» from storage, so the windows pass no value of their own', async () => {
@@ -2354,7 +2357,6 @@ test('panel.js refuses an embedder that whoami does not vouch for: an error, no 
     page.element('retry').fire('click'); // a clickjacked click on the hidden button, or a script
     page.element('download').fire('click');
     page.element('format').fire('change');
-    page.element('speed').fire('change');
     page.element('close').fire('click');
     page.key({ key: 'Escape' });
     await page.settle();
@@ -2508,7 +2510,7 @@ test('a failure while queueing shows the error and gives the button back', async
   assert.equal(page.frames().length, 1);
 });
 
-test('counters follow storage; «Ускорить» is stored when toggled and follows the stored value', async () => {
+test('counters follow storage; the only «Ускорить» lives in «Загрузки»', async () => {
   const page = panelPage({ me: { tabId: 7, url: panelUrl }, stored: { metadataFields: { a: true, b: true, c: false } } });
   await page.settle();
   assert.equal(page.menu()[1].note, '2');
@@ -2517,15 +2519,8 @@ test('counters follow storage; «Ускорить» is stored when toggled and f
   await page.settle();
   assert.deepEqual(page.menu().slice(0, 3).map(entry => entry.note), ['2', '1', '1']);
   assert.equal(page.element('download').textContent, 'Скачать 2 главы');
-
-  page.element('speed').checked = true;
-  page.element('speed').fire('change');
-  await page.settle();
-  assert.equal(page.data.speedMode, true);
-  assert.deepEqual(page.port.posted, [{ cmd: 'speedMode', on: true }]); // the running download speeds up at once, as in «Загрузки» (R11)
-  await page.ctx.chrome.storage.local.set({ speedMode: false }); // «Ускорить» switched off in «Загрузки»
-  await page.settle();
-  assert.equal(page.element('speed').checked, false);
+  assert.doesNotMatch(source('src/html/panel.html'), /id="speed"/);
+  assert.doesNotMatch(source('src/core/panel.js'), /speedMode/);
 });
 
 test('the «Загрузки» counter is the number of titles in work in the queue state', async () => {

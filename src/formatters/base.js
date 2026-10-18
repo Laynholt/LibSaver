@@ -309,7 +309,7 @@ class BaseFormatter {
     let imageError = false;
 
     try {
-      // Картинки идут мимо RateLimiter API, если он не включён в настройках (см. trackImageRequest в download.js)
+      // RateLimiter и пауза между картинками - только без «Ускорить» (см. trackImageRequest в download.js)
       await (this.options.trackImageRequest || this.options.trackRequest)?.();
 
       // Always use content script through tab context (like RanobeLIB)

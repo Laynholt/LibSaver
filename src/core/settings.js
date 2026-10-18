@@ -315,7 +315,6 @@ function applySettingsToUI(settings) {
   document.getElementById('update-notifications').checked = settings.updateNotifications ?? true;
   document.getElementById('generate-comicinfo').checked = settings.generateComicInfo !== false;
   document.getElementById('same-width').checked = settings.sameWidth === true;
-  document.getElementById('image-rate-limit').checked = settings.imageRateLimit === true;
 
   // Chapters pagination settings
   document.getElementById('enable-pagination').checked = settings.enablePagination === true;
@@ -654,7 +653,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     'updateNotifications',
     'generateComicInfo',
     'sameWidth',
-    'imageRateLimit',
     'tocFormat',
     'customTocFormat',
     'hideChapterName',
@@ -874,7 +872,7 @@ function updateTocOptionTexts() {
 // Ключи storage по группам панелей. Раздел окна пишет только свои ключи: остальные разделы живут в соседних фреймах и могли изменить свои позже
 const SETTING_KEYS_BY_GROUP = {
   general: ['enableSiteMenu', 'customSiteLinks', 'debugLogging', 'updateNotifications', 'enablePagination', 'initialChapters', 'loadMoreChapters'],
-  images: ['coverQuality', 'imageQuality', 'imageServer', 'resizeMethod', 'adaptiveRatio', 'jpegQuality', 'imageFormat', 'sameWidth', 'imageRateLimit'],
+  images: ['coverQuality', 'imageQuality', 'imageServer', 'resizeMethod', 'adaptiveRatio', 'jpegQuality', 'imageFormat', 'sameWidth'],
   toc: ['disableToc', 'tocFormat', 'customTocFormat', 'hideChapterName', 'hideVolumeNumber'],
   cbz: ['generateComicInfo'],
   pdf: ['pdfFont', 'pdfFontSize', 'pdfPageSize', 'pdfLineSpacing', 'pdfParagraphSpacing', 'pdfImageFormat', 'pdfJpegQuality'],
@@ -934,7 +932,6 @@ async function saveSettings() {
     updateNotifications: document.getElementById('update-notifications').checked,
     generateComicInfo: document.getElementById('generate-comicinfo').checked,
     sameWidth: document.getElementById('same-width').checked,
-    imageRateLimit: document.getElementById('image-rate-limit').checked,
     tocFormat: document.getElementById('toc-format').value,
     customTocFormat: document.getElementById('custom-toc-format').value,
     hideChapterName: document.getElementById('hide-chapter-name').checked,
@@ -1000,8 +997,7 @@ const DEFAULT_SETTINGS_BY_GROUP = {
     'adaptive-ratio': 3,
     'jpeg-quality': 1.0,
     'image-format': 'original',
-    'same-width': false,
-    'image-rate-limit': false
+    'same-width': false
   },
   toc: {
     'disable-toc': false,
