@@ -3366,7 +3366,25 @@ test('the image server select lives in the images group with the preparation win
   assert.match(settings, /images: \[[^\]]*'imageServer'/);
   const html = source('src/html/settings.html');
   assert.match(html, /<div class="panel" data-group="images">[\s\S]*id="image-server-field"[\s\S]*<option value="normal">Оригиналы<\/option>\s*<option value="compressed" selected>Сжатые<\/option>[\s\S]*data-group="toc"/);
-  assert.match(settings, /siteType === 'manga'/);
+  assert.match(html, /id="image-server-field" data-site-type="manga"/);
+});
+
+test('settings follow the site type: image server, same width and CBZ/ZIP for manga; PDF text and TXT for ranobe; all when the type is unknown', () => {
+  const html = source('src/html/settings.html');
+  const marked = type => [...html.matchAll(new RegExp(String.raw`data-site-type="${type}">[\s\S]*?(?:<label for="([\w-]+)"|id="([\w-]+)"|<span>([^<]+)</span>)`, 'g'))].map(m => m[1] || m[2] || m[3]);
+  assert.deepEqual(marked('manga'), ['image-server', 'same-width', 'CBZ/ZIP']);
+  assert.deepEqual(marked('ranobe'), ['pdf-font', 'pdf-font-size', 'pdf-page-size', 'pdf-line-spacing', 'pdf-paragraph-spacing', 'TXT']);
+  const els = ['manga', 'ranobe', 'manga'].map(siteType => ({ dataset: { siteType }, classes: new Set(['hidden']), classList: { toggle(name, on) { on ? this.owner.classes.add(name) : this.owner.classes.delete(name); } } }));
+  els.forEach(el => { el.classList.owner = el; });
+  const ctx = vm.createContext({ document: { querySelectorAll: selector => selector === '[data-site-type]' ? els : [] } });
+  vm.runInContext(functionSource('src/core/settings.js', 'applySiteFilter'), ctx);
+  ctx.applySiteFilter(undefined);
+  assert.deepEqual(els.map(el => el.classes.has('site-hidden')), [false, false, false]);
+  ctx.applySiteFilter('ranobe');
+  assert.deepEqual(els.map(el => [...el.classes]), [['hidden', 'site-hidden'], ['hidden'], ['hidden', 'site-hidden']]); // the section's own hidden is left alone
+  ctx.applySiteFilter('manga');
+  assert.deepEqual(els.map(el => el.classes.has('site-hidden')), [false, true, false]);
+  assert.match(source('src/css/settings.css'), /\.site-hidden \{\s*display: none !important;/);
 });
 
 test('saveCovers leaves out empty covers from «Новая обложка» until a URL or a file is set, and metadata.cover follows the saved ones', async () => {

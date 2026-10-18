@@ -802,3 +802,8 @@ body.tab-mode .settings-column {
   color: var(--text-secondary);
   font-size: 12px;
 }
+
+/* Настройка не для этого типа сайта (applySiteFilter в settings.js); свой класс, чтобы не спорить с hidden разделов */
+.site-hidden {
+  display: none !important;
+}

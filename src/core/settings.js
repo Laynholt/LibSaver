@@ -449,6 +449,13 @@ function updatePdfJpegQualityFieldVisibility() {
   }
 }
 
+// Настройки под тип сайта (siteType пишет окно на странице тайтла): data-site-type="manga" - сервер картинок, одинаковая ширина, CBZ/ZIP;
+// data-site-type="ranobe" - текст PDF и TXT. Тип не известен - видно всё
+function applySiteFilter(siteType) {
+  if (siteType !== 'manga' && siteType !== 'ranobe') return;
+  document.querySelectorAll('[data-site-type]').forEach(el => el.classList.toggle('site-hidden', el.dataset.siteType !== siteType));
+}
+
 // Показать/скрыть настройки пагинации в зависимости от чекбокса
 function updatePaginationSettingsVisibility() {
   const enablePagination = document.getElementById('enable-pagination')?.checked;
@@ -673,9 +680,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   
   // Применяем сохраненные настройки
   applySettingsToUI(settings);
-  // Сервер картинок есть только у манги (сайт - по siteType, как в быстром окошке)
-  const { siteType } = await chrome.storage.local.get('siteType');
-  document.getElementById('image-server-field').style.display = siteType === 'manga' ? '' : 'none';
+  applySiteFilter((await chrome.storage.local.get('siteType')).siteType);
   appliedToc = tocSignature(readTocControls()); // по этому формату главы уже оформлены
 
   // Инициализация видимости полей

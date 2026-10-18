@@ -245,7 +245,7 @@
           </div>
         </div>
 
-        <div class="field" id="image-server-field" style="display: none;">
+        <div class="field" id="image-server-field" data-site-type="manga">
           <label for="image-server" title="Картинки манги: оригиналы (часто PNG) или сжатые со второго сервера того же размера — файл легче, сервер надёжнее, качество чуть ниже">Сервер картинок</label>
           <select id="image-server">
             <option value="normal">Оригиналы</option>
@@ -271,7 +271,7 @@
           </div>
         </div>
 
-        <div class="field">
+        <div class="field" data-site-type="manga">
           <label class="checkbox-group" title="Манга: все страницы приводятся к самой частой ширине — широкие ужимаются, узкие растягиваются">
             <input type="checkbox" id="same-width">
             <span class="control__indicator" data-type="checkbox">
@@ -346,7 +346,7 @@
     </div>
 
     <div class="settings-column">
-      <div class="panel" data-group="cbz">
+      <div class="panel" data-group="cbz" data-site-type="manga">
         <div class="section-title">
           <span>CBZ/ZIP</span>
           <button class="btn-reset-group" data-group="cbz"><i class="fa-solid fa-rotate-left"></i></button>
@@ -370,7 +370,7 @@
           <button class="btn-reset-group" data-group="pdf"><i class="fa-solid fa-rotate-left"></i></button>
         </div>
 
-        <div class="field">
+        <div class="field" data-site-type="ranobe">
           <label for="pdf-font">Шрифт</label>
           <select id="pdf-font" style="height: 32px;">
             <option value="dejavu-sans" style="font-family: 'DejaVu Sans';">DejaVu Sans</option>
@@ -386,7 +386,7 @@
           </select>
         </div>
 
-        <div class="field">
+        <div class="field" data-site-type="ranobe">
           <label for="pdf-font-size">Размер шрифта</label>
           <select id="pdf-font-size">
             <option value="6">6 pt</option>
@@ -400,7 +400,7 @@
           </select>
         </div>
 
-        <div class="field">
+        <div class="field" data-site-type="ranobe">
           <label for="pdf-page-size">Размер страницы</label>
           <select id="pdf-page-size">
             <option value="A6">A6 (105 × 148 мм)</option>
@@ -412,7 +412,7 @@
           </select>
         </div>
 
-        <div class="field">
+        <div class="field" data-site-type="ranobe">
           <label for="pdf-line-spacing">Межстрочный интервал</label>
           <select id="pdf-line-spacing">
             <option value="0">0 px (плотно)</option>
@@ -424,7 +424,7 @@
           </select>
         </div>
 
-        <div class="field">
+        <div class="field" data-site-type="ranobe">
           <label for="pdf-paragraph-spacing">Отступ между абзацами</label>
           <select id="pdf-paragraph-spacing">
             <option value="0.5">0.5 × размер шрифта (компактно)</option>
@@ -451,7 +451,7 @@
         </div>
       </div>
 
-      <div class="panel" data-group="txt">
+      <div class="panel" data-group="txt" data-site-type="ranobe">
         <div class="section-title">
           <span>TXT</span>
           <button class="btn-reset-group" data-group="txt"><i class="fa-solid fa-rotate-left"></i></button>
