@@ -247,8 +247,10 @@ function startPanel() {
   async function load(force) {
     if (!embedder || single) return; // встроившего нас не опознали (whoami) или это не тайтл: ни storage, ни загрузки
     if (!early) show('loading');
+    const progress = $('loading-progress');
+    progress.value = 0;
     try {
-      info = await loadQuickTitle({ tabId: embedder.tabId, url: embedder.url, force });
+      info = await loadQuickTitle({ tabId: embedder.tabId, url: embedder.url, force, onProgress: done => { progress.value = done; } });
       slug = info.slug;
       formatSelect.replaceChildren(...formatOptionsFor(info.siteType).map(({ value, label }) => {
         const option = document.createElement('option');

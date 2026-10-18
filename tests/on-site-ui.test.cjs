@@ -1393,15 +1393,16 @@ test('quick settings keep the preparation window defaults for the image server a
   assert.equal(ctx.quickSettings({ textOnly: 'yes' }).textOnly, false);
 });
 
-test('the quick window writes siteType and sourceUrl before loading, like popup, and forwards force', async () => {
+test('the quick window writes siteType and sourceUrl before loading, like popup, and forwards force and onProgress', async () => {
   const data = {};
   const ctx = quickContext(data);
   const seen = [];
-  ctx.loadTitleData = async args => { seen.push([data.siteType, data.sourceUrl, args.tabId, args.url, args.force]); return { slug: 's' }; };
+  ctx.loadTitleData = async args => { seen.push([data.siteType, data.sourceUrl, args.tabId, args.url, args.force, args.onProgress]); return { slug: 's' }; };
   const url = 'https://ranobelib.me/ru/book/7--y';
+  const onProgress = () => {};
   assert.deepEqual(await ctx.loadQuickTitle({ tabId: 3, url }), { slug: 's' });
-  await ctx.loadQuickTitle({ tabId: 3, url, force: true });
-  assert.deepEqual(seen, [['ranobe', url, 3, url, false], ['ranobe', url, 3, url, true]]);
+  await ctx.loadQuickTitle({ tabId: 3, url, force: true, onProgress });
+  assert.deepEqual(seen, [['ranobe', url, 3, url, false, undefined], ['ranobe', url, 3, url, true, onProgress]]);
 });
 
 test('«Скачать N глав» snapshots the chosen range, fixes the saved range for the editors and enqueues once', async () => {
@@ -2322,6 +2323,7 @@ function panelPage({ me, search = '?tab=7', ancestorOrigins, width = 1000, store
   // startPanel is waiting for whoami: swap the loader before it answers
   ctx.loadTitleData = async args => {
     calls.loads.push(jsonCopy(args));
+    args.onProgress?.(3);
     return { slug: '123--title', siteKey: 'mangalib', siteType: 'manga', title: 'Морино (из API)', chapters: panelChapters, allChapters: panelChapters, covers: [] };
   };
   const page = {
@@ -2409,6 +2411,7 @@ test('a vouched title page loads with the tab and URL from whoami, writes siteTy
   assert.deepEqual(page.calls.loads, [{ tabId: 7, url: panelUrl, force: false }]);
   assert.deepEqual([page.data.siteType, page.data.sourceUrl], ['manga', panelUrl]);
   assert.deepEqual(page.frames(), [{ src: 'chapters.html?slug=123--title', active: true }]); // other sections are not created until opened
+  assert.equal(page.element('loading-progress').value, 3); // the loader's three parts move the loading bar
   assert.equal(page.element('title').textContent, 'Морино');
   const entries = page.menu().map(entry => [entry.title, entry.note, entry.on]);
   assert.deepEqual(entries, [['Главы', '24', true], ['Метаданные', '15', false], ['Обложки', '3', false], ['Картинки', '', false], ['Оглавление', '', false], ['Форматы', '', false], ['Общие', '', false], ['О LibSaver', '', false], ['Загрузки', '', false]]);

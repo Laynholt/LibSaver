@@ -30,9 +30,9 @@ function loadErrorText(error) {
 }
 
 // Редакторы и снимок читают siteType и sourceUrl из storage; loadTitleData их не пишет (как и в popup)
-async function loadQuickTitle({ tabId, url, force = false }) {
+async function loadQuickTitle({ tabId, url, force = false, onProgress }) {
   await chrome.storage.local.set({ siteType: siteTypeOf(siteKeyOf(url)), sourceUrl: url });
-  return loadTitleData({ tabId, url, force });
+  return loadTitleData({ tabId, url, force, onProgress });
 }
 
 // Снимок выбранных глав -> очередь движка. { ok: true } | { ok: false, message }; прочие отказы - исключение
