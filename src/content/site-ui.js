@@ -7,10 +7,11 @@
 // отдают одну вёрстку: a.btn.is-filled.variant-primary[href*="/read/"], классы родителя хешированные (не использовать).
 // SlashLIB не проверялся: та же платформа. Ссылка чтения - /ru/<slug>/read/..., без /manga/.
 const READ_BUTTON = ['a.btn.variant-primary[href*="/read/"]'];
-const SITE_ANCHORS = { mangalib: READ_BUTTON, hentailib: READ_BUTTON, shlib: READ_BUTTON, ranobelib: READ_BUTTON };
+// AnimeLIB (проверено 2026-10-19): та же кнопка, «Начать смотреть» ведёт на /ru/anime/<slug>/watch
+const SITE_ANCHORS = { mangalib: READ_BUTTON, hentailib: READ_BUTTON, shlib: READ_BUTTON, ranobelib: READ_BUTTON, animelib: ['a.btn.variant-primary[href*="/watch"]'] };
 
 // Акцент сайта - имя в ACCENT_COLORS (core/theme.js)
-const SITE_ACCENT = { mangalib: 'manga', hentailib: 'hentai', shlib: 'slash', ranobelib: 'ranobe' };
+const SITE_ACCENT = { mangalib: 'manga', hentailib: 'hentai', shlib: 'slash', ranobelib: 'ranobe', animelib: 'anime' };
 
 const OVERLAY_Z_INDEX = 2147483000;
 const ANCHOR_WAIT_MS = 10000;
@@ -349,7 +350,7 @@ function createButtonsHost(doc, siteKey) {
   buttonPainters.add(paint);
   paint();
 
-  const siteType = siteKey === 'ranobelib' ? 'ranobe' : 'manga';
+  const siteType = siteTypeOf(siteKey);
   const formatKey = formatKeyFor(siteType);
   const refresh = () => chrome.storage.local.get(['accentColor', 'theme', formatKey]).then(stored => {
     const isDark = stored.theme === 'light' ? false : stored.theme === 'system' ? doc.defaultView.matchMedia('(prefers-color-scheme: dark)').matches : true;

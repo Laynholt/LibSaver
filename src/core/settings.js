@@ -1,4 +1,4 @@
-// Раздел окна LibSaver (?group=images|toc|formats|cbz|pdf|txt|general|about): показываем только панели с data-group из списка (через запятую),
+// Раздел окна LibSaver (?group=images|toc|formats|cbz|pdf|txt|video|general|about): показываем только панели с data-group из списка (через запятую),
 // без тулбара и раскладки колонок. Без ?group= - вся страница с тулбаром (старое окно настроек)
 const GROUP_ALIASES = { general: ['general', 'storage'], formats: ['cbz', 'pdf', 'txt'] };
 
@@ -34,6 +34,7 @@ const TAB_SECTIONS = [
   { id: 'images', title: 'Картинки', icon: 'fa-image', groups: ['images'] },
   { id: 'toc', title: 'Оглавление', icon: 'fa-list-ol', groups: ['toc'] },
   { id: 'formats', title: 'Форматы', icon: 'fa-file-export', groups: ['cbz', 'pdf', 'txt'] },
+  { id: 'video', title: 'Видео', icon: 'fa-film', groups: ['video'] },
   { id: 'about', title: 'О LibSaver', icon: 'fa-circle-info', groups: ['about'] }
 ];
 
@@ -315,6 +316,8 @@ function applySettingsToUI(settings) {
   document.getElementById('update-notifications').checked = settings.updateNotifications ?? true;
   document.getElementById('generate-comicinfo').checked = settings.generateComicInfo !== false;
   document.getElementById('same-width').checked = settings.sameWidth === true;
+  document.getElementById('anime-quality').value = settings.animeQuality || 'max';
+  document.getElementById('anime-save-info').checked = settings.animeSaveInfo !== false;
 
   // Chapters pagination settings
   document.getElementById('initial-chapters').value = settings.initialChapters || 100;
@@ -446,9 +449,9 @@ function updatePdfJpegQualityFieldVisibility() {
 }
 
 // Настройки под тип сайта (siteType пишет окно на странице тайтла): data-site-type="manga" - сервер картинок, одинаковая ширина, CBZ/ZIP;
-// data-site-type="ranobe" - текст PDF и TXT. Тип не известен - видно всё
+// data-site-type="ranobe" - текст PDF и TXT, data-site-type="anime" - видео. Тип не известен - видно всё
 function applySiteFilter(siteType) {
-  if (siteType !== 'manga' && siteType !== 'ranobe') return;
+  if (!['manga', 'ranobe', 'anime'].includes(siteType)) return;
   document.querySelectorAll('[data-site-type]').forEach(el => el.classList.toggle('site-hidden', el.dataset.siteType !== siteType));
 }
 
@@ -642,6 +645,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     'updateNotifications',
     'generateComicInfo',
     'sameWidth',
+    'animeQuality',
+    'animeSaveInfo',
     'tocFormat',
     'customTocFormat',
     'hideChapterName',
@@ -859,6 +864,7 @@ const SETTING_KEYS_BY_GROUP = {
   cbz: ['generateComicInfo'],
   pdf: ['pdfFont', 'pdfFontSize', 'pdfPageSize', 'pdfLineSpacing', 'pdfParagraphSpacing', 'pdfImageFormat', 'pdfJpegQuality'],
   txt: ['txtImageMarker', 'textOnly'],
+  video: ['animeQuality', 'animeSaveInfo'],
   storage: ['cleanupOnTitleChange', 'cleanupOldTitles']
 };
 
@@ -914,6 +920,8 @@ async function saveSettings() {
     updateNotifications: document.getElementById('update-notifications').checked,
     generateComicInfo: document.getElementById('generate-comicinfo').checked,
     sameWidth: document.getElementById('same-width').checked,
+    animeQuality: document.getElementById('anime-quality').value,
+    animeSaveInfo: document.getElementById('anime-save-info').checked,
     tocFormat: document.getElementById('toc-format').value,
     customTocFormat: document.getElementById('custom-toc-format').value,
     hideChapterName: document.getElementById('hide-chapter-name').checked,
@@ -1001,6 +1009,10 @@ const DEFAULT_SETTINGS_BY_GROUP = {
     'pdf-paragraph-spacing': 1,
     'pdf-image-format': 'original-png',
     'pdf-jpeg-quality': 1.0
+  },
+  video: {
+    'anime-quality': 'max',
+    'anime-save-info': true
   },
   storage: {
     'cleanup-on-title-change': true,

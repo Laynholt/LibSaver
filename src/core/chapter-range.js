@@ -114,7 +114,7 @@ function applyTranslatorPriority(chapters, translatorPriority, chapterBranchOver
 
 // «Том X. Глава Y. Название»; без названия - «Том X. Глава Y»
 function chapterLabel(ch) {
-  const label = `Том ${ch.volume}. Глава ${ch.number}`;
+  const label = ch.episode ? `Сезон ${ch.volume}. Серия ${ch.number}` : `Том ${ch.volume}. Глава ${ch.number}`;
   return ch.name ? `${label}. ${ch.name}` : label;
 }
 

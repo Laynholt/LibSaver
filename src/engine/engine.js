@@ -57,8 +57,9 @@ function safeDownloadFilename(name) {
   return (safe || 'LibSaver') + extension;
 }
 
-async function saveFile(url, name) {
-  const filename = safeDownloadFilename(name);
+// folder - папка внутри загрузок (серии аниме). Имя папки чистится как имя файла; «.dir» - чтобы её точка не сошла за расширение
+async function saveFile(url, name, folder) {
+  const filename = (folder ? safeDownloadFilename(`${folder}.dir`).slice(0, -4) + '/' : '') + safeDownloadFilename(name);
   if (chrome.downloads) {
     await chrome.downloads.download({ url, filename, saveAs: false });
     return;
@@ -72,6 +73,14 @@ async function runTitle(item, snapshot) {
   stats = null;
   logTail = [];
   try {
+    if (snapshot.siteType === 'anime') {
+      return await downloadAnime(snapshot, {
+        log: (line, isError) => onDownloadEvent({ type: 'log', line, isError }),
+        progress: (done, total) => onDownloadEvent({ type: 'progress', current: done, total }),
+        isCanceled: () => current.canceled,
+        save: saveFile
+      });
+    }
     const { blob, filename } = await startDownload(snapshot);
     if (current.canceled) throw canceledError();
     releaseFile();

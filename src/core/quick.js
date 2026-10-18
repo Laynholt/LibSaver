@@ -46,7 +46,7 @@ function startQuick() {
   };
   const range = () => [Number(fromSelect.value), Number(toSelect.value)];
   const updateLabel = () => {
-    downloadButton.textContent = downloadLabel(rangeChapterIds(info.chapters, ...range()).length);
+    downloadButton.textContent = downloadLabel(rangeChapterIds(info.chapters, ...range()).length, info.siteType);
     status.textContent = '';
   };
 

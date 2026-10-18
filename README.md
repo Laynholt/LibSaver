@@ -54,6 +54,7 @@
 - TXT + картинки (только для RanobeLIB)
 - CBZ / ZIP (только манга-сайты)
 - HTML (страница-читалка, картинки рядом в архиве)
+- MP4 (только AnimeLIB: серии из плеера Kodik, описание `tvshow.nfo` и постер)
 
 ## Установка
 
@@ -124,7 +125,7 @@ npx web-ext sign --source-dir dist/firefox --channel unlisted --api-key $AMO_JWT
 
 ## Заметки
 
-- Поддержка AnimeLIB планируется (прям в мечтах)...
+- AnimeLIB: скачиваются серии с плеером Kodik; собственный плеер AnimeLIB пока не поддерживается
 
 ## Лицензия
 

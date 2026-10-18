@@ -31,6 +31,8 @@ const STATUS_COMMANDS = {
   canceled: ['remove']
 };
 
+const unitsOf = item => item.siteKey === 'animelib' ? 'серий' : 'глав';
+
 function renderCommandButton(command, id) {
   const [icon, label] = COMMAND_BUTTONS[command];
   return `<button class="dl-btn" data-cmd="${command}" data-id="${escapeHtml(id)}" title="${label}" aria-label="${label}"><i class="fa-solid ${icon}"></i><span>${label}</span></button>`;
@@ -56,7 +58,7 @@ function renderStatus(item) {
     }
     case 'done': {
       // Меньше глав, чем выбрано: часть пропущена (подробности - в логе и статистике)
-      const text = current < total ? `Готово с пропусками: ${current} / ${total} глав` : 'Готово';
+      const text = current < total ? `Готово с пропусками: ${current} / ${total} ${unitsOf(item)}` : 'Готово';
       return item.filename ? `${text} · ${escapeHtml(item.filename)}` : text;
     }
     case 'error': return `Ошибка: ${escapeHtml(item.error)}`;
@@ -75,7 +77,7 @@ function renderQueueItem(item) {
   return `<div class="dl-item dl-${escapeHtml(item.status)}">` +
     `<div class="dl-item-head"><span class="dl-item-title">${escapeHtml(item.title)}</span><span class="dl-format">${escapeHtml(String(item.format ?? '').toUpperCase())}</span></div>` +
     `<div class="dl-status">${renderStatus(item)}</div>` +
-    `<div class="dl-progress"><div class="progress-bar-container"><div class="progress-bar" style="width: ${percent}%"></div></div><span class="progress-counter">${current} / ${total} глав</span></div>` +
+    `<div class="dl-progress"><div class="progress-bar-container"><div class="progress-bar" style="width: ${percent}%"></div></div><span class="progress-counter">${current} / ${total} ${unitsOf(item)}</span></div>` +
     `<div class="dl-actions">${buttons}</div>` +
     '</div>';
 }

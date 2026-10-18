@@ -5,10 +5,11 @@
 const QUICK_ALREADY_QUEUED = 'Этот тайтл уже в очереди';
 
 // «Скачать 1 главу / 2 главы / 5 глав»
-function downloadLabel(count) {
+function downloadLabel(count, siteType) {
   const lastTwo = count % 100;
   const last = count % 10;
-  const word = lastTwo >= 11 && lastTwo <= 14 ? 'глав' : last === 1 ? 'главу' : last >= 2 && last <= 4 ? 'главы' : 'глав';
+  const [one, few, many] = siteType === 'anime' ? ['серию', 'серии', 'серий'] : ['главу', 'главы', 'глав'];
+  const word = lastTwo >= 11 && lastTwo <= 14 ? many : last === 1 ? one : last >= 2 && last <= 4 ? few : many;
   return `Скачать ${count} ${word}`;
 }
 

@@ -37,10 +37,64 @@ function extractTextFromNodes(nodes) {
   return result;
 }
 
-// Загрузка глав
-async function loadChapters(tabId) {
+// AnimeLIB: запрос к API через страницу сайта, ответ - поле data
+async function animeApi(tabId, path) {
+  const result = await pageCall('animelib', 'animeApi', [path], tabId);
+  if (!result?.success) throw new Error(result?.error || 'Нет ответа API AnimeLIB');
+  return result.data;
+}
+
+const namesOf = list => Array.isArray(list) ? list.map(item => item?.rus_name || item?.name || '').filter(Boolean).join(', ') : '';
+
+// Серии AnimeLIB в виде глав: сезон - том. Какие озвучки есть у серии, API говорит только по каждой серии отдельно,
+// поэтому переводы серии - все команды тайтла, а плеер под выбранную команду движок ищет при загрузке (engine/anime.js)
+async function loadAnimeChapters(tabId, slug) {
+  const [episodes, title] = await Promise.all([
+    animeApi(tabId, `/api/episodes?anime_id=${encodeURIComponent(slug)}`),
+    animeApi(tabId, `/api/anime/${encodeURIComponent(slug)}?fields[]=teams`)
+  ]);
+  const branches = (title.teams || []).map(team => ({ branch_id: team.id, teams: [{ id: team.id, name: team.name }] }));
+  const chapters = episodes.map(episode => ({
+    id: episode.id, volume: episode.season || '1', number: episode.number, name: episode.name || '', episode: true, branches
+  }));
+  return { success: true, slug, chapters };
+}
+
+async function loadAnimeMetadata(tabId, slug) {
+  const fields = ['eng_name', 'otherNames', 'summary', 'releaseDate', 'genres', 'tags', 'teams', 'authors', 'publisher', 'anime_status_id', 'time', 'episodes_count', 'type_id'];
+  const data = await animeApi(tabId, `/api/anime/${encodeURIComponent(slug)}?${fields.map(field => `fields[]=${field}`).join('&')}`);
+  const metadata = {
+    titleRu: data.rus_name || '',
+    titleEn: data.eng_name || '',
+    titleOriginal: data.name || '',
+    titleAlt: Array.isArray(data.otherNames) ? data.otherNames.join('\n') : '',
+    author: namesOf(data.authors),
+    artist: '',
+    year: data.releaseDate || '',
+    status: data.status?.label || '',
+    country: '',
+    releaseFormat: data.type?.label || '',
+    publisher: namesOf(data.publisher), // у AnimeLIB здесь студия
+    ageRestriction: data.ageRestriction?.label || '',
+    description: extractDescriptionText(data.summary) || '',
+    genres: namesOf(data.genres),
+    tags: namesOf(data.tags), // через запятую, без #: в tvshow.nfo теги уходят как есть
+    cover: data.cover?.default || data.cover?.md || '',
+    allCovers: [],
+    totalChapters: data.items_count?.uploaded || 0,
+    duration: data.time?.formated || '',
+    rating: data.shiki_rate ? String(data.shiki_rate) : '',
+    shikimori: data.shikimori_href || ''
+  };
+  return { success: true, metadata, slug };
+}
+
+// Загрузка глав; slug нужен только AnimeLIB (страничный вызов глав берёт его из адреса вкладки)
+async function loadChapters(tabId, slug) {
   try {
-    const result = await pageCall(await siteKeyOfTab(tabId), 'chapters', [], tabId);
+    const siteKey = await siteKeyOfTab(tabId);
+    if (siteKey === 'animelib') return await loadAnimeChapters(tabId, slug);
+    const result = await pageCall(siteKey, 'chapters', [], tabId);
     if (!result || !result.success) {
       return { success: false, error: result?.error || 'Не удалось загрузить главы' };
     }
@@ -53,9 +107,10 @@ async function loadChapters(tabId) {
 }
 
 // Загрузка метаданных
-async function loadMetadata(tabId) {
+async function loadMetadata(tabId, slug) {
   try {
     const siteKey = await siteKeyOfTab(tabId);
+    if (siteKey === 'animelib') return await loadAnimeMetadata(tabId, slug);
     const domData = await pageCall(siteKey, 'metadata', [], tabId);
 
     if (domData) {
@@ -116,7 +171,10 @@ async function loadMetadata(tabId) {
 // Загрузка обложек
 async function loadCovers(tabId, slug) {
   try {
-    const coversData = await pageCall(await siteKeyOfTab(tabId), 'covers', [slug], tabId);
+    const siteKey = await siteKeyOfTab(tabId);
+    const coversData = siteKey === 'animelib'
+      ? { data: await animeApi(tabId, `/api/anime/${encodeURIComponent(slug)}/covers`) }
+      : await pageCall(siteKey, 'covers', [slug], tabId);
 
     if (coversData) {
       if (coversData && Array.isArray(coversData.data)) {

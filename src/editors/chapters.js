@@ -102,7 +102,7 @@ function createVolumeCard(key) {
   });
   const title = document.createElement('span');
   title.className = 'volume-title';
-  title.textContent = `Том ${key}`;
+  title.textContent = `${volumeChapters.get(key)?.[0]?.episode ? 'Сезон' : 'Том'} ${key}`;
   const count = document.createElement('span');
   count.className = 'volume-count';
   const toggle = document.createElement('button');
@@ -499,7 +499,7 @@ function renderChaptersList(chapters, originalChapters, startIndex = 0, append =
 
     const label = document.createElement('div');
     label.className = 'chapter-title';
-    label.textContent = `Том ${originalCh.volume}. Глава ${originalCh.number}.${originalCh.name ? ' ' + originalCh.name : ''}`;
+    label.textContent = chapterLabel(originalCh);
     
     header.appendChild(label);
     

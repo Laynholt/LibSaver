@@ -221,7 +221,7 @@ test('title data is only accessed through the title store, which every page usin
 
 test('title loader requests chapters, metadata and covers together without artificial waits', () => {
   const loader = source('src/core/title-loader.js');
-  assert.match(loader, /Promise\.all\(\[\s*trackProgress\(loadChapters\(tabId\)\),\s*trackProgress\(loadMetadata\(tabId\)\),\s*trackProgress\(loadCovers\(tabId, urlSlug\)\)/);
+  assert.match(loader, /Promise\.all\(\[\s*trackProgress\(loadChapters\(tabId, urlSlug\)\),\s*trackProgress\(loadMetadata\(tabId, urlSlug\)\),\s*trackProgress\(loadCovers\(tabId, urlSlug\)\)/);
   assert.doesNotMatch(loader, /await (loadChapters|loadMetadata|loadCovers)\(|setTimeout\(resolve|\b(fast|slowSmooth|ready|animate)Progress\(/);
   assert.doesNotMatch(source('src/core/popup.js'), /\b(loadChapters|loadMetadata|loadCovers)\(/);
 });

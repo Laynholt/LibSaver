@@ -7,13 +7,6 @@ function loadError(code) {
   return Object.assign(new Error(code), { code });
 }
 
-// Тип контента, который редакторы читают из storage.siteType
-function siteTypeOf(siteKey) {
-  if (siteKey === 'mangalib' || siteKey === 'hentailib' || siteKey === 'shlib') return 'manga';
-  if (siteKey === 'animelib') return 'anime';
-  return 'ranobe';
-}
-
 // Очистка старых titleData (старше 7 дней)
 async function cleanupOldTitles() {
   try {
@@ -107,7 +100,8 @@ function processChapters(chaptersList, format, savedChapters) {
       branchId: branchId,
       branchTeamName: teamName,
       branches: branches, // Сохраняем нормализованные branches
-      displayTitle: formatChapterTitle(vol, num, name, format.tocFormat, format.customTocFormat, format.hideChapterName, format.hideVolumeNumber)
+      ...(item.episode && { episode: true }), // серия AnimeLIB: том - сезон
+      displayTitle: item.episode ? chapterLabel({ episode: true, volume: vol, number: num, name }) : formatChapterTitle(vol, num, name, format.tocFormat, format.customTocFormat, format.hideChapterName, format.hideVolumeNumber)
     });
   });
 
@@ -221,8 +215,8 @@ async function loadTitleData({ tabId, url, force = false, onProgress }) {
   });
   onProgress?.(0);
   const [chaptersResult, metadataResult, coversResult] = await Promise.all([
-    trackProgress(loadChapters(tabId)),
-    trackProgress(loadMetadata(tabId)),
+    trackProgress(loadChapters(tabId, urlSlug)),
+    trackProgress(loadMetadata(tabId, urlSlug)),
     trackProgress(loadCovers(tabId, urlSlug))
   ]);
 

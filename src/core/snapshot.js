@@ -1,7 +1,7 @@
 // Снимок загрузки: всё, что нужно startDownload, фиксируется в момент нажатия «Скачать».
 // Движок загрузки работает без chrome.storage, поэтому настройки и данные тайтла читаются здесь один раз.
 // Ключи storage, которые читает startDownload
-const SNAPSHOT_STORED_KEYS = ['rateLimit', 'metadataFieldOrder', 'fieldLabels', 'debugLogging', 'disableToc', 'currentSlug', 'speedMode', 'txtImageMarker', 'pdfFont', 'pdfFontSize', 'pdfPageSize', 'pdfLineSpacing', 'pdfParagraphSpacing', 'tocFormat', 'customTocFormat', 'hideChapterName', 'hideVolumeNumber', 'generateComicInfo', 'sameWidth'];
+const SNAPSHOT_STORED_KEYS = ['rateLimit', 'metadataFieldOrder', 'fieldLabels', 'debugLogging', 'disableToc', 'currentSlug', 'speedMode', 'txtImageMarker', 'pdfFont', 'pdfFontSize', 'pdfPageSize', 'pdfLineSpacing', 'pdfParagraphSpacing', 'tocFormat', 'customTocFormat', 'hideChapterName', 'hideVolumeNumber', 'generateComicInfo', 'sameWidth', 'animeQuality', 'animeSaveInfo'];
 
 async function buildDownloadSnapshot({ slug, tabId, sourceUrl, selectedChapterIds, format, imageServer, textOnly, speedMode }) {
   const settings = await chrome.storage.local.get([...SNAPSHOT_STORED_KEYS, 'imageQuality', 'coverQuality', 'resizeMethod', 'adaptiveRatio', 'jpegQuality', 'imageFormat', 'pdfImageFormat', 'pdfJpegQuality']);
@@ -10,7 +10,7 @@ async function buildDownloadSnapshot({ slug, tabId, sourceUrl, selectedChapterId
   const metadata = title.metadata || {};
   const originalMetadata = originalTitleData[slug]?.metadata || {};
   const siteKey = siteKeyOf(sourceUrl);
-  const siteType = siteKey === 'ranobelib' ? 'ranobe' : 'manga';
+  const siteType = siteTypeOf(siteKey);
   const disableToc = settings.disableToc !== undefined ? settings.disableToc : false;
 
   const stored = Object.fromEntries(SNAPSHOT_STORED_KEYS.filter(key => key in settings).map(key => [key, settings[key]]));

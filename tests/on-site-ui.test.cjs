@@ -119,7 +119,7 @@ test('every former executeScript func now lives in PAGE_CALLS and api/base use p
   assert.doesNotMatch(source('src/core/api.js') + source('src/formatters/base.js'), /chrome\.scripting\.executeScript/);
   const ctx = vm.createContext({});
   vm.runInContext(source('src/core/page-calls.js'), ctx);
-  assert.deepEqual(Object.keys(vm.runInContext('PAGE_CALLS', ctx)).sort(), ['chapterPages', 'chapters', 'covers', 'mangaChapterPages', 'metadata', 'metadataExtra']);
+  assert.deepEqual(Object.keys(vm.runInContext('PAGE_CALLS', ctx)).sort(), ['animeApi', 'chapterPages', 'chapters', 'covers', 'mangaChapterPages', 'metadata', 'metadataExtra']);
 });
 
 function functionSource(file, name) {
@@ -533,7 +533,7 @@ test('saveFile is refused to a page context with a tab (content script) and serv
 test('scripts of the engine page use neither storage, tabs, downloads nor the window DOM', () => {
   const scripts = [...source('src/engine/engine.html').matchAll(/<script src="\.\.\/([^"]+)"/g)].map(match => match[1]);
   assert.deepEqual(scripts, ['libs/jszip.min.js', 'libs/pica.min.js', 'core/page-calls.js', 'utils/page-call.js', 'core/api.js', 'utils/protection.js', 'utils/header.js', 'core/statistics.js',
-    'formatters/base.js', 'formatters/epub.js', 'formatters/txt.js', 'formatters/pdf.js', 'formatters/html.js', 'formatters/fb2.js', 'formatters/cbz.js', 'formatters/index.js', 'core/download.js', 'engine/queue.js', 'engine/engine.js']);
+    'formatters/base.js', 'formatters/epub.js', 'formatters/txt.js', 'formatters/pdf.js', 'formatters/html.js', 'formatters/fb2.js', 'formatters/cbz.js', 'formatters/index.js', 'core/download.js', 'engine/queue.js', 'engine/anime.js', 'engine/engine.js']);
   // code only: template literals (html.js builds the reader page's script in one) and line comments are text
   const code = file => source('src/' + file).replace(/`(?:\\[\s\S]|[^`\\])*`/g, '``').replace(/^\s*\/\/.*$/gm, '');
   for (const file of scripts.filter(file => file !== 'utils/page-call.js' && file !== 'engine/engine.js')) {
@@ -1314,21 +1314,21 @@ test('accent: the forced one wins, otherwise the site color; the light theme use
   assert.equal(accent('mangalib', 'nonsense', true).color, '#ef6c00');
 });
 
-test('site-ui content script is registered for the four sites, with its stylesheet, font and iframe pages exposed', () => {
+test('site-ui content script is registered for all five sites, with its stylesheet, font and iframe pages exposed', () => {
   const manifest = JSON.parse(source('src/manifest.json'));
   const script = manifest.content_scripts[1];
-  const notAnime = match => !/anilib|animelib/.test(match);
   assert.deepEqual(script.js, ['core/theme.js', 'utils/page-call.js', 'utils/formats.js', 'content/site-ui.js']);
-  assert.deepEqual(script.matches, manifest.content_scripts[0].matches.filter(notAnime));
-  const [libs, anime, ...rest] = manifest.web_accessible_resources;
+  assert.deepEqual(script.matches, manifest.content_scripts[0].matches);
+  assert.ok(script.matches.includes('https://animelib.org/*'));
+  const [libs, ...rest] = manifest.web_accessible_resources;
   for (const resource of ['css/site-ui.css', 'html/panel.html', 'html/quick.html', 'html/downloads.html', 'libs/fontawesome/webfonts/fa-solid-900.woff2']) {
     assert.ok(libs.resources.includes(resource), resource);
   }
   // R14: pages open only on the sites where site-ui.js frames them, not on <all_urls>; the deleted pages and the popup are gone
   assert.deepEqual(libs.matches, script.matches);
   assert.deepEqual(libs.resources.filter(resource => /prepare|workspace|popup/.test(resource)), []);
-  // SiteMenuRestorer.js also runs on AnimeLIB and fetches the menu icons there: only they are exposed to those origins
-  assert.deepEqual([anime.resources, anime.matches, rest.length], [['assets/svg/*.svg'], manifest.content_scripts[0].matches.filter(match => !script.matches.includes(match)), 0]);
+  // SiteMenuRestorer.js fetches the menu icons on the same sites: one entry covers them
+  assert.deepEqual([libs.resources.includes('assets/svg/*.svg'), rest.length], [true, 0]);
   assert.equal(JSON.stringify(manifest).includes('<all_urls>'), JSON.stringify(manifest.host_permissions).includes('<all_urls>'));
   assert.equal(libs.resources.some(resource => resource.startsWith('assets/fonts')), false); // pages load their own fonts, the site never asks for them
   assert.equal(manifest.permissions.some(name => name.startsWith('system.')), false);
@@ -1346,7 +1346,7 @@ test('whoami answers with the sender tab id and url', () => {
 
 test('format options are one list per site type, shared by the panel, the quick popover and the buttons', () => {
   const ctx = vm.createContext({ console });
-  vm.runInContext(['src/utils/formats.js', 'src/core/title-loader.js', 'src/core/site-download.js', 'src/core/quick.js'].map(source).join('\n'), ctx);
+  vm.runInContext(['src/utils/formats.js', 'src/utils/page-call.js', 'src/core/title-loader.js', 'src/core/site-download.js', 'src/core/quick.js'].map(source).join('\n'), ctx);
   const values = siteKey => Array.from(ctx.quickFormatOptions(siteKey), option => option.value);
   assert.ok(!values('ranobelib').includes('cbz'));
   assert.deepEqual(values('ranobelib'), ['epub', 'fb2', 'pdf', 'txt', 'html']);
@@ -1354,8 +1354,9 @@ test('format options are one list per site type, shared by the panel, the quick 
     assert.ok(!values(siteKey).includes('fb2') && !values(siteKey).includes('txt'), siteKey);
     assert.deepEqual(values(siteKey), ['cbz', 'zip', 'pdf', 'epub', 'html']);
   }
-  assert.deepEqual([ctx.defaultFormatFor('manga'), ctx.defaultFormatFor('ranobe'), ctx.defaultFormatFor('anime')], ['cbz', 'epub', 'mkv']);
-  assert.deepEqual([ctx.formatKeyFor('manga'), ctx.formatKeyFor('ranobe')], ['selectedFormat_manga', 'selectedFormat_ranobe']);
+  assert.deepEqual(values('animelib'), ['mp4']);
+  assert.deepEqual([ctx.defaultFormatFor('manga'), ctx.defaultFormatFor('ranobe'), ctx.defaultFormatFor('anime')], ['cbz', 'epub', 'mp4']);
+  assert.deepEqual([ctx.formatKeyFor('manga'), ctx.formatKeyFor('ranobe'), ctx.formatKeyFor('anime'), ctx.formatKeyFor(undefined)], ['selectedFormat_manga', 'selectedFormat_ranobe', 'selectedFormat_anime', 'selectedFormat_ranobe']);
   assert.doesNotMatch(source('src/core/panel.js'), /value: 'cbz'/);
   assert.doesNotMatch(source('src/core/quick.js'), /value: 'cbz'/);
 });
@@ -2738,7 +2739,7 @@ test('the popup off a title page only points to the sites: no settings button', 
 });
 
 test('the settings tab (no ?group=) lists the sections on the left and shows only the panels of the one in the address', () => {
-  const groups = ['general', 'storage', 'images', 'toc', 'cbz', 'pdf', 'txt', 'about'];
+  const groups = ['general', 'storage', 'images', 'toc', 'cbz', 'pdf', 'txt', 'video', 'about'];
   const panels = groups.map(group => ({ dataset: { group }, classList: { toggle(name, on) { this.on = on; } } }));
   const links = [];
   const nav = { append: link => links.push(link) };
@@ -2757,7 +2758,7 @@ test('the settings tab (no ?group=) lists the sections on the left and shows onl
   });
   vm.runInContext(between('src/core/settings.js', '// Вкладка настроек (без ?group=)', '// Отображение версии расширения'), ctx);
   assert.deepEqual(classes, ['tab-mode']);
-  assert.deepEqual(links.map(link => link.href), ['#general', '#images', '#toc', '#formats', '#about']);
+  assert.deepEqual(links.map(link => link.href), ['#general', '#images', '#toc', '#formats', '#video', '#about']);
   const shown = () => panels.filter(panel => panel.classList.on === false).map(panel => panel.dataset.group);
   assert.deepEqual(shown(), ['cbz', 'pdf', 'txt']);
   assert.equal(links.find(link => link.attrs['aria-current'] === 'page').dataset.section, 'formats');
@@ -3075,11 +3076,11 @@ test('every settings group of the window has a panel, every panel is in some sec
   const html = source('src/html/settings.html');
   const chunks = html.split('<div class="panel" data-group="').slice(1);
   const byGroup = Object.fromEntries(chunks.map(chunk => [chunk.slice(0, chunk.indexOf('"')), chunk]));
-  assert.deepEqual(Object.keys(byGroup).sort(), ['about', 'cbz', 'general', 'images', 'pdf', 'storage', 'toc', 'txt']);
+  assert.deepEqual(Object.keys(byGroup).sort(), ['about', 'cbz', 'general', 'images', 'pdf', 'storage', 'toc', 'txt', 'video']);
   const ctx = settingsGroupsLogic();
   const panelCtx = panelLogic();
   const reachable = new Set();
-  for (const section of panelCtx.PANEL_SECTIONS()) {
+  for (const section of [...panelCtx.PANEL_SECTIONS(), ...panelCtx.PANEL_SECTIONS('anime')]) {
     const group = new URL(section.url, 'chrome-extension://x/').searchParams.get('group');
     if (group) for (const name of ctx.settingsGroupsFromUrl(`?group=${group}`)) reachable.add(name);
   }
