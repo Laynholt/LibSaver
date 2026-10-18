@@ -2423,3 +2423,319 @@ test('a third-party frame on a title page cannot use the window: the direct pare
 test('a failing refresh after a storage change is logged, not left as an unhandled rejection', () => {
   assert.match(source('src/core/panel.js'), /refresh\(\)\.catch\(/);
 });
+
+// ---- Task 11: settings by section and autosave ----
+
+// Фейковые часы: setTimeout/clearTimeout/Date.now на виртуальном времени
+function fakeClock() {
+  let now = 0;
+  let nextId = 0;
+  const timers = new Map();
+  return {
+    setTimeout: (fn, ms) => { timers.set(++nextId, { fn, at: now + ms }); return nextId; },
+    clearTimeout: handle => { timers.delete(handle); },
+    now: () => now,
+    advance(ms) {
+      const target = now + ms;
+      for (;;) {
+        const due = [...timers].filter(([, timer]) => timer.at <= target).sort((a, b) => a[1].at - b[1].at)[0];
+        if (!due) break;
+        timers.delete(due[0]);
+        now = due[1].at;
+        due[1].fn();
+      }
+      now = target;
+    }
+  };
+}
+
+// autosave.js в vm: document с подписками и dispatchEvent, window с pagehide, chrome.runtime.sendMessage пишет сообщения
+function autosaveContext() {
+  const clock = fakeClock();
+  const listeners = {};
+  const windowListeners = {};
+  const messages = [];
+  const errors = [];
+  const ctx = vm.createContext({
+    setTimeout: clock.setTimeout, clearTimeout: clock.clearTimeout, Date: { now: clock.now },
+    console: { error: (...args) => errors.push(args) },
+    CustomEvent: class { constructor(type) { this.type = type; } },
+    document: {
+      addEventListener: (type, fn) => { (listeners[type] ||= []).push(fn); },
+      dispatchEvent(event) { for (const fn of listeners[event.type] || []) fn(event); }
+    },
+    window: { addEventListener: (type, fn) => { (windowListeners[type] ||= []).push(fn); } },
+    chrome: { runtime: { sendMessage: message => { messages.push(message); return Promise.resolve(); } } }
+  });
+  vm.runInContext(source('src/utils/autosave.js'), ctx);
+  const emit = type => ctx.document.dispatchEvent({ type });
+  return { ctx, clock, emit, messages, errors, pagehide: () => windowListeners.pagehide.forEach(fn => fn()) };
+}
+
+test('enableAutosave: three inputs within 100 ms are one save, 400 ms after the last', async () => {
+  const { ctx, clock, emit } = autosaveContext();
+  let saves = 0;
+  ctx.enableAutosave({ save: () => { saves++; } });
+  emit('input');
+  clock.advance(50);
+  emit('input');
+  clock.advance(50);
+  emit('input');
+  clock.advance(399);
+  await flush();
+  assert.equal(saves, 0);
+  clock.advance(1);
+  await flush();
+  assert.equal(saves, 1);
+  clock.advance(2000);
+  await flush();
+  assert.equal(saves, 1);
+});
+
+test('enableAutosave: change and libsaver:changed also save; a closing window saves at once and only once', async () => {
+  const { ctx, clock, emit, pagehide } = autosaveContext();
+  let saves = 0;
+  ctx.enableAutosave({ save: () => { saves++; }, delay: 100 });
+  emit('change');
+  clock.advance(100);
+  await flush();
+  assert.equal(saves, 1);
+  ctx.notifyChanged();
+  clock.advance(100);
+  await flush();
+  assert.equal(saves, 2);
+  emit('input');
+  pagehide(); // окно закрывают раньше, чем истекла пауза
+  await flush();
+  assert.equal(saves, 3);
+  clock.advance(1000);
+  await flush();
+  assert.equal(saves, 3);
+  pagehide(); // нечего сохранять
+  await flush();
+  assert.equal(saves, 3);
+});
+
+test('enableAutosave: saves run one after another, even when a change comes while one is still running', async () => {
+  const { ctx, clock, emit } = autosaveContext();
+  const log = [];
+  let release;
+  ctx.enableAutosave({ save: async () => { log.push('start'); await new Promise(resolve => { release = resolve; }); log.push('end'); } });
+  emit('input');
+  clock.advance(400);
+  await flush();
+  emit('input');
+  clock.advance(400);
+  await flush();
+  assert.deepEqual(log, ['start']); // second waits for the first
+  release();
+  await flush();
+  release();
+  await flush();
+  assert.deepEqual(log, ['start', 'end', 'start', 'end']);
+});
+
+test('enableAutosave: a failed save is a toast with the error text and a console error, and the next change saves again', async () => {
+  const { ctx, clock, emit, messages, errors } = autosaveContext();
+  let fail = true;
+  ctx.enableAutosave({ save: () => { if (fail) throw new Error('quota <b>exceeded</b>'); } });
+  emit('input');
+  clock.advance(400);
+  await flush();
+  assert.deepEqual(jsonCopy(messages), [{ action: 'showToast', message: 'Не удалось сохранить: quota <b>exceeded</b>', type: 'error', duration: 4000 }]);
+  assert.equal(errors.length, 1);
+  fail = false;
+  emit('input');
+  clock.advance(400);
+  await flush();
+  assert.equal(messages.at(-1).message, 'Сохранено!');
+});
+
+test('enableAutosave: «Сохранено!» is shown at most once in 5 seconds, not after every change', async () => {
+  const { ctx, clock, emit, messages } = autosaveContext();
+  ctx.enableAutosave({ save: () => {} });
+  for (let i = 0; i < 4; i++) {
+    emit('input');
+    clock.advance(1000);
+    await flush();
+  }
+  assert.equal(messages.filter(message => message.message === 'Сохранено!').length, 1);
+  clock.advance(5000);
+  emit('input');
+  clock.advance(400);
+  await flush();
+  assert.equal(messages.filter(message => message.message === 'Сохранено!').length, 2);
+});
+
+test('toasts insert their text with textContent, so an error text cannot inject markup', () => {
+  assert.doesNotMatch(source('src/utils/toast.js'), /innerHTML/);
+  assert.match(source('src/core/panel.js'), /showToast\(message\.message, message\.type, message\.duration\)/);
+});
+
+test('there is no «Сохранить» button in settings and the editors, no window.close() after saving and no «Отменено!» on closing', () => {
+  for (const page of ['settings', 'metadata', 'covers', 'chapters']) {
+    assert.doesNotMatch(source(`src/html/${page}.html`), /id="btn-save"/, page);
+    assert.match(source(`src/html/${page}.html`), /<script src="[.][.]\/utils\/autosave[.]js"><\/script>\s*(<script src="[.][.]\/(core|editors)\/[a-z]+[.]js"><\/script>\s*)?<script src="[.][.]\/(core|editors)\/(settings|metadata|covers|chapters)[.]js"><\/script>/, page);
+  }
+  for (const file of ['src/core/settings.js', 'src/editors/metadata.js', 'src/editors/covers.js', 'src/editors/chapters.js']) {
+    assert.doesNotMatch(source(file), /window[.]close|wasSaved|Отменено/, file);
+  }
+  assert.match(source('src/core/settings.js'), /enableAutosave[(][{] save: saveSettings [}][)]/);
+  assert.match(source('src/editors/metadata.js'), /enableAutosave[(][{] save: saveMetadata [}][)]/);
+  assert.match(source('src/editors/covers.js'), /enableAutosave[(][{] save: saveCovers [}][)]/);
+  assert.match(source('src/editors/chapters.js'), /enableAutosave[(][{] save: saveChapters [}][)]/);
+});
+
+test('covers and chapters tell autosave about changes that are not typing: dragging, uploads, deleting, resets, translator choices', () => {
+  const covers = source('src/editors/covers.js');
+  assert.match(functionSource('src/editors/covers.js', 'handleFileUpload'), /notifyChanged[(][)]/);
+  assert.match(covers, /onEnd: function[(]evt[)] [{]\s*[^}]*updateCoversOrder[(][)];\s*notifyChanged[(][)]/);
+  assert.equal(covers.match(/removeCoverItem[(]index[)];\s*notifyChanged/g).length, 2);
+  const chapters = source('src/editors/chapters.js');
+  assert.match(chapters, /chapterBranchOverrides\[ch[.]id\] = translatorKey;\s*notifyChanged[(][)]/);
+  assert.match(functionSource('src/editors/chapters.js', 'updatePriorityFromList'), /notifyChanged[(][)]/);
+});
+
+test('metadata: the enabled fields live in the storage key metadataFields, and the panel counter follows a change made in the editor', async () => {
+  const page = panelPage({ me: { tabId: 7, url: panelUrl } });
+  await page.settle();
+  assert.equal(page.menu()[1].note, '15'); // nothing written yet: all fields are on
+  const fields = ['title-ru', 'title-en', 'title-original', 'title-alt', 'author', 'artist', 'year', 'status', 'country', 'release-format', 'publisher', 'age-restriction', 'description', 'genres', 'tags'];
+  const clicks = [];
+  const editor = vm.createContext({
+    chrome: { storage: { local: { set: values => page.ctx.chrome.storage.local.set(values) } } },
+    notifyChanged() {},
+    document: { querySelectorAll: () => fields.map(fieldId => ({ getAttribute: () => fieldId, closest: () => ({ classList: { add() {}, remove() {} } }), addEventListener: (type, fn) => clicks.push(fn) })) }
+  });
+  vm.runInContext(`let metadataFields = ${JSON.stringify(Object.fromEntries(fields.map(field => [field, true])))};\n${functionSource('src/editors/metadata.js', 'initFieldVisibilityButtons')}\ninitFieldVisibilityButtons();`, editor);
+  clicks[0]({ preventDefault() {} }); // switch «Название (RU)» off
+  clicks[3]({ preventDefault() {} });
+  await page.settle();
+  assert.equal(page.data.metadataFields['title-ru'], false);
+  assert.equal(page.menu()[1].note, '13');
+  clicks[0]({ preventDefault() {} }); // and back on
+  await page.settle();
+  assert.equal(page.menu()[1].note, '14');
+});
+
+// settings.js: разбор ?group=, ключи по группам и сохранение раздела
+const settingsGroupsLogic = () => {
+  const ctx = vm.createContext({ URLSearchParams, location: { search: '' }, document: { body: { classList: { add() {} } }, querySelectorAll: () => [] } });
+  vm.runInContext(between('src/core/settings.js', 'const GROUP_ALIASES', '// Дефолтные ссылки сайтов'), ctx);
+  return ctx;
+};
+function between(file, start, end) {
+  const text = source(file);
+  const from = text.indexOf(start);
+  const to = text.indexOf(end, from + start.length);
+  assert.ok(from >= 0 && to > from, `Missing source boundary: ${file}: ${start}`);
+  return text.slice(from, to);
+}
+
+test('settings.html?group= lists panels by data-group; «general» is «general,storage»; no group is the whole page', () => {
+  const ctx = settingsGroupsLogic();
+  assert.equal(ctx.settingsGroupsFromUrl(''), null);
+  assert.equal(ctx.settingsGroupsFromUrl('?slug=1--a'), null);
+  assert.deepEqual(jsonCopy(ctx.settingsGroupsFromUrl('?group=general')), ['general', 'storage']);
+  assert.deepEqual(jsonCopy(ctx.settingsGroupsFromUrl('?group=images&slug=1--a')), ['images']);
+  assert.deepEqual(jsonCopy(ctx.settingsGroupsFromUrl('?group=toc,about')), ['toc', 'about']);
+});
+
+test('group mode hides the panels outside the list and switches the page to one column without the toolbar', () => {
+  const panels = ['general', 'storage', 'images', 'about'].map(group => ({ dataset: { group }, hidden: null, classList: { toggle(name, on) { this.on = on; } } }));
+  const classes = [];
+  const ctx = vm.createContext({ URLSearchParams, location: { search: '?group=general' }, document: { body: { classList: { add: name => classes.push(name) } }, querySelectorAll: () => panels } });
+  vm.runInContext(between('src/core/settings.js', 'const GROUP_ALIASES', '// Дефолтные ссылки сайтов'), ctx);
+  assert.deepEqual(classes, ['group-mode']);
+  assert.deepEqual(panels.map(panel => panel.classList.on), [false, false, true, true]);
+  const css = source('src/css/settings.css');
+  assert.match(css, /body[.]group-mode [.]toolbar [{]\s*display: none;/);
+  assert.match(css, /body[.]group-mode [.]settings-column [{]\s*display: contents;/);
+});
+
+test('every settings group of the window has a panel, every panel is in some section, and no control sits outside a panel', () => {
+  const html = source('src/html/settings.html');
+  const chunks = html.split('<div class="panel" data-group="').slice(1);
+  const byGroup = Object.fromEntries(chunks.map(chunk => [chunk.slice(0, chunk.indexOf('"')), chunk]));
+  assert.deepEqual(Object.keys(byGroup).sort(), ['about', 'cbz', 'general', 'images', 'pdf', 'storage', 'toc', 'txt']);
+  const ctx = settingsGroupsLogic();
+  const panelCtx = panelLogic();
+  const reachable = new Set();
+  for (const format of ['cbz', 'pdf', 'txt']) {
+    for (const section of panelCtx.PANEL_SECTIONS(format)) {
+      const group = new URL(section.url, 'chrome-extension://x/').searchParams.get('group');
+      if (group) for (const name of ctx.settingsGroupsFromUrl(`?group=${group}`)) reachable.add(name);
+    }
+  }
+  assert.deepEqual([...reachable].sort(), Object.keys(byGroup).sort());
+  const outside = html.slice(0, html.indexOf('<div class="container">')) + html.slice(html.lastIndexOf('<div class="scroll-buttons"'));
+  assert.doesNotMatch(outside, /<(input|select)\b/);
+  // theme, colour, storage clean-up, version and update check moved from the toolbar into panels
+  for (const [group, ids] of Object.entries({ general: ['theme-select', 'accent-select', 'reload-warning'], storage: ['cleanup-on-title-change', 'cleanup-old-titles', 'storage-size-display', 'btn-cleanup'], about: ['extension-version', 'btn-check-updates'] })) {
+    for (const id of ids) assert.ok(byGroup[group].includes(`id="${id}"`), `${group}: ${id}`);
+  }
+  assert.match(byGroup.about, /class="issue-btn"/);
+  assert.match(byGroup.about, /dfy-dpg[/]LibSaver"/);
+});
+
+test('every setting that is saved belongs to exactly one panel group, and each form control of a group is among its keys', () => {
+  const text = source('src/core/settings.js');
+  const saved = functionSource('src/core/settings.js', 'saveSettings');
+  const allBlock = saved.slice(saved.indexOf('const all = {'), saved.indexOf('};', saved.indexOf('const all = {')));
+  const collected = [...allBlock.matchAll(/^ {4}(\w+):/gm)].map(match => match[1]).sort();
+  const keysBlock = text.slice(text.indexOf('const SETTING_KEYS_BY_GROUP'), text.indexOf('};', text.indexOf('const SETTING_KEYS_BY_GROUP')));
+  const declared = [...keysBlock.matchAll(/'(\w+)'/g)].map(match => match[1]).sort();
+  assert.deepEqual(declared, collected);
+  assert.equal(new Set(declared).size, declared.length);
+  // the group of a key is the group of the panel holding its control
+  const html = source('src/html/settings.html');
+  const panels = html.split('<div class="panel" data-group="').slice(1);
+  const ctx = vm.createContext({});
+  vm.runInContext(keysBlock + '};\nthis.keys = SETTING_KEYS_BY_GROUP;', ctx);
+  const camel = id => id.replace(/-(\w)/g, (_, letter) => letter.toUpperCase());
+  for (const panel of panels) {
+    const group = panel.slice(0, panel.indexOf('"'));
+    for (const [, id] of panel.matchAll(/<(?:input|select)\b[^>]*\bid="([\w-]+)"/g)) {
+      if (id.startsWith('site-') || id.endsWith('-value')) continue;
+      assert.ok(ctx.keys[group].includes(camel(id)) || (id === 'generate-comicinfo' && ctx.keys[group].includes('generateComicInfo')), `${group}: ${id}`);
+    }
+  }
+});
+
+// saveSettings над фейковым storage: в разделе окна пишутся только ключи своих групп
+async function saveSettingsIn(settingsGroups, data) {
+  const listeners = {};
+  const ctx = vm.createContext({
+    defaultSiteLinks: {}, settingsGroups, console,
+    document: { getElementById: id => ({ value: id === 'image-quality' ? 'FHD' : id === 'toc-format' ? 'custom' : '1', checked: true }) },
+    chrome: { storage: { local: { get: async keys => Object.fromEntries([].concat(keys).filter(key => key in data).map(key => [key, data[key]])), set: async values => { Object.assign(data, structuredClone(values)); }, remove: async () => {} } }, runtime: { sendMessage() {} } }
+  });
+  vm.runInContext(source('src/utils/title-store.js') + between('src/core/settings.js', 'const SETTING_KEYS_BY_GROUP', '// Дефолтные значения по группам') + '\nthis.saveSettings = saveSettings;', ctx);
+  await ctx.saveSettings();
+  return listeners;
+}
+
+test('a section of the window saves only the keys of its own groups, so a stale frame cannot overwrite another section', async () => {
+  const images = { tocFormat: 'format1', pdfFont: 'lora' };
+  await saveSettingsIn(['images'], images);
+  assert.equal(images.imageQuality, 'FHD');
+  assert.equal(images.tocFormat, 'format1');
+  assert.equal(images.pdfFont, 'lora');
+  assert.ok(!('cleanupOldTitles' in images) && !('enableSiteMenu' in images));
+
+  const general = { imageQuality: 'HD' };
+  await saveSettingsIn(['general', 'storage'], general);
+  assert.deepEqual(Object.keys(general).sort(), ['cleanupOldTitles', 'cleanupOnTitleChange', 'customSiteLinks', 'debugLogging', 'enablePagination', 'enableSiteMenu', 'imageQuality', 'initialChapters', 'loadMoreChapters', 'updateNotifications']);
+  assert.equal(general.imageQuality, 'HD');
+
+  const whole = {};
+  await saveSettingsIn(null, whole); // the old page, no ?group=
+  assert.ok(['imageQuality', 'tocFormat', 'pdfFont', 'txtImageMarker', 'generateComicInfo', 'cleanupOldTitles', 'enableSiteMenu'].every(key => key in whole));
+});
+
+test('about: the version is from the manifest and the update check is the one the extension already had', () => {
+  const settings = source('src/core/settings.js');
+  assert.match(functionSource('src/core/settings.js', 'displayVersion'), /chrome[.]runtime[.]getManifest[(][)]/);
+  assert.match(settings, /cdn[.]jsdelivr[.]net[/]gh[/]dfy-dpg[/]LibSaver@latest[/]src[/]manifest[.]json/);
+  assert.match(settings, /getElementById[(]'btn-check-updates'[)]/);
+});

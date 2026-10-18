@@ -4,7 +4,6 @@ let displayChapters = []; // Главы для отображения (по ди
 let originalChapters = [];
 let userChapters = [];
 let currentSlug = null;
-let wasSaved = false;
 let translatorPriority = [];
 
 // Переменные пагинации
@@ -155,7 +154,6 @@ document.addEventListener('DOMContentLoaded', async () => {
   allChapters = [];
   displayChapters = [];
   originalChapters = [];
-  wasSaved = false;
   branches = {};
 
   if (result.tocFormat) {
@@ -425,6 +423,7 @@ function renderChaptersList(chapters, originalChapters, startIndex = 0, append =
         option.addEventListener('click', (e) => {
           e.stopPropagation();
           chapterBranchOverrides[ch.id] = translatorKey;
+          notifyChanged();
           translatorSelect.textContent = name;
           dropdown.querySelectorAll('.chapter-translator-option').forEach(opt => opt.classList.remove('selected'));
           option.classList.add('selected');
@@ -630,7 +629,8 @@ function saveCurrentPageChanges() {
 
 
 
-document.getElementById('btn-save').addEventListener('click', () => {
+// Сохранение глав (автосохранение, enableAutosave)
+async function saveChapters() {
   const inputs = document.querySelectorAll('.chapter-input');
   const uniqueDisplayChapters = getUniqueChapters(displayChapters);
   const uniqueAllChapters = getUniqueChapters(allChapters);
@@ -668,29 +668,24 @@ document.getElementById('btn-save').addEventListener('click', () => {
     }
   });
 
-  getTitleStore(['titleData', 'currentSlug']).then((result) => {
-    const titleData = result.titleData || {};
-    const currentSlug = result.currentSlug;
-    
-    if (!titleData[currentSlug]) {
-      titleData[currentSlug] = { chapters: null, metadata: {}, covers: [] };
-    }
-    
-    titleData[currentSlug].chapters = allChapters;
-    // НЕ перезаписываем filteredChapters - он должен создаваться только в popup по диапазону
-    titleData[currentSlug].chapterBranchOverrides = chapterBranchOverrides;
-    titleData[currentSlug].translatorPriority = translatorPriority;
+  const result = await getTitleStore(['titleData', 'currentSlug']);
+  const titleData = result.titleData || {};
+  const currentSlug = result.currentSlug;
 
-    // Обновляем timestamp кэша (продлеваем срок действия на 10 минут)
-    titleData[currentSlug].cacheTimestamp = Date.now();
+  if (!titleData[currentSlug]) {
+    titleData[currentSlug] = { chapters: null, metadata: {}, covers: [] };
+  }
 
-    setTitleStore({ titleData }).then(() => {
-      wasSaved = true;
-      chrome.runtime.sendMessage({ action: 'showToast', message: 'Сохранено!', type: 'success' });
-      window.close(); // внутри окна с вкладками (iframe) ничего не делает
-    });
-  });
-});
+  titleData[currentSlug].chapters = allChapters;
+  // НЕ перезаписываем filteredChapters - он должен создаваться только в popup по диапазону
+  titleData[currentSlug].chapterBranchOverrides = chapterBranchOverrides;
+  titleData[currentSlug].translatorPriority = translatorPriority;
+
+  // Обновляем timestamp кэша (продлеваем срок действия на 10 минут)
+  titleData[currentSlug].cacheTimestamp = Date.now();
+
+  await setTitleStore({ titleData });
+}
 
 document.getElementById('btn-reset').addEventListener('click', () => {
   const inputs = document.querySelectorAll('.chapter-input');
@@ -726,6 +721,7 @@ document.getElementById('btn-reset').addEventListener('click', () => {
   
   // Применяем приоритет и обновляем DOM без полного рендера (сохраняет пагинацию)
   applyTranslatorPriorityToEditor(true, false, true);
+  notifyChanged();
 });
 
 
@@ -784,11 +780,7 @@ function initChapterResetButtons() {
 }
 
 
-window.addEventListener('beforeunload', () => {
-  if (!wasSaved) {
-    chrome.runtime.sendMessage({ action: 'showToast', message: 'Отменено!', type: 'cancel' });
-  }
-});
+enableAutosave({ save: saveChapters });
 
 function updatePriorityList(listElement) {
   if (!listElement) {
@@ -950,6 +942,7 @@ function updatePriorityFromList(listElement) {
   });
   translatorPriority = newPriority;
   priorityChanged = true;
+  notifyChanged();
   
   const translatorSelect = document.getElementById('translator-select');
   if (translatorSelect && newPriority.length > 0) {
@@ -986,6 +979,7 @@ function initClearAllButton() {
       inputs.forEach(input => {
         input.value = '';
       });
+      notifyChanged();
       
       // Сбрасываем кнопку
       btn.innerHTML = '<i class="fa-solid fa-eraser"></i> Очистить всё';
@@ -1047,6 +1041,7 @@ function initTranslatorPriorityPopup() {
             applyTranslatorPriorityToEditor(true, false, true); // updateDomOnly=true
           }
           priorityChanged = false;
+          notifyChanged(); // при >= 800 главах приоритет ложится на главы только сейчас
         }
       }
     });

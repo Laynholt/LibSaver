@@ -133,18 +133,23 @@ test('loading a title removes titles older than 7 days unless that cleanup is of
 });
 
 test('saving title format clears stale generated titles and notifies consumers', async () => {
-  let save;
+  const listeners = {};
+  const timers = [];
   const messages = [];
   const data = { tocFormat: 'default', 'titleData:title': { chapters: [{ displayTitle: 'Old' }] } };
   const context = vm.createContext({
-    defaultSiteLinks: {}, wasSaved: false,
-    document: { getElementById: id => id === 'btn-save' ? { addEventListener: (_, fn) => save = fn } : { value: id === 'toc-format' ? 'custom' : '1', checked: false } },
-    chrome: { storage: { local: storageApi(data) }, runtime: { sendMessage: message => messages.push(message) } },
-    window: { close() {} }
+    defaultSiteLinks: {}, settingsGroups: null, console: { error() {} },
+    setTimeout: fn => timers.push(fn), clearTimeout() {},
+    document: { getElementById: id => ({ value: id === 'toc-format' ? 'custom' : '1', checked: false }), addEventListener: (type, fn) => listeners[type] = fn },
+    chrome: { storage: { local: storageApi(data) }, runtime: { sendMessage: message => { messages.push(message); return Promise.resolve(); } } }
   });
-  vm.runInContext(titleStore, context);
-  vm.runInContext(between('src/core/settings.js', "document.getElementById('btn-save').addEventListener", '\n});') + '\n});', context);
-  await save();
+  vm.runInContext(titleStore + source('src/utils/autosave.js'), context);
+  vm.runInContext(between('src/core/settings.js', 'const SETTING_KEYS_BY_GROUP', '// Дефолтные значения по группам'), context);
+  vm.runInContext('enableAutosave({ save: saveSettings })', context);
+  listeners.change(); // сохранение срабатывает от изменения поля, кнопки нет
+  assert.equal(timers.length, 1);
+  timers[0]();
+  await new Promise(resolve => setImmediate(resolve));
   assert.equal(data.tocFormat, 'custom');
   assert.equal(data['titleData:title'].chapters[0].displayTitle, undefined);
   assert.ok(messages.some(message => message.action === 'reformatChapters'));

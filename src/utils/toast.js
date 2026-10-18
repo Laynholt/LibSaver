@@ -53,7 +53,12 @@ function createToastElement(toastData) {
   if (toastData.type === 'error') icon = 'fa-xmark';
   if (toastData.type === 'update') icon = 'fa-download';
 
-  toast.innerHTML = `<i class="fa-solid ${icon}"></i><span>${toastData.message}</span>`;
+  // Текст - через textContent: в сообщении бывает текст ошибки
+  const iconEl = document.createElement('i');
+  iconEl.className = `fa-solid ${icon}`;
+  const text = document.createElement('span');
+  text.textContent = toastData.message;
+  toast.append(iconEl, text);
 
   // Если есть onClick, делаем кликабельным
   if (toastData.onClick) {

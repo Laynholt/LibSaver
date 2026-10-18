@@ -25,15 +25,51 @@ body {
 }
 
 .storage-size-display {
-  cursor: pointer;
   font-size: 12px;
   color: var(--text-secondary);
-  margin-right: 8px;
-  transition: color 0.2s ease;
 }
 
-.storage-size-display:hover {
+/* Значение слева, кнопка справа: размер хранилища, версия */
+.storage-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.panel .btn-secondary {
+  background-color: var(--bg-tertiary);
   color: var(--text-primary);
+  border: 1px solid var(--border-color);
+  padding: 6px 12px;
+  font-size: var(--font-size-sm);
+}
+
+.panel .btn-secondary:hover {
+  background-color: var(--bg-secondary);
+  border-color: var(--border-hover);
+}
+
+.about-links {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.about-links a {
+  color: var(--text-primary);
+  text-decoration: none;
+  font-size: 13px;
+}
+
+.about-links a:hover {
+  color: var(--accent-color);
+}
+
+.about-links i {
+  width: 18px;
+  text-align: center;
+  color: var(--text-secondary);
 }
 
 .container {
@@ -291,7 +327,6 @@ body {
   gap: var(--spacing-xs);
   font-size: 12px;
   color: #ffa726;
-  margin-left: auto;
 }
 
 .reload-warning i {
@@ -607,4 +642,25 @@ body {
 [data-theme="light"] .site-menu-links input[data-site-color="anime"]:focus {
   border-color: #5e35b1 !important;
   box-shadow: 0 0 0 2px rgba(94, 53, 177, 0.2) !important;
+}
+
+/* ?group= (раздел окна LibSaver, `settings.js`): только выбранные панели, одна колонка на всю ширину, без тулбара */
+body.group-mode {
+  min-width: 0;
+  min-height: 0;
+}
+
+body.group-mode .toolbar {
+  display: none;
+}
+
+body.group-mode .container {
+  display: flex;
+  flex-direction: column;
+  max-width: none;
+  gap: var(--spacing-sm);
+}
+
+body.group-mode .settings-column {
+  display: contents;
 }

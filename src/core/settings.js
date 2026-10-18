@@ -1,5 +1,23 @@
-// Загрузка сохраненных настроек
-let wasSaved = false;
+// Раздел окна LibSaver (?group=images|toc|cbz|pdf|txt|general|about): показываем только панели с data-group из списка (через запятую),
+// без тулбара и раскладки колонок. Без ?group= - вся страница с тулбаром (старое окно настроек)
+const GROUP_ALIASES = { general: ['general', 'storage'] };
+
+function settingsGroupsFromUrl(search = location.search) {
+  const value = new URLSearchParams(search).get('group');
+  return value ? value.split(',').flatMap(group => GROUP_ALIASES[group] ?? [group]) : null;
+}
+
+const settingsGroups = settingsGroupsFromUrl();
+
+function applyGroupMode() {
+  if (!settingsGroups) return;
+  document.body.classList.add('group-mode');
+  document.querySelectorAll('.panel[data-group]').forEach(panel => {
+    panel.classList.toggle('hidden', !settingsGroups.includes(panel.dataset.group));
+  });
+}
+
+applyGroupMode();
 
 // Дефолтные ссылки сайтов
 const defaultSiteLinks = {
@@ -16,7 +34,6 @@ function displayVersion() {
   const versionElement = document.getElementById('extension-version');
   if (versionElement) {
     versionElement.textContent = `LibSaver v${manifest.version}`;
-    versionElement.onclick = checkForUpdates;
   }
 }
 
@@ -417,8 +434,19 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Отображаем размер storage
   updateStorageSizeDisplay();
 
-  // Обработчик клика для очистки старых данных
-  document.getElementById('storage-size-display').addEventListener('click', cleanupOldTitles);
+  // Кнопка очистки старых данных
+  document.getElementById('btn-cleanup').addEventListener('click', cleanupOldTitles);
+
+  // Проверка обновлений («О LibSaver»); во время проверки кнопка недоступна
+  const checkButton = document.getElementById('btn-check-updates');
+  checkButton.addEventListener('click', async () => {
+    checkButton.disabled = true;
+    try {
+      await checkForUpdates();
+    } finally {
+      checkButton.disabled = false;
+    }
+  });
 
   // Регистрируем окно настроек
   // Внутри окна с вкладками (iframe) регистрируется само окно
@@ -688,8 +716,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     button.addEventListener('click', () => {
       const group = button.getAttribute('data-group');
       resetGroupSettings(group);
+      notifyChanged(); // значения сброшены кодом, событий input нет
     });
   });
+
+  // Автосохранение вместо кнопки «Сохранить»
+  enableAutosave({ save: saveSettings });
 });
 
 // Show/hide custom format fields based on selection
@@ -793,9 +825,20 @@ function updateTocOptionTexts() {
   });
 }
 
-// Сохранение настроек
-document.getElementById('btn-save').addEventListener('click', async () => {
-  const settings = {
+// Ключи storage по группам панелей. Раздел окна пишет только свои ключи: остальные разделы живут в соседних фреймах и могли изменить свои позже
+const SETTING_KEYS_BY_GROUP = {
+  general: ['enableSiteMenu', 'customSiteLinks', 'debugLogging', 'updateNotifications', 'enablePagination', 'initialChapters', 'loadMoreChapters'],
+  images: ['coverQuality', 'imageQuality', 'resizeMethod', 'adaptiveRatio', 'jpegQuality', 'imageFormat', 'sameWidth'],
+  toc: ['disableToc', 'tocFormat', 'customTocFormat', 'hideChapterName', 'hideVolumeNumber'],
+  cbz: ['generateComicInfo'],
+  pdf: ['pdfFont', 'pdfFontSize', 'pdfPageSize', 'pdfLineSpacing', 'pdfParagraphSpacing', 'pdfImageFormat', 'pdfJpegQuality'],
+  txt: ['txtImageMarker'],
+  storage: ['cleanupOnTitleChange', 'cleanupOldTitles']
+};
+
+// Сохранение настроек (автосохранение, enableAutosave)
+async function saveSettings() {
+  const all = {
     coverQuality: document.getElementById('cover-quality').value,
     imageQuality: document.getElementById('image-quality').value,
     resizeMethod: document.getElementById('resize-method').value,
@@ -835,6 +878,8 @@ document.getElementById('btn-save').addEventListener('click', async () => {
     cleanupOnTitleChange: document.getElementById('cleanup-on-title-change').checked,
     cleanupOldTitles: document.getElementById('cleanup-old-titles').checked
   };
+  const groups = settingsGroups ?? Object.keys(SETTING_KEYS_BY_GROUP);
+  const settings = Object.fromEntries(groups.flatMap(group => SETTING_KEYS_BY_GROUP[group] ?? []).map(key => [key, all[key]]));
 
   // Если изменился формат заголовков - отправляем сообщение для переформатирования
   const {
@@ -845,8 +890,9 @@ document.getElementById('btn-save').addEventListener('click', async () => {
   } = await chrome.storage.local.get(['tocFormat', 'customTocFormat', 'hideChapterName', 'hideVolumeNumber']);
   await chrome.storage.local.set(settings);
 
-  if (oldTocFormat !== settings.tocFormat || oldCustomTocFormat !== settings.customTocFormat ||
-      oldHideChapterName !== settings.hideChapterName || oldHideVolumeNumber !== settings.hideVolumeNumber) {
+  const changed = (key, oldValue) => key in settings && oldValue !== settings[key];
+  if (changed('tocFormat', oldTocFormat) || changed('customTocFormat', oldCustomTocFormat) ||
+      changed('hideChapterName', oldHideChapterName) || changed('hideVolumeNumber', oldHideVolumeNumber)) {
     // Удаляем сохранённые displayTitle из titleData
     const titleData = await getAllTitleData();
     if (titleData) {
@@ -863,16 +909,7 @@ document.getElementById('btn-save').addEventListener('click', async () => {
     chrome.runtime.sendMessage({ action: 'reformatChapters' });
   }
 
-  wasSaved = true;
-  
-  // Отправляем сообщение в popup для показа toast
-  chrome.runtime.sendMessage({ action: 'showToast', message: 'Сохранено!', type: 'success' });
-  
-  // Закрываем окно настроек
-  if (window && window.close) {
-    window.close();
-  }
-});
+}
 
 // Дефолтные значения по группам
 const DEFAULT_SETTINGS_BY_GROUP = {
@@ -1097,9 +1134,6 @@ function resetGroupSettings(group) {
       }
     }
   }
-
-  // Устанавливаем флаг, что изменения не сохранены
-  wasSaved = false;
 }
 
 // Сброс настроек к значениям по умолчанию
@@ -1184,8 +1218,7 @@ document.getElementById('btn-reset').addEventListener('click', async () => {
   updateTocOptionTexts();
   updatePaginationSettingsVisibility();
 
-  // Устанавливаем флаг, что изменения не сохранены
-  wasSaved = false;
+  notifyChanged(); // значения сброшены кодом, событий input нет
 });
 
 // Переопределяем слушатель сообщений для обновления темы
@@ -1222,7 +1255,8 @@ async function checkForUpdates() {
 
   versionElement.textContent = 'Проверка...';
   versionElement.style.color = '#999';
-  versionElement.style.pointerEvents = 'none';
+  versionElement.onclick = null;
+  versionElement.classList.remove('clickable-version');
 
   try {
     console.log('Текущая версия:', currentVersion);
@@ -1257,7 +1291,7 @@ async function checkForUpdates() {
       // Обновление доступно - показываем постоянно, кликабельно
       versionElement.textContent = `v${currentVersion} → v${latestVersion}`;
       versionElement.style.color = '#4CAF50';
-      versionElement.style.pointerEvents = 'auto';
+      versionElement.classList.add('clickable-version');
       console.log(`Доступно обновление: v${currentVersion} → v${latestVersion}`);
 
       // При клике открываем GitHub releases (последний релиз)
@@ -1272,8 +1306,6 @@ async function checkForUpdates() {
       setTimeout(() => {
         versionElement.textContent = originalText;
         versionElement.style.color = '';
-        versionElement.style.pointerEvents = 'auto';
-        versionElement.onclick = checkForUpdates;
       }, 4000);
     }
   } catch (error) {
@@ -1295,14 +1327,9 @@ async function checkForUpdates() {
     setTimeout(() => {
       versionElement.textContent = originalText;
       versionElement.style.color = '';
-      versionElement.style.pointerEvents = 'auto';
-      versionElement.onclick = checkForUpdates;
     }, 4000);
   }
 }
-
-// Клик по версии для проверки обновлений
-document.getElementById('extension-version').addEventListener('click', checkForUpdates);
 
 // Отображение размера storage
 async function updateStorageSizeDisplay() {
@@ -1324,15 +1351,15 @@ async function updateStorageSizeDisplay() {
 async function cleanupOldTitles() {
   try {
     const all = await chrome.storage.local.get(null);
-    const currentSlug = all.currentSlug;
+    // Не удаляем ни тайтл из окна LibSaver (?slug=), ни последний открытый
+    const keep = [all.currentSlug, new URLSearchParams(location.search).get('slug')];
 
     const titleKeys = Object.keys(all).filter(k => k.startsWith('titleData:'));
     const toDelete = [];
 
     for (const key of titleKeys) {
       const slug = key.split(':')[1];
-      // НЕ удаляем текущий тайтл
-      if (slug !== currentSlug) {
+      if (!keep.includes(slug)) {
         toDelete.push(key, `originalTitleData:${slug}`);
       }
     }
@@ -1461,12 +1488,8 @@ document.addEventListener('click', async (event) => {
   chrome.tabs.create({ url: await buildIssueUrl() });
 });
 
-// Отправляем toast при закрытии без сохранения
 window.addEventListener('beforeunload', () => {
   if (tippyInstance) {
     tippyInstance.destroy();
-  }
-  if (!wasSaved) {
-    chrome.runtime.sendMessage({ action: 'showToast', message: 'Отменено!', type: 'cancel' });
   }
 });

@@ -18,46 +18,12 @@
 <body>
   <div class="toolbar">
     <div class="toolbar-left">
-      <button class="btn-save" id="btn-save">
-        <i class="fa-solid fa-save"></i>
-        Сохранить
-      </button>
       <button class="btn-secondary" id="btn-reset">
         <i class="fa-solid fa-rotate-left"></i>
         Сбросить всё
       </button>
-      <div class="theme-selector">
-        <div class="theme-select" id="theme-select">Тёмная</div>
-        <div class="theme-dropdown" id="theme-dropdown" style="display: none;">
-          <div class="theme-dropdown-option selected" data-value="dark">Тёмная</div>
-          <div class="theme-dropdown-option" data-value="light">Светлая</div>
-          <div class="theme-dropdown-option" data-value="system">Системная</div>
-        </div>
-      </div>
-      <div class="accent-selector">
-        <div class="accent-select" id="accent-select">Авто</div>
-        <div class="accent-dropdown" id="accent-dropdown" style="display: none;">
-          <div class="accent-dropdown-option selected" data-value="auto">Авто</div>
-          <div class="accent-dropdown-option" data-value="manga">MangaLIB</div>
-          <div class="accent-dropdown-option" data-value="hentai">HentaiLIB</div>
-          <div class="accent-dropdown-option" data-value="slash">SlashLIB</div>
-          <div class="accent-dropdown-option" data-value="ranobe">RanobeLIB</div>
-          <div class="accent-dropdown-option" data-value="anime">AnimeLIB</div>
-          <div class="accent-dropdown-option" data-value="social">SocialLIB</div>
-          <div class="accent-dropdown-option" data-value="pink">Розовый</div>
-          <div class="accent-dropdown-option" data-value="beige">Бежевый</div>
-          <div class="accent-dropdown-option" data-value="yellow">Жёлтый</div>
-          <div class="accent-dropdown-option" data-value="green">Зелёный</div>
-          <div class="accent-dropdown-option" data-value="mint">Мятный</div>
-        </div>
-      </div>
     </div>
     <div class="toolbar-right">
-      <span class="reload-warning" id="reload-warning" style="display: none;">
-        <i class="fa-solid fa-triangle-exclamation"></i>
-        Может потребоваться перезагрузка страницы
-      </span>
-      <span class="storage-size-display" id="storage-size-display" title="Нажмите для очистки старых данных">Загрузка...</span>
       <button class="btn-help-toolbar" data-tooltip="Подробнее о настройках — на GitHub.<br>Нашли ошибку? Есть идеи? Сообщите!<br>Буду рад любым замечаниям! <3<div class='github-buttons'><a href='https://github.com/dfy-dpg/LibSaver' target='_blank' class='github-btn' title='Репозиторий'><i class='fa-brands fa-github'></i></a><a href='https://github.com/dfy-dpg/LibSaver/blob/main/SETTINGS.md' target='_blank' class='github-btn' title='Описание настроек'><i class='fa-solid fa-book'></i></a><a href='#' class='github-btn issue-btn' title='Сообщить о проблеме'><i class='fa-solid fa-bug'></i></a><a href='mailto:dpg.vault@gmail.com' target='_blank' class='github-btn email-btn' title='Написать автору'><i class='fa-regular fa-at'></i></a></div>">
         <i class="fa-solid fa-question"></i>
       </button>
@@ -67,10 +33,43 @@
   <div class="container">
     <!-- Группы закреплены за колонками: при раскрытии пагинации или ползунка качества они не перескакивают -->
     <div class="settings-column">
-      <div class="panel">
+      <div class="panel" data-group="general">
         <div class="section-title">
           <span>Общие</span>
           <button class="btn-reset-group" data-group="general"><i class="fa-solid fa-rotate-left"></i></button>
+        </div>
+
+        <div class="field">
+          <label>Тема</label>
+          <div class="theme-selector">
+            <div class="theme-select" id="theme-select">Тёмная</div>
+            <div class="theme-dropdown" id="theme-dropdown" style="display: none;">
+              <div class="theme-dropdown-option selected" data-value="dark">Тёмная</div>
+              <div class="theme-dropdown-option" data-value="light">Светлая</div>
+              <div class="theme-dropdown-option" data-value="system">Системная</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="field">
+          <label>Акцентный цвет</label>
+          <div class="accent-selector">
+            <div class="accent-select" id="accent-select">Авто</div>
+            <div class="accent-dropdown" id="accent-dropdown" style="display: none;">
+              <div class="accent-dropdown-option selected" data-value="auto">Авто</div>
+              <div class="accent-dropdown-option" data-value="manga">MangaLIB</div>
+              <div class="accent-dropdown-option" data-value="hentai">HentaiLIB</div>
+              <div class="accent-dropdown-option" data-value="slash">SlashLIB</div>
+              <div class="accent-dropdown-option" data-value="ranobe">RanobeLIB</div>
+              <div class="accent-dropdown-option" data-value="anime">AnimeLIB</div>
+              <div class="accent-dropdown-option" data-value="social">SocialLIB</div>
+              <div class="accent-dropdown-option" data-value="pink">Розовый</div>
+              <div class="accent-dropdown-option" data-value="beige">Бежевый</div>
+              <div class="accent-dropdown-option" data-value="yellow">Жёлтый</div>
+              <div class="accent-dropdown-option" data-value="green">Зелёный</div>
+              <div class="accent-dropdown-option" data-value="mint">Мятный</div>
+            </div>
+          </div>
         </div>
 
         <div class="field">
@@ -82,6 +81,11 @@
             </span>
             <span>Улучшенное меню сайтов</span>
           </label>
+        </div>
+
+        <div class="reload-warning" id="reload-warning" style="display: none;">
+          <i class="fa-solid fa-triangle-exclamation"></i>
+          Может потребоваться перезагрузка страницы
         </div>
 
         <div class="site-menu-links hidden">
@@ -182,7 +186,7 @@
         </div>
       </div>
 
-      <div class="panel">
+      <div class="panel" data-group="images">
         <div class="section-title">
           <span>Обработка изображений</span>
           <button class="btn-reset-group" data-group="images"><i class="fa-solid fa-rotate-left"></i></button>
@@ -264,7 +268,7 @@
       </div>
 
 
-      <div class="panel">
+      <div class="panel" data-group="toc">
         <div class="section-title">
           <span>Оглавление</span>
           <button class="btn-reset-group" data-group="toc"><i class="fa-solid fa-rotate-left"></i></button>
@@ -326,7 +330,7 @@
     </div>
 
     <div class="settings-column">
-      <div class="panel">
+      <div class="panel" data-group="cbz">
         <div class="section-title">
           <span>CBZ/ZIP</span>
           <button class="btn-reset-group" data-group="cbz"><i class="fa-solid fa-rotate-left"></i></button>
@@ -344,7 +348,7 @@
         </div>
       </div>
 
-      <div class="panel">
+      <div class="panel" data-group="pdf">
         <div class="section-title">
           <span>PDF</span>
           <button class="btn-reset-group" data-group="pdf"><i class="fa-solid fa-rotate-left"></i></button>
@@ -431,7 +435,7 @@
         </div>
       </div>
 
-      <div class="panel">
+      <div class="panel" data-group="txt">
         <div class="section-title">
           <span>TXT</span>
           <button class="btn-reset-group" data-group="txt"><i class="fa-solid fa-rotate-left"></i></button>
@@ -447,7 +451,7 @@
         </div>
       </div>
 
-      <div class="panel">
+      <div class="panel" data-group="storage">
         <div class="section-title">
           <span>Хранилище</span>
           <button class="btn-reset-group" data-group="storage"><i class="fa-solid fa-rotate-left"></i></button>
@@ -474,11 +478,41 @@
             <span>Очищать данные старше 7 дней</span>
           </label>
         </div>
+
+        <div class="field">
+          <label>Занято в хранилище</label>
+          <div class="storage-row">
+            <span class="storage-size-display" id="storage-size-display">Загрузка...</span>
+            <button class="btn-secondary" id="btn-cleanup" title="Удалить данные всех тайтлов, кроме открытого">Очистить старые данные</button>
+          </div>
+        </div>
       </div>
     </div>
 
-    <div class="version-info">
-      <span id="extension-version" class="clickable-version"></span>
+    <div class="settings-column">
+      <div class="panel" data-group="about">
+        <div class="section-title">
+          <span>О LibSaver</span>
+        </div>
+
+        <div class="field">
+          <label>Версия</label>
+          <div class="storage-row">
+            <span id="extension-version"></span>
+            <button class="btn-secondary" id="btn-check-updates">Проверить обновления</button>
+          </div>
+        </div>
+
+        <div class="field">
+          <label>Ссылки</label>
+          <div class="about-links">
+            <a href="https://github.com/dfy-dpg/LibSaver" target="_blank" rel="noopener"><i class="fa-brands fa-github"></i> Репозиторий</a>
+            <a href="https://github.com/dfy-dpg/LibSaver/blob/main/SETTINGS.md" target="_blank" rel="noopener"><i class="fa-solid fa-book"></i> Описание настроек</a>
+            <a href="#" class="issue-btn"><i class="fa-solid fa-bug"></i> Сообщить о проблеме</a>
+            <a href="mailto:dpg.vault@gmail.com" target="_blank" rel="noopener"><i class="fa-regular fa-at"></i> Написать автору</a>
+          </div>
+        </div>
+      </div>
     </div>
 
 
@@ -496,6 +530,7 @@
   <script src="../libs/tippy-bundle.umd.min.js"></script>
   <script src="../utils/header.js"></script>
   <script src="../core/theme.js"></script>
+  <script src="../utils/autosave.js"></script>
   <script src="../core/settings.js"></script>
   <script src="../utils/scroll.js"></script>
 </body>

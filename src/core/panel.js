@@ -314,7 +314,7 @@ function startPanel() {
   window.addEventListener('resize', update);
   // Редакторы после сохранения шлют toast - показываем его здесь
   chrome.runtime.onMessage.addListener(message => {
-    if (message?.action === 'showToast') showToast(message.message, message.type);
+    if (message?.action === 'showToast') showToast(message.message, message.type, message.duration);
   });
 
   loadAndApplyTheme();
