@@ -3385,7 +3385,7 @@ test('the image server select lives in the images group with the preparation win
   const settings = source('src/core/settings.js');
   assert.match(settings, /images: \[[^\]]*'imageServer'/);
   const html = source('src/html/settings.html');
-  assert.match(html, /<div class="panel" data-group="images">[\s\S]*id="image-server-field"[\s\S]*<option value="normal">Оригиналы<\/option>\s*<option value="compressed" selected>JPEG<\/option>[\s\S]*data-group="toc"/);
+  assert.match(html, /<div class="panel" data-group="images">[\s\S]*id="image-server-field"[\s\S]*<option value="normal">Оригиналы<\/option>\s*<option value="compressed" selected>Сжатые<\/option>[\s\S]*data-group="toc"/);
   assert.match(settings, /siteType === 'manga'/);
 });
 

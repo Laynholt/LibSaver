@@ -290,7 +290,7 @@ function resetSiteMenuOrder() {
 function applySettingsToUI(settings) {
   document.getElementById('cover-quality').value = settings.coverQuality || 'ORIGINAL';
   document.getElementById('image-quality').value = settings.imageQuality || 'ORIGINAL';
-  // Те же значения и умолчание (JPEG), что у загрузки с сайта
+  // Те же значения и умолчание (сжатые), что у загрузки с сайта
   document.getElementById('image-server').value = ['normal', 'compressed'].includes(settings.imageServer) ? settings.imageServer : 'compressed';
   document.getElementById('resize-method').value = settings.resizeMethod || 'MIN_SIDE';
   document.getElementById('adaptive-ratio').value = settings.adaptiveRatio || 3;

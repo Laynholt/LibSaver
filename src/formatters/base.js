@@ -319,7 +319,7 @@ class BaseFormatter {
         : chrome.runtime.sendMessage({ action: 'fetchImage', url: imageUrl }, resolve));
 
       // Сервер оригиналов бывает закрыт целиком (403 на любой файл или нет ответа) — тот же файл в полном размере,
-      // но в JPEG, лежит на сервере «Сжатия»/«Скачивание» (с него же качает NekoShelf).
+      // но сжатый, лежит на сервере сжатых картинок (с него же качает NekoShelf).
       // Раз отказав, он до конца загрузки не спрашивается: иначе каждая картинка ждала бы его повторов (до минуты)
       const compressedUrl = this.compressedImageUrl(url);
       let response = this.compressedFallbackLogged && compressedUrl ? null : await fetchImage(url);
@@ -327,7 +327,7 @@ class BaseFormatter {
       if (fallbackUrl) {
         // Только строка лога (раздел «Загрузки»): форматтеры работают в движке, showToast там нет
         if (!this.compressedFallbackLogged && this.options.addLog) {
-          this.options.addLog(`Сервер оригиналов ${new URL(url).hostname} недоступен (${response?.error || 'нет ответа'}) — картинки берутся с ${new URL(fallbackUrl).hostname} в JPEG того же размера`, true);
+          this.options.addLog(`Сервер оригиналов ${new URL(url).hostname} недоступен (${response?.error || 'нет ответа'}) — картинки берутся сжатыми того же размера с ${new URL(fallbackUrl).hostname}`, true);
         }
         this.compressedFallbackLogged = true;
         response = await fetchImage(fallbackUrl);
