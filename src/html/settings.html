@@ -228,14 +228,6 @@
           </select>
         </div>
 
-        <div class="field" id="image-server-field" style="display: none;">
-          <label for="image-server" title="Картинки манги: оригиналы (часто PNG) или сжатые со второго сервера того же размера — файл легче, сервер надёжнее, качество чуть ниже">Сервер картинок</label>
-          <select id="image-server">
-            <option value="normal">Оригиналы</option>
-            <option value="compressed" selected>Сжатые</option>
-          </select>
-        </div>
-
         <div class="field">
           <label for="resize-method">Метод сжатия</label>
           <select id="resize-method">
@@ -251,6 +243,14 @@
             <input type="range" id="adaptive-ratio" min="2" max="5" step="0.5" value="3">
             <div class="range-value" id="adaptive-ratio-value">3:1</div>
           </div>
+        </div>
+
+        <div class="field" id="image-server-field" style="display: none;">
+          <label for="image-server" title="Картинки манги: оригиналы (часто PNG) или сжатые со второго сервера того же размера — файл легче, сервер надёжнее, качество чуть ниже">Сервер картинок</label>
+          <select id="image-server">
+            <option value="normal">Оригиналы</option>
+            <option value="compressed" selected>Сжатые</option>
+          </select>
         </div>
 
         <div class="field">
