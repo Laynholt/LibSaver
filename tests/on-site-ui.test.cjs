@@ -626,10 +626,11 @@ test('each status offers exactly its commands, all addressed to the item', () =>
     canceled: ['remove']
   };
   for (const [status, commands] of Object.entries(expected)) {
-    const html = view.renderQueueItem(queueItem({ status, decision: { kind: 'chapter', chapterTitle: '', message: '' } }));
+    const html = view.renderQueueItem(queueItem({ status, decision: { kind: 'chapter', chapterTitle: '', message: '' }, canSaveAgain: true }));
     assert.deepEqual(cmds(html), commands, status);
     assert.equal((html.match(/data-id="a"/g) || []).length, commands.length, status);
   }
+  assert.deepEqual(cmds(view.renderQueueItem(queueItem({ status: 'done' }))), ['remove']); // the engine released its file (R32)
 });
 
 test('progress shows chapters done out of total; a finished title with fewer chapters is reported as partial', () => {
@@ -688,9 +689,11 @@ function wiringContext({ failures = 0 } = {}) {
   const delays = [];
   const seenWhileRetrying = [];
   const storageListeners = [];
+  const intervals = []; // { fn, ms, cleared }; the id is the 1-based index
   let attempts = 0;
   const ctx = vm.createContext({
     console: { error() {}, log() {} }, setTimeout: (fn, ms) => { delays.push(ms); fn(); return 0; },
+    setInterval: (fn, ms) => intervals.push({ fn, ms, cleared: false }), clearInterval: id => { intervals[id - 1].cleared = true; },
     document: { getElementById: element, addEventListener() {} },
     chrome: {
       runtime: {
@@ -711,7 +714,7 @@ function wiringContext({ failures = 0 } = {}) {
     }
   });
   vm.runInContext(source('src/utils/page-call.js') + source('src/core/downloads-view.js'), ctx);
-  return { ctx, element, ports, created, stored, delays, seenWhileRetrying, storageListeners };
+  return { ctx, element, ports, created, stored, delays, seenWhileRetrying, storageListeners, intervals };
 }
 
 test('view ensures the engine, connects to the port and draws the state it receives', async () => {
@@ -751,6 +754,25 @@ test('view buttons become protocol commands; links open tabs; speed mode is sent
   assert.deepEqual(stored, [{ speedMode: false }]);
 });
 
+test('view pings the engine every 20 s while a title is in work, and stops when the queue is idle or the port drops (R31)', async () => {
+  const { ctx, ports, intervals } = wiringContext();
+  await ctx.initDownloadsView();
+  const port = ports[1];
+  port.receive({ type: 'state', state: { items: [queueItem({ status: 'done' })], stats: null, logTail: [] } });
+  assert.equal(intervals.length, 0); // nothing in work
+  port.receive({ type: 'state', state: { items: [queueItem({ status: 'waiting-tab' })], stats: null, logTail: [] } });
+  port.receive({ type: 'state', state: { items: [queueItem()], stats: null, logTail: [] } });
+  assert.deepEqual(intervals.map(timer => timer.ms), [20000]); // one timer, not one per state
+  intervals[0].fn();
+  assert.deepEqual(port.posted, [{ cmd: 'ping' }]);
+  port.receive({ type: 'state', state: { items: [queueItem({ status: 'done' })], stats: null, logTail: [] } });
+  assert.equal(intervals[0].cleared, true);
+  port.receive({ type: 'state', state: { items: [queueItem({ status: 'paused' })], stats: null, logTail: [] } });
+  assert.equal(intervals.length, 2);
+  port.drop();
+  assert.equal(intervals[1].cleared, true);
+});
+
 // --- Safe file names for chrome.downloads ---
 
 test('safeDownloadFilename replaces reserved characters, strips trailing dots and spaces, keeps the extension', () => {
@@ -778,6 +800,44 @@ test('engine saves under the safe name, first time and again', async () => {
   await settle();
   assert.deepEqual(calls, ['A_ B_.cbz', 'A_ B_.cbz']);
   assert.equal(port.posted.filter(m => m.type === 'state').at(-1).state.items[0].filename, 'A: B?. .cbz'); // the item keeps the real name
+});
+
+test('engine keeps the file only of the latest finished title: the older one is released and loses «Сохранить ещё раз» (R32)', async () => {
+  const ctx = engineContext({ startDownload: async snapshot => ({ blob: {}, filename: `${snapshot.slug}.cbz` }) });
+  const port = ctx.connect();
+  port.send({ cmd: 'enqueue', snapshot: snap('a') });
+  await settle();
+  assert.deepEqual(ctx.revoked, []);
+  let items = port.posted.filter(m => m.type === 'state').at(-1).state.items;
+  assert.deepEqual(items.map(item => [item.id, item.status, !!item.canSaveAgain]), [['a', 'done', true]]);
+  port.send({ cmd: 'enqueue', snapshot: snap('b') });
+  await settle();
+  assert.deepEqual(ctx.revoked, ['blob:0']); // a's blob goes when b is ready
+  items = port.posted.filter(m => m.type === 'state').at(-1).state.items;
+  assert.deepEqual(items.map(item => [item.id, item.status, 'canSaveAgain' in item]), [['a', 'done', false], ['b', 'done', true]]);
+  const saved = ctx.sent.length;
+  port.send({ cmd: 'saveAgain', id: 'a' }); // released: nothing to save
+  await settle();
+  assert.equal(ctx.sent.length, saved);
+  port.send({ cmd: 'saveAgain', id: 'b' });
+  await settle();
+  assert.deepEqual(ctx.sent.at(-1), { action: 'saveFile', url: 'blob:1', filename: 'b.cbz' });
+  port.send({ cmd: 'remove', id: 'a' }); // removing a released item revokes nothing
+  assert.deepEqual(ctx.revoked, ['blob:0']);
+  port.send({ cmd: 'remove', id: 'b' });
+  assert.deepEqual(ctx.revoked, ['blob:0', 'blob:1']);
+});
+
+test('engine takes «ping» as a no-op: no error, no state, no command (R31)', async () => {
+  const ctx = engineContext({ startDownload: () => new Promise(() => {}) });
+  const port = ctx.connect();
+  port.send({ cmd: 'enqueue', snapshot: snap('a') });
+  await settle();
+  const posted = port.posted.length;
+  port.send({ cmd: 'ping' });
+  await settle();
+  assert.equal(port.posted.length, posted);
+  assert.deepEqual(ctx.controlCalls, []);
 });
 
 // --- the windows as clients of the queue (engine-client.js, site-download.js) ---
@@ -1638,12 +1698,15 @@ function engineLinkContext({ ensure = async () => true } = {}) {
   const link = { doc, ports: [], messages: [], timers: [] };
   ctx.chrome.runtime.sendMessage = async message => { link.messages.push(message.action); return ensure(); };
   ctx.chrome.runtime.connect = options => {
-    const port = { name: options.name, disconnected: false, disconnect() { this.disconnected = true; }, onMessage: { addListener: fn => { port.receive = fn; } }, onDisconnect: { addListener: fn => { port.drop = fn; } } };
+    const port = { name: options.name, disconnected: false, posted: [], postMessage(message) { this.posted.push(JSON.parse(JSON.stringify(message))); }, disconnect() { this.disconnected = true; }, onMessage: { addListener: fn => { port.receive = fn; } }, onDisconnect: { addListener: fn => { port.drop = fn; } } };
     link.ports.push(port);
     return port;
   };
   ctx.setTimeout = (fn, ms) => { link.timers.push({ fn, ms }); return link.timers.length; };
   ctx.clearTimeout = () => {};
+  link.intervals = []; // { fn, ms, cleared }; the id is 1000 + the index
+  ctx.setInterval = (fn, ms) => 1000 + link.intervals.push({ fn, ms, cleared: false }) - 1;
+  ctx.clearInterval = id => { link.intervals[id - 1000].cleared = true; };
   link.state = () => vm.runInContext('engine.state', ctx);
   link.failures = () => vm.runInContext('engine.failures', ctx);
   return { ctx, link };
@@ -1665,6 +1728,29 @@ test('the content script asks the background for the engine, takes its state fro
   link.timers[0].fn();
   await settle();
   assert.equal(link.ports.length, 2);
+});
+
+test('the content script pings the engine every 20 s while a title is in work, and stops when idle, on a dropped port and on stop (R31)', async () => {
+  const { ctx, link } = engineLinkContext();
+  await ctx.connectEngine();
+  const [port] = link.ports;
+  port.receive({ type: 'state', state: stateOf(queueEntry('done')) });
+  assert.equal(link.intervals.length, 0);
+  port.receive({ type: 'state', state: stateOf(queueEntry('waiting-decision')) });
+  port.receive({ type: 'state', state: stateOf(queueEntry('running')) });
+  assert.deepEqual(link.intervals.map(timer => timer.ms), [20000]);
+  link.intervals[0].fn();
+  assert.deepEqual(port.posted, [{ cmd: 'ping' }]);
+  port.receive({ type: 'state', state: stateOf(queueEntry('canceled')) });
+  assert.equal(link.intervals[0].cleared, true);
+  port.receive({ type: 'state', state: stateOf(queueEntry('queued')) });
+  port.drop();
+  assert.equal(link.intervals[1].cleared, true);
+  link.timers[0].fn(); // reconnect
+  await settle();
+  link.ports[1].receive({ type: 'state', state: stateOf(queueEntry('paused')) });
+  ctx.stopEngineLink();
+  assert.deepEqual(link.intervals.map(timer => timer.cleared), [true, true, true]);
 });
 
 test('after five failed reconnects in a row the content script stops until the page address changes', async () => {

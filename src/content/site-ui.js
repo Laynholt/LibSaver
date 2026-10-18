@@ -400,9 +400,10 @@ function ensureButtons(doc, url) {
 const ENGINE_RETRY_MS = 1000;
 const ENGINE_MAX_RETRIES = 5;
 const ENGINE_STABLE_MS = 5000; // связь, продержавшаяся столько, - не мигание: счётчик неудач обнуляется
+const ENGINE_PING_MS = 20000; // пока есть тайтлы в работе: фоновая страница Firefox (MV3) без входящих сообщений засыпает
 
 // failures - подряд неудачных подключений (сбрасываются, когда связь продержалась ENGINE_STABLE_MS); после ENGINE_MAX_RETRIES ждём смены адреса
-const engine = { port: null, state: null, failures: 0, connectedAt: 0, connecting: false, stopped: false, timer: 0 };
+const engine = { port: null, state: null, failures: 0, connectedAt: 0, connecting: false, stopped: false, timer: 0, pingTimer: 0 };
 
 // После перезагрузки расширения chrome.runtime в старом скрипте остаётся без id и бросает на каждый вызов
 function extensionAlive() {
@@ -415,8 +416,22 @@ function extensionAlive() {
 
 function setEngineState(state) {
   engine.state = state;
+  keepEngineAwake();
   paintButtons();
   renderPlaque();
+}
+
+// Пинг идёт, пока порт открыт и в очереди есть работа; иначе (и при остановке) таймер снят
+function keepEngineAwake() {
+  const active = !engine.stopped && !!engine.port && (engine.state?.items || []).some(item => ACTIVE_STATUSES.includes(item.status));
+  if (active && !engine.pingTimer) {
+    engine.pingTimer = setInterval(() => {
+      try { engine.port?.postMessage({ cmd: 'ping' }); } catch (e) { /* порт закрыт: onDisconnect снимет таймер */ }
+    }, ENGINE_PING_MS);
+  } else if (!active && engine.pingTimer) {
+    clearInterval(engine.pingTimer);
+    engine.pingTimer = 0;
+  }
 }
 
 function onEngineLost(port) {
@@ -469,6 +484,7 @@ function retryEngine() {
 function stopEngineLink() {
   engine.stopped = true;
   clearTimeout(engine.timer);
+  keepEngineAwake();
   const { port } = engine;
   engine.port = null;
   try { port?.disconnect(); } catch (e) { /* контекст уже недействителен */ }

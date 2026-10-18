@@ -347,8 +347,11 @@ test('downloads view draws download events: log, progress, stats, decision butto
 });
 
 test('a finished download can be saved again and downloaded again from the same window', () => {
-  const html = downloadsView().renderQueueItem(queued({ status: 'done', progress: { current: 4, total: 4 }, filename: 'a.epub' }));
+  const html = downloadsView().renderQueueItem(queued({ status: 'done', progress: { current: 4, total: 4 }, filename: 'a.epub', canSaveAgain: true }));
   assert.match(html, /data-cmd="saveAgain"[^>]*title="Сохранить файл ещё раз"/);
+  // движок отпустил файл (готов более новый тайтл): кнопки нет, а не молчаливый отказ
+  const released = downloadsView().renderQueueItem(queued({ status: 'done', progress: { current: 4, total: 4 }, filename: 'a.epub' }));
+  assert.doesNotMatch(released, /saveAgain/);
   // «Скачать N глав» остаётся в низу окна (формат и главы можно выбрать заново), отдельной кнопки возврата нет
   const handler = between('src/core/panel.js', "downloadButton.addEventListener('click'", 'backButton.addEventListener');
   assert.doesNotMatch(handler, /style\.display = 'none'|hidden/);

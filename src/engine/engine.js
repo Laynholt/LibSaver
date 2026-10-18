@@ -7,7 +7,9 @@ const STATE_INTERVAL = 250; // state уходит в порты не чаще р
 const TAB_POLL_INTERVAL = 2000;
 
 const ports = new Set();
-const files = new Map(); // id -> { url, filename }: последний файл тайтла для «Сохранить ещё раз»
+// Файл последнего готового тайтла для «Сохранить ещё раз»: { id, url, filename }. Blob держим только один -
+// с готовностью следующего тайтла прежний отпускается, и у его элемента нет canSaveAgain
+let lastFile = null;
 let stats = null;
 let logTail = [];
 let current = null; // { id, canceled, stopWait }: идущая загрузка
@@ -22,7 +24,11 @@ function post(port, message) {
   }
 }
 
-const currentState = () => ({ items: queue.items(), stats, logTail });
+const currentState = () => ({
+  items: queue.items().map(item => item.id === lastFile?.id ? { ...item, canSaveAgain: true } : item),
+  stats,
+  logTail
+});
 
 let stateTimer = null;
 let lastStateAt = 0;
@@ -68,8 +74,9 @@ async function runTitle(item, snapshot) {
   try {
     const { blob, filename } = await startDownload(snapshot);
     if (current.canceled) throw canceledError();
+    releaseFile();
     const url = URL.createObjectURL(blob);
-    files.set(item.id, { url, filename });
+    lastFile = { id: item.id, url, filename };
     await saveFile(url, filename);
     return { filename };
   } finally {
@@ -139,11 +146,14 @@ function cancel(id) {
   queue.cancel(id);
 }
 
+function releaseFile() {
+  if (lastFile) URL.revokeObjectURL(lastFile.url);
+  lastFile = null;
+}
+
 function remove(id) {
   if (!queue.remove(id)) return;
-  const file = files.get(id);
-  if (file) URL.revokeObjectURL(file.url);
-  files.delete(id);
+  if (lastFile?.id === id) releaseFile();
 }
 
 function handleCommand(port, message) {
@@ -155,11 +165,10 @@ function handleCommand(port, message) {
     case 'remove': remove(message.id); break;
     case 'decision': if (message.choice === 'retry' || message.choice === 'skip') downloadControl[message.choice](); break;
     case 'speedMode': downloadControl.setSpeedMode(!!message.on); break;
-    case 'saveAgain': {
-      const file = files.get(message.id);
-      if (file) saveFile(file.url, file.filename).catch(e => console.error('[LibSaver engine]', e));
+    case 'saveAgain': // только для элемента с canSaveAgain: blob остальных уже отпущен
+      if (lastFile?.id === message.id) saveFile(lastFile.url, lastFile.filename).catch(e => console.error('[LibSaver engine]', e));
       break;
-    }
+    case 'ping': break; // клиент будит фоновую страницу Firefox во время загрузки: важен сам факт сообщения, состояние не рассылаем
   }
 }
 

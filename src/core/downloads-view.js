@@ -3,6 +3,9 @@
 
 const RECONNECT_DELAY = 1000;
 const MAX_RECONNECT_DELAY = 10000;
+// Пока в очереди есть работа, порт раз в 20 с шлёт движку ping: фоновая страница Firefox (MV3) без входящих сообщений засыпает
+const PING_INTERVAL = 20000;
+const ACTIVE_STATUSES = ['queued', 'running', 'paused', 'waiting-tab', 'waiting-decision']; // как в engine/queue.js
 
 const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]);
 
@@ -66,7 +69,9 @@ function renderStatus(item) {
 function renderQueueItem(item) {
   const { current, total } = item.progress;
   const percent = total ? Math.min(100, Math.round((current / total) * 100)) : 0;
-  const buttons = (STATUS_COMMANDS[item.status] || []).map(command => renderCommandButton(command, item.id)).join('');
+  // Файл готового тайтла движок держит только у последнего (canSaveAgain): у остальных пересохранять нечего
+  const commands = (STATUS_COMMANDS[item.status] || []).filter(command => command !== 'saveAgain' || item.canSaveAgain);
+  const buttons = commands.map(command => renderCommandButton(command, item.id)).join('');
   return `<div class="dl-item dl-${escapeHtml(item.status)}">` +
     `<div class="dl-item-head"><span class="dl-item-title">${escapeHtml(item.title)}</span><span class="dl-format">${escapeHtml(String(item.format ?? '').toUpperCase())}</span></div>` +
     `<div class="dl-status">${renderStatus(item)}</div>` +
@@ -109,6 +114,7 @@ function renderLog(logTail) {
 // --- Порт к движку ---
 
 let enginePort = null;
+let pingTimer = 0;
 let autoScrollLog = true;
 const rendered = {}; // последняя разметка по id: state приходит часто, без изменений DOM не трогаем
 
@@ -138,6 +144,16 @@ function sendCommand(command, id) {
   enginePort?.postMessage(message);
 }
 
+// Пинг идёт, пока есть порт и тайтлы в работе; без них таймер останавливается
+function keepEngineAwake(items) {
+  const active = !!enginePort && items.some(item => ACTIVE_STATUSES.includes(item.status));
+  if (active && !pingTimer) pingTimer = setInterval(() => enginePort?.postMessage({ cmd: 'ping' }), PING_INTERVAL);
+  else if (!active && pingTimer) {
+    clearInterval(pingTimer);
+    pingTimer = 0;
+  }
+}
+
 const CONNECTION_TEXT = { connecting: 'Подключаюсь…', lost: 'Нет связи с движком, переподключаюсь…' };
 
 // status: 'connecting' (ждём первое состояние), 'lost' (порт закрыт или движок недоступен), 'ok'; без связи кнопки команд не работают
@@ -164,9 +180,11 @@ async function connectEngine() {
         if (message.type !== 'state') return;
         setConnection('ok');
         renderState(message.state);
+        keepEngineAwake(message.state?.items || []);
       });
       port.onDisconnect.addListener(() => {
         enginePort = null;
+        keepEngineAwake([]);
         setConnection('lost');
         setTimeout(connectEngine, RECONNECT_DELAY);
       });
