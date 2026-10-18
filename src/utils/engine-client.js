@@ -1,5 +1,5 @@
 // engine-client.js - клиент очереди фонового движка: ставит снимок загрузки в очередь.
-// Нужен окну «Подготовка» и быстрому окошку «Скачать»; остальные команды (пауза, отмена…) - в downloads-view.js.
+// Нужен окну поверх сайта и быстрому окошку «Скачать»; остальные команды (пауза, отмена…) - в downloads-view.js.
 
 // ensureEngine -> порт -> enqueue; движок отвечает { type: 'enqueueResult', ok, reason? }
 async function enqueueSnapshot(snapshot) {

@@ -7,7 +7,7 @@ function loadError(code) {
   return Object.assign(new Error(code), { code });
 }
 
-// Тип контента, который редакторы и prepare читают из storage.siteType
+// Тип контента, который редакторы читают из storage.siteType
 function siteTypeOf(siteKey) {
   if (siteKey === 'mangalib' || siteKey === 'hentailib' || siteKey === 'shlib') return 'manga';
   if (siteKey === 'animelib') return 'anime';

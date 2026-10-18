@@ -717,55 +717,53 @@ test('engine saves under the safe name, first time and again', async () => {
   assert.equal(port.posted.filter(m => m.type === 'state').at(-1).state.items[0].filename, 'A: B?. .cbz'); // the item keeps the real name
 });
 
-// --- «Подготовка» as a client of the queue ---
+// --- the windows as clients of the queue (engine-client.js, site-download.js) ---
 
-function prepareClient({ reply, disconnectInstead = false }) {
+function queueClient({ reply, disconnectInstead = false }) {
   const calls = [];
-  const toasts = [];
-  const elements = {};
   const clone = value => JSON.parse(JSON.stringify(value));
-  const element = id => elements[id] ||= { attrs: {}, style: {}, classes: new Set(['collapsed']), getAttribute(name) { return this.attrs[name] ?? null; }, setAttribute(name, value) { this.attrs[name] = value; }, classList: { remove: name => elements[id].classes.delete(name) } };
   const port = { posted: [], disconnected: false, disconnect() { this.disconnected = true; }, onMessage: { addListener: fn => { port.receive = fn; } }, onDisconnect: { addListener: fn => { port.drop = fn; } },
     postMessage(message) { this.posted.push(clone(message)); Promise.resolve().then(() => disconnectInstead ? port.drop() : port.receive({ type: 'enqueueResult', ...reply })); } };
   const ctx = vm.createContext({
-    document: { getElementById: element },
-    showToast: (message, type) => toasts.push([message, type]),
     chrome: { runtime: { sendMessage: async message => { calls.push(['sendMessage', clone(message)]); return true; }, connect: options => { calls.push(['connect', options.name]); return port; } } }
   });
   vm.runInContext(source('src/utils/engine-client.js'), ctx);
-  for (const name of ['showDownloadsView', 'enqueueAndShow']) vm.runInContext(functionSource('src/core/prepare.js', name), ctx);
-  return { ctx, calls, toasts, port, element };
+  return { ctx, calls, port };
 }
 
-test('«Скачать» enqueues the snapshot in the engine and shows the downloads view', async () => {
-  const { ctx, calls, toasts, port, element } = prepareClient({ reply: { ok: true } });
-  await ctx.enqueueAndShow({ id: 'x' });
+test('«Скачать» enqueues the snapshot in the engine and lets the port go', async () => {
+  const { ctx, calls, port } = queueClient({ reply: { ok: true } });
+  assert.equal((await ctx.enqueueSnapshot({ id: 'x' })).ok, true);
   assert.deepEqual(calls, [['sendMessage', { action: 'ensureEngine' }], ['connect', 'libsaver-engine']]);
   assert.deepEqual(port.posted, [{ cmd: 'enqueue', snapshot: { id: 'x' } }]);
   assert.equal(port.disconnected, true);
-  assert.equal(element('downloads-frame').getAttribute('src'), 'downloads.html');
-  assert.equal(element('zone-downloads').style.display, 'flex');
-  assert.equal(element('zone-downloads').classes.has('collapsed'), false);
-  assert.deepEqual(toasts, []);
 });
 
-test('a title that is already queued gets a toast and the downloads view is still shown', async () => {
-  const { ctx, toasts, element } = prepareClient({ reply: { ok: false, reason: 'already-queued' } });
-  await ctx.enqueueAndShow({ id: 'x' });
-  assert.deepEqual(toasts, [['Этот тайтл уже в очереди', 'info']]);
-  assert.equal(element('downloads-frame').getAttribute('src'), 'downloads.html');
+test('a title that is already queued comes back as a refusal the windows show as a message', async () => {
+  const { ctx } = queueClient({ reply: { ok: false, reason: 'already-queued' } });
+  assert.deepEqual(jsonCopy(await ctx.enqueueSnapshot({ id: 'x' })), { type: 'enqueueResult', ok: false, reason: 'already-queued' });
+  const quick = quickContext({}, { enqueueResult: { ok: false, reason: 'already-queued' } });
+  assert.deepEqual(jsonCopy(await quick.enqueueSelection({ slug: 's', tabId: 1, url: 'https://mangalib.me/ru/manga/s', selectedChapterIds: [1], format: 'cbz' })), { ok: false, message: 'Этот тайтл уже в очереди' });
 });
 
 test('other rejections and a missing engine surface as errors', async () => {
-  await assert.rejects(prepareClient({ reply: { ok: false, reason: 'queue-full' } }).ctx.enqueueAndShow({ id: 'x' }), /queue-full/);
-  await assert.rejects(prepareClient({ disconnectInstead: true }).ctx.enqueueAndShow({ id: 'x' }), /Движок загрузки/);
+  const quick = quickContext({}, { enqueueResult: { ok: false, reason: 'queue-full' } });
+  await assert.rejects(quick.enqueueSelection({ slug: 's', tabId: 1, url: 'https://mangalib.me/ru/manga/s', selectedChapterIds: [1], format: 'cbz' }), /Очередь не приняла/);
+  await assert.rejects(queueClient({ disconnectInstead: true }).ctx.enqueueSnapshot({ id: 'x' }), /Движок загрузки/);
 });
 
-test('the preparation window no longer runs, renders or saves downloads itself', () => {
-  assert.doesNotMatch(source('src/core/prepare.js'), /startDownload|runDownload|saveAs\(|downloadControl|setDownloadListener|addLogToContainer|renderStats/);
-  const html = source('src/html/prepare.html');
-  assert.doesNotMatch(html, /download\.js|formatters\/|jszip|pica|FileSaver|id="log"|id="btn-pause"|stats-time/);
-  assert.match(html, /<iframe id="downloads-frame"/);
+test('the windows over the site no longer run, render or save downloads themselves', () => {
+  for (const file of ['src/core/panel.js', 'src/core/quick.js', 'src/core/site-download.js']) {
+    assert.doesNotMatch(source(file), /startDownload|runDownload|saveAs\(|downloadControl|setDownloadListener|addLogToContainer|renderStats/, file);
+  }
+  for (const page of ['panel', 'quick']) {
+    assert.doesNotMatch(source(`src/html/${page}.html`), /core\/download\.js|formatters\/|jszip|pica|FileSaver|id="log"|id="btn-pause"|stats-time/, page);
+  }
+  assert.match(source('src/core/panel.js'), /downloads\.html/);
+  // the old «Подготовка» and tabbed windows are gone together with their pages and styles
+  for (const file of ['html/prepare', 'core/prepare', 'css/prepare', 'html/workspace', 'core/workspace'].map(name => `src/${name}.${name.split('/')[0] === 'core' ? 'js' : name.split('/')[0]}`)) {
+    assert.equal(fs.existsSync(path.join(root, file)), false, file);
+  }
 });
 
 test('view shows «Подключаюсь…» until the first state, then the queue or «Очередь пуста»', async () => {
@@ -826,20 +824,8 @@ test('«Ускорить» in the downloads view follows storage changes', async
   assert.equal(speed.checked, true);
 });
 
-test('prepare follows the shared «Ускорить» flag and its snapshot takes the flag from storage', async () => {
-  const checkbox = { checked: false };
-  const ctx = vm.createContext({ document: { getElementById: id => id === 'speed-mode-checkbox' ? checkbox : null } });
-  vm.runInContext(functionSource('src/core/prepare.js', 'followSpeedMode'), ctx);
-  ctx.followSpeedMode({ speedMode: { newValue: true } });
-  assert.equal(checkbox.checked, true);
-  ctx.followSpeedMode({ imageQuality: { newValue: 'HD' } });
-  assert.equal(checkbox.checked, true); // unrelated changes leave it alone
-  assert.match(source('src/core/prepare.js'), /if \(areaName === 'local'\) \{\s*followSpeedMode\(changes\);/);
-  // no value from the (possibly stale) checkbox: the snapshot reads storage itself
-  const text = source('src/core/prepare.js');
-  const handler = text.slice(text.indexOf("btnDownload.addEventListener('click'"), text.indexOf("document.querySelectorAll('.volume-header')"));
-  assert.match(handler, /buildDownloadSnapshot/);
-  assert.doesNotMatch(handler, /speedMode/);
+test('the snapshot takes «Ускорить» from storage, so the windows pass no value of their own', async () => {
+  for (const file of ['src/core/site-download.js', 'src/core/quick.js']) assert.doesNotMatch(source(file), /speedMode/, file);
   const snapshot = await snapshotContext({ speedMode: true, 'titleData:s': { metadata: { titleRu: 'T' } }, 'originalTitleData:s': { metadata: {} } })
     .buildDownloadSnapshot({ slug: 's', tabId: 5, sourceUrl: 'https://mangalib.me/ru/manga/s', selectedChapterIds: [1], format: 'cbz', imageServer: 'normal', textOnly: false });
   assert.equal(snapshot.stored.speedMode, true);
@@ -910,7 +896,7 @@ test('getTitleStore takes currentSlug from ?slug= on extension pages only, else 
 
 test('chapter-range.js, title-loader.js and the pages loading them are not redefined by other scripts on the pages loading them', () => {
   const names = file => [...source(file).matchAll(/^(?:async\s+)?function\s+(\w+)|^(?:const|let|var)\s+(\w+)/gm)].map(m => m[1] || m[2]);
-  const pages = { 'src/html/popup.html': 'src/core/popup.js', 'src/html/chapters.html': 'src/editors/chapters.js', 'src/html/prepare.html': 'src/core/prepare.js', 'src/html/quick.html': 'src/core/quick.js' };
+  const pages = { 'src/html/chapters.html': 'src/editors/chapters.js', 'src/html/panel.html': 'src/core/panel.js', 'src/html/quick.html': 'src/core/quick.js' };
   for (const [html, script] of Object.entries(pages)) {
     const scripts = [...source(html).matchAll(/<script src="\.\.\/([^"]+)"/g)].map(m => 'src/' + m[1]);
     assert.ok(scripts.includes('src/core/chapter-range.js') && scripts.indexOf('src/core/chapter-range.js') < scripts.indexOf(script), html);
@@ -1160,9 +1146,17 @@ test('site-ui content script is registered for the four sites, with its styleshe
   const notAnime = match => !/anilib|animelib/.test(match);
   assert.deepEqual(script.js, ['core/theme.js', 'utils/page-call.js', 'utils/formats.js', 'content/site-ui.js']);
   assert.deepEqual(script.matches, manifest.content_scripts[0].matches.filter(notAnime));
-  for (const resource of ['css/site-ui.css', 'html/workspace.html', 'html/panel.html', 'html/quick.html', 'libs/fontawesome/webfonts/fa-solid-900.woff2']) {
-    assert.ok(manifest.web_accessible_resources[0].resources.includes(resource), resource);
+  const [libs, anime, ...rest] = manifest.web_accessible_resources;
+  for (const resource of ['css/site-ui.css', 'html/panel.html', 'html/quick.html', 'html/downloads.html', 'libs/fontawesome/webfonts/fa-solid-900.woff2']) {
+    assert.ok(libs.resources.includes(resource), resource);
   }
+  // R14: pages open only on the sites where site-ui.js frames them, not on <all_urls>; the deleted pages and the popup are gone
+  assert.deepEqual(libs.matches, script.matches);
+  assert.deepEqual(libs.resources.filter(resource => /prepare|workspace|popup/.test(resource)), []);
+  // SiteMenuRestorer.js also runs on AnimeLIB and fetches the menu icons there: only they are exposed to those origins
+  assert.deepEqual([anime.resources, anime.matches, rest.length], [['assets/svg/*.svg'], manifest.content_scripts[0].matches.filter(match => !script.matches.includes(match)), 0]);
+  assert.equal(JSON.stringify(manifest).includes('<all_urls>'), JSON.stringify(manifest.host_permissions).includes('<all_urls>'));
+  assert.equal(manifest.permissions.some(name => name.startsWith('system.')), false);
 });
 
 test('whoami answers with the sender tab id and url', () => {
@@ -1175,7 +1169,7 @@ test('whoami answers with the sender tab id and url', () => {
 
 // ---- Task 8: quick «Скачать» popover ----
 
-test('format options are one list per site type, shared by the preparation window, the quick popover and the buttons', () => {
+test('format options are one list per site type, shared by the panel, the quick popover and the buttons', () => {
   const ctx = vm.createContext({ console });
   vm.runInContext(['src/utils/formats.js', 'src/core/title-loader.js', 'src/core/site-download.js', 'src/core/quick.js'].map(source).join('\n'), ctx);
   const values = siteKey => Array.from(ctx.quickFormatOptions(siteKey), option => option.value);
@@ -1187,7 +1181,7 @@ test('format options are one list per site type, shared by the preparation windo
   }
   assert.deepEqual([ctx.defaultFormatFor('manga'), ctx.defaultFormatFor('ranobe'), ctx.defaultFormatFor('anime')], ['cbz', 'epub', 'mkv']);
   assert.deepEqual([ctx.formatKeyFor('manga'), ctx.formatKeyFor('ranobe')], ['selectedFormat_manga', 'selectedFormat_ranobe']);
-  assert.doesNotMatch(source('src/core/prepare.js'), /value: 'cbz'/);
+  assert.doesNotMatch(source('src/core/panel.js'), /value: 'cbz'/);
   assert.doesNotMatch(source('src/core/quick.js'), /value: 'cbz'/);
 });
 
@@ -1278,11 +1272,11 @@ test('quick.html is a self-contained extension page that loads what quick.js nee
   const order = ['core/theme-init.js', 'utils/title-store.js', 'core/theme.js', 'utils/header.js', 'core/page-calls.js', 'utils/page-call.js', 'core/api.js', 'core/chapter-range.js', 'utils/formats.js', 'core/title-loader.js', 'core/snapshot.js', 'utils/engine-client.js', 'core/quick.js'];
   assert.deepEqual(scripts.filter(script => order.includes(script)), order);
   assert.doesNotMatch(html, /<script(?![^>]*src=)/); // no inline scripts (extension CSP)
-  const prepareScripts = [...source('src/html/prepare.html').matchAll(/<script src="\.\.\/([^"]+)"/g)].map(m => m[1]);
+  const panelScriptList = [...source('src/html/panel.html').matchAll(/<script src="\.\.\/([^"]+)"/g)].map(m => m[1]);
   for (const shared of ['utils/formats.js', 'utils/engine-client.js']) {
-    assert.ok(prepareScripts.includes(shared) && prepareScripts.indexOf(shared) < prepareScripts.indexOf('core/prepare.js'), shared);
+    assert.ok(panelScriptList.includes(shared) && panelScriptList.indexOf(shared) < panelScriptList.indexOf('core/panel.js'), shared);
   }
-  assert.doesNotMatch(source('src/core/prepare.js'), /function enqueueSnapshot/);
+  assert.doesNotMatch(source('src/core/panel.js'), /function enqueueSnapshot/);
   assert.doesNotMatch(source('src/core/quick.js'), /innerHTML/); // chapter labels and errors go in as text
 });
 
@@ -2183,6 +2177,18 @@ test('a refusal from the queue shows its message and stays on the section', asyn
   assert.equal(page.element('download').disabled, false);
 });
 
+test('a failure while queueing shows the error and gives the button back', async () => {
+  const page = panelPage({ me: { tabId: 7, url: panelUrl } });
+  await page.settle();
+  page.ctx.enqueueSnapshot = async () => { throw new Error('Движок загрузки недоступен'); };
+  page.element('download').fire('click');
+  await page.settle();
+  assert.equal(page.element('status').textContent, 'Не удалось начать загрузку: Движок загрузки недоступен');
+  assert.equal(page.element('download').disabled, false);
+  assert.equal(page.element('download').textContent, 'Скачать 24 главы'); // the selection is untouched
+  assert.equal(page.frames().length, 1);
+});
+
 test('counters follow storage; «Ускорить» is stored when toggled and follows the stored value', async () => {
   const page = panelPage({ me: { tabId: 7, url: panelUrl }, stored: { metadataFields: { a: true, b: true, c: false } } });
   await page.settle();
@@ -2376,14 +2382,55 @@ test('the popup asks the background for the settings window on a title page and 
   assert.equal(await ctx.openPanelFromPopup('https://mangalib.me/ru/manga/1--a'), false);
   reply = new Error('no receiver');
   assert.equal(await ctx.openPanelFromPopup('https://ranobelib.me/ru/book/7--y'), false);
-  const text = source('src/core/popup.js');
-  const load = text.slice(text.indexOf('async function loadTitle'));
-  assert.ok(load.indexOf('openPanelFromPopup(url)') > 0 && load.indexOf('openPanelFromPopup(url)') < load.indexOf('chrome.storage.local.set'));
+});
+
+// popup.js loadTitle над фейковой страницей: окно поверх сайта открывается первым, иначе popup говорит, куда перейти
+function popupPage({ url, panelOpens }) {
+  const elements = {};
+  const element = id => elements[id] ||= { hidden: new Set(['hidden']), textContent: '', classList: { add: name => elements[id].hidden.add(name), remove: name => elements[id].hidden.delete(name) } };
+  const calls = { closed: 0, sent: [] };
+  const ctx = vm.createContext({
+    URL, console,
+    document: { getElementById: element, querySelector: () => element('.lib-buttons') },
+    window: { close: () => { calls.closed++; }, applySiteAccent() {} },
+    chrome: { tabs: { query: async () => [{ id: 4, url }] }, runtime: { sendMessage: async message => { calls.sent.push(message.action); return panelOpens; } } }
+  });
+  vm.runInContext(source('src/utils/page-call.js') + ['openPanelFromPopup', 'loadTitle', 'showMessage'].map(name => functionSource('src/core/popup.js', name)).join('\n'), ctx);
+  const shown = id => !element(id).hidden.has('hidden');
+  return { ctx, calls, element, shown };
+}
+
+test('the popup closes after opening the window on a title page and otherwise says where to go', async () => {
+  const opened = popupPage({ url: 'https://mangalib.me/ru/manga/1--a', panelOpens: true });
+  await opened.ctx.loadTitle();
+  assert.deepEqual([opened.calls.closed, opened.calls.sent, opened.shown('error-view')], [1, ['openPanel'], false]);
+
+  const catalog = popupPage({ url: 'https://mangalib.me/ru/catalog', panelOpens: false });
+  await catalog.ctx.loadTitle();
+  assert.deepEqual([catalog.calls.closed, catalog.calls.sent, catalog.element('error-text').textContent], [0, [], 'Перейдите на главную страницу нужного тайтла.']);
+  assert.deepEqual(['btn-mangalib', 'btn-animelib', 'btn-reload-page'].map(catalog.shown), [true, true, false]);
+
+  const foreign = popupPage({ url: 'https://example.org/', panelOpens: false });
+  await foreign.ctx.loadTitle();
+  assert.equal(foreign.element('error-text').textContent, 'Перейдите на один из поддерживаемых сайтов.');
+  assert.equal(foreign.shown('btn-ranobelib'), true);
+
+  // a title page opened before the extension was updated has no site script: the popup offers a reload instead of a dead end
+  const stale = popupPage({ url: 'https://ranobelib.me/ru/book/7--y', panelOpens: false });
+  await stale.ctx.loadTitle();
+  assert.deepEqual([stale.calls.closed, stale.shown('btn-reload-page'), stale.shown('btn-mangalib'), stale.element('error-text').textContent], [0, true, false, 'Не удалось открыть окно LibSaver. Перезагрузите страницу.']);
+});
+
+test('the popup keeps no range, preparation or editor-window code', () => {
+  const popup = source('src/core/popup.js');
+  assert.doesNotMatch(popup, /chapter-from|chapter-to|btn-download|loadTitleData|openPopupWindow|syncOpenWindows|canOpenWindow|windowNames/);
+  const html = source('src/html/popup.html');
+  assert.doesNotMatch(html, /chapter-from|btn-download|btn-settings|title-loader|chapter-range/);
 });
 
 test('the old windows are no longer opened from the page or the background', () => {
-  assert.doesNotMatch(source('src/content/site-ui.js'), /workspace\.html|html\/downloads\.html/);
-  assert.doesNotMatch(source('src/background.js'), /workspace\.html/);
+  assert.doesNotMatch(source('src/content/site-ui.js'), /(workspace)\.html|html\/downloads\.html/);
+  assert.doesNotMatch(source('src/background.js'), /(workspace)\.html/);
 });
 
 test('a third-party frame on a title page cannot use the window: the direct parent must be the site page (Chrome), whoami alone is enough where there is no ancestorOrigins (Firefox)', async () => {

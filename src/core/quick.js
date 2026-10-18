@@ -2,7 +2,7 @@
 // Скрипты страницы: title-store.js, header.js, page-calls.js, page-call.js, api.js, chapter-range.js, formats.js,
 // title-loader.js, snapshot.js, engine-client.js, site-download.js, этот файл. Сообщения странице сайта: { libsaver: true, type, ... } (content/site-ui.js).
 
-// Те же форматы, что в окне «Подготовка» (formats.js)
+// Те же форматы, что в окне поверх сайта (formats.js)
 function quickFormatOptions(siteKey) {
   return formatOptionsFor(siteTypeOf(siteKey));
 }

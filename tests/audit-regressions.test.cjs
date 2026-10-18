@@ -191,7 +191,7 @@ test('title store reads and writes only the requested title', async () => {
 });
 
 test('title data is only accessed through the title store, which every page using it loads', () => {
-  const scripts = ['src/core/popup.js', 'src/core/prepare.js', 'src/core/download.js', 'src/core/settings.js',
+  const scripts = ['src/core/popup.js', 'src/core/panel.js', 'src/core/quick.js', 'src/core/download.js', 'src/core/settings.js',
     'src/editors/chapters.js', 'src/editors/covers.js', 'src/editors/metadata.js', 'src/formatters/cbz.js'];
   for (const file of scripts) {
     assert.doesNotMatch(source(file), /chrome\.storage\.local\.(get|set)\([^;]*\b(titleData|originalTitleData)\b/, file);
@@ -212,38 +212,6 @@ test('title loader requests chapters, metadata and covers together without artif
   assert.match(loader, /Promise\.all\(\[\s*trackProgress\(loadChapters\(tabId\)\),\s*trackProgress\(loadMetadata\(tabId\)\),\s*trackProgress\(loadCovers\(tabId, urlSlug\)\)/);
   assert.doesNotMatch(loader, /await (loadChapters|loadMetadata|loadCovers)\(|setTimeout\(resolve|\b(fast|slowSmooth|ready|animate)Progress\(/);
   assert.doesNotMatch(source('src/core/popup.js'), /\b(loadChapters|loadMetadata|loadCovers)\(/);
-});
-
-test('window detection ignores unrelated websites and recognizes own page', async () => {
-  const data = {};
-  let url = 'https://example.org/settings.html';
-  const context = vm.createContext({ chrome: {
-    windows: { getAll: async () => [{ tabs: [{ url }] }] },
-    runtime: { getURL: file => 'chrome-extension://self/' + file },
-    storage: { local: storageApi(data) }
-  } });
-  vm.runInContext(functionSource('src/core/popup.js', 'syncOpenWindows'), context);
-  await context.syncOpenWindows();
-  assert.equal(data.currentOpenWindow, undefined);
-  url = 'chrome-extension://self/html/settings.html';
-  await context.syncOpenWindows();
-  assert.equal(data.currentOpenWindow, 'settings');
-});
-
-test('tabbed editor window is detected and embedded editors leave registration and closing to it', async () => {
-  const data = {};
-  const context = vm.createContext({ chrome: {
-    windows: { getAll: async () => [{ tabs: [{ url: 'chrome-extension://self/html/workspace.html?title=0#settings' }] }] },
-    runtime: { getURL: file => 'chrome-extension://self/' + file },
-    storage: { local: storageApi(data) }
-  } });
-  vm.runInContext(functionSource('src/core/popup.js', 'syncOpenWindows'), context);
-  await context.syncOpenWindows();
-  assert.equal(data.currentOpenWindow, 'workspace');
-  for (const file of ['src/editors/chapters.js', 'src/editors/covers.js', 'src/editors/metadata.js', 'src/core/settings.js']) {
-    assert.match(source(file), /if \(window === window\.top\) await chrome\.storage\.local\.set\(\{ currentOpenWindow:/, file);
-    assert.doesNotMatch(source(file), /chrome\.windows\.remove/, file);
-  }
 });
 
 // download.js целиком: он не трогает DOM, ход загрузки уходит событиями в listener
@@ -369,45 +337,35 @@ test('downloads view draws download events: log, progress, stats, decision butto
 test('a finished download can be saved again and downloaded again from the same window', () => {
   const html = downloadsView().renderQueueItem(queued({ status: 'done', progress: { current: 4, total: 4 }, filename: 'a.epub' }));
   assert.match(html, /data-cmd="saveAgain"[^>]*title="Сохранить файл ещё раз"/);
-  // «Скачать» остаётся в окне «Подготовка» (формат и главы можно выбрать заново), отдельной кнопки возврата больше нет
-  const handler = between('src/core/prepare.js', "btnDownload.addEventListener('click'", "document.querySelectorAll('.volume-header')");
-  assert.match(handler, /finally \{\s*restoreDownloadControls\(\);/);
-  assert.doesNotMatch(handler, /style\.display = 'none'/);
-  assert.doesNotMatch(source('src/html/prepare.html'), /btn-new-download/);
+  // «Скачать N глав» остаётся в низу окна (формат и главы можно выбрать заново), отдельной кнопки возврата нет
+  const handler = between('src/core/panel.js', "downloadButton.addEventListener('click'", 'backButton.addEventListener');
+  assert.doesNotMatch(handler, /style\.display = 'none'|hidden/);
+  assert.doesNotMatch(source('src/html/panel.html') + source('src/html/downloads.html'), /btn-new-download/);
 });
 
-test('recovery restores chapter selection and the download button', () => {
-  const elements = {};
-  const element = id => elements[id] ||= { disabled: true, style: { display: 'none' }, classList: { remove() {} }, closest: () => null };
-  const chapters = [element('chapter')];
-  const volumes = [element('volume')];
-  const context = vm.createContext({ document: {
-    getElementById: element,
-    querySelectorAll: selector => selector === '.chapter-checkbox' ? chapters : volumes
-  } });
-  for (const name of ['enableControls', 'enableVolumeCheckboxes', 'restoreDownloadControls']) {
-    vm.runInContext(functionSource('src/core/prepare.js', name), context);
-  }
-  context.restoreDownloadControls();
-  for (const id of ['chapter', 'volume', 'btn-start-download', 'format-select', 'server-select', 'text-only-checkbox']) {
-    assert.equal(element(id).disabled, false, id);
-  }
-  assert.notEqual(element('btn-start-download').style.display, 'none');
+test('recovery restores the download button and keeps the chapter selection', () => {
+  // после отказа очереди и после исключения кнопка снова доступна: busy и disabled сбрасываются вне try/catch
+  const handler = between('src/core/panel.js', "downloadButton.addEventListener('click'", 'backButton.addEventListener');
+  const tail = handler.slice(handler.lastIndexOf('} catch'));
+  assert.match(tail, /busy = false;\s*downloadButton\.disabled = counts\.selected === 0;/);
+  // выбор глав окно не стирает: берёт сохранённый, а кнопка гаснет только при пустом выборе
+  assert.match(handler, /selectedChapterIds: selectedIds\(titleData\[slug\]\)/);
+  assert.doesNotMatch(handler, /selectedChapterIds[^;]*=\s*(\[\]|null)/);
 });
 
 test('format selector exposes selectable native options for each site', () => {
-  const select = { options: [], value: '', appendChild(option) { this.options.push(option); },
-    set innerHTML(_value) { this.options = []; } };
-  const context = vm.createContext({ document: {
-    getElementById: id => id === 'format-select' ? select : null,
-    createElement: tag => ({ tagName: tag.toUpperCase(), value: '', textContent: '', classList: { add() {} } })
-  } });
-  vm.runInContext(source('src/utils/formats.js') + functionSource('src/core/prepare.js', 'populateFormatSelector'), context);
-  assert.equal(context.populateFormatSelector('manga'), 'cbz');
-  assert.ok(select.options.some(option => option.tagName === 'OPTION' && option.value === 'pdf'));
-  assert.equal(select.value, 'cbz');
-  assert.equal(context.populateFormatSelector('ranobe'), 'epub');
-  assert.ok(select.options.some(option => option.value === 'fb2'));
+  const context = vm.createContext({});
+  vm.runInContext(source('src/utils/formats.js'), context);
+  const values = siteType => Array.from(context.formatOptionsFor(siteType), option => option.value);
+  assert.equal(context.defaultFormatFor('manga'), 'cbz');
+  assert.ok(values('manga').includes('pdf') && context.formatOptionsFor('manga').every(option => option.label));
+  assert.equal(context.defaultFormatFor('ranobe'), 'epub');
+  assert.ok(values('ranobe').includes('fb2'));
+  // окно и быстрое окошко строят настоящие <option> из этого списка
+  for (const file of ['src/core/panel.js', 'src/core/quick.js']) {
+    assert.match(source(file), /createElement\('option'\)/, file);
+    assert.match(source(file), /Options(For)?\(/, file);
+  }
 });
 
 // --- Second audit pass: chapter HTML in EPUB/HTML/FB2 and 4xx retries ---
@@ -681,7 +639,7 @@ test('same-width option scales manga pages to the most common width of the first
 });
 
 test('PDF libraries load lazily and fonts are embedded whole', () => {
-  assert.doesNotMatch(source('src/html/prepare.html'), /pdf-lib|fontkit/);
+  assert.doesNotMatch(source('src/html/panel.html'), /pdf-lib|fontkit/);
   assert.doesNotMatch(source('src/engine/engine.html'), /pdf-lib|fontkit/);
   const pdf = source('src/formatters/pdf.js');
   assert.match(between('src/formatters/pdf.js', '  async format(chapters, metadata) {', 'const { PDFDocument'), /await loadPdfLibs\(\);/);

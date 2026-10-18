@@ -317,7 +317,7 @@ function createButtonsHost(doc, siteKey) {
     format.textContent = (stored[formatKey] || defaultFormatFor(siteType)).toUpperCase();
   }).catch(() => {});
   refresh();
-  // Формат выбирают в быстром окошке и в окне «Подготовка», акцент и тему - в настройках: подпись и цвет подхватывают сразу
+  // Формат выбирают в быстром окошке и в окне поверх сайта, акцент и тему - в настройках: подпись и цвет подхватывают сразу
   const onChanged = (changes, area) => {
     if (host.isConnected === false) { // SPA убрала кнопки
       chrome.storage.onChanged.removeListener(onChanged);

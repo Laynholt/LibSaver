@@ -14,7 +14,6 @@
     "declarativeNetRequest",
     "declarativeNetRequestWithHostAccess",
     "downloads",
-    "system.display",
     "unlimitedStorage",
     "offscreen"
   ],
@@ -60,8 +59,12 @@
   },
   "web_accessible_resources": [
     {
-      "resources": ["html/popup.html", "html/settings.html", "html/metadata.html", "html/chapters.html", "html/covers.html", "html/prepare.html", "html/downloads.html", "assets/local_data", "assets/svg/*.svg", "assets/fonts/*", "assets/gif/*", "css/site-ui.css", "html/workspace.html", "html/panel.html", "html/quick.html", "libs/fontawesome/webfonts/fa-solid-900.woff2"],
-      "matches": ["<all_urls>"]
+      "resources": ["html/settings.html", "html/metadata.html", "html/chapters.html", "html/covers.html", "html/downloads.html", "html/panel.html", "html/quick.html", "css/site-ui.css", "assets/svg/*.svg", "assets/fonts/*", "libs/fontawesome/webfonts/fa-solid-900.woff2"],
+      "matches": ["https://ranobelib.me/*", "https://*.ranobelib.me/*", "https://novelslib.me/*", "https://*.novelslib.me/*", "https://mangalib.me/*", "https://*.mangalib.me/*", "https://mangalib.org/*", "https://*.mangalib.org/*", "https://hentailib.me/*", "https://*.hentailib.me/*", "https://hentailib.org/*", "https://*.hentailib.org/*", "https://shlib.life/*", "https://*.shlib.life/*"]
+    },
+    {
+      "resources": ["assets/svg/*.svg"],
+      "matches": ["https://animelib.org/*", "https://*.animelib.org/*", "https://anilib.me/*", "https://*.anilib.me/*"]
     }
   ]
 }

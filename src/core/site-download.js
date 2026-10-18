@@ -12,7 +12,7 @@ function downloadLabel(count) {
   return `Скачать ${count} ${word}`;
 }
 
-// Значения по умолчанию - как у окна «Подготовка» (сервер картинок - JPEG, «только текст» выключен)
+// Значения по умолчанию - как в настройках (сервер картинок - JPEG, «только текст» выключен)
 function quickSettings(stored) {
   return {
     imageServer: ['normal', 'compressed'].includes(stored.imageServer) ? stored.imageServer : 'compressed',

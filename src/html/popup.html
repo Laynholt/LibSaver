@@ -4,14 +4,13 @@
   <meta charset="UTF-8">
   <link rel="icon" href="../assets/icons/icon32.png">
   <script src="../core/theme-init.js"></script>
-  <script src="../utils/title-store.js"></script>
   <link rel="stylesheet" href="../css/common.css">
   <link rel="stylesheet" href="../libs/fontawesome/css/all.min.css">
   <link rel="stylesheet" href="../css/popup.css">
 </head>
 <body>
   <div id="loader" class="loader">
-    <div class="loader-text" id="loader-text">Рассматриваем обложку...</div>
+    <div class="loader-text" id="loader-text">Открываем LibSaver...</div>
     <div class="progress-bar-container">
       <div class="progress-bar" id="loader-progress"></div>
     </div>
@@ -41,45 +40,11 @@
     </div>
   </div>
 
-    <div id="main-view" class="container hidden">
-    <div id="book-title" class="title">Название Ранобэ</div>
-    
-    <div class="panel">
-      <div class="range-container">
-        <div class="field">
-          <label for="chapter-from">От</label>
-          <select id="chapter-from"></select>
-        </div>
-        <div class="field">
-          <label for="chapter-to">До</label>
-          <select id="chapter-to"></select>
-        </div>
-      </div>
-    </div>
-  </div>
-
   <div id="toast-container"></div>
 
-  <div class="btn-group hidden">
-    <button id="btn-download" style="flex-grow: 1; height: 40px;" disabled>Подготовка</button>
-    <button id="btn-settings" class="btn-edit" title="Метаданные, обложки, оглавление и настройки">
-      <i class="fa-solid fa-gear"></i>
-    </button>
-  </div>
-
-  <script src="../libs/jszip.min.js"></script>
-  <script src="../libs/FileSaver.min.js"></script>
-  <script src="../libs/pica.min.js"></script>
-  <script src="../utils/header.js"></script>
-  <script src="../core/page-calls.js"></script>
   <script src="../utils/page-call.js"></script>
-  <script src="../core/api.js"></script>
-  <script src="../utils/protection.js"></script>
-  <script src="../core/statistics.js"></script>
   <script src="../core/theme.js"></script>
   <script src="../utils/toast.js"></script>
-  <script src="../core/chapter-range.js"></script>
-  <script src="../core/title-loader.js"></script>
   <script src="../core/popup.js"></script>
 </body>
 </html>

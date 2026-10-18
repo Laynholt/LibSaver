@@ -130,7 +130,7 @@ function syncRange(fromIdx, toIdx, changed) {
   return [fromIdx, toIdx];
 }
 
-// Записывает выбор глав в тайтл: снимок берёт главы из filteredChapters (по всем веткам перевода), а панель и «Подготовка» читают selectedChapterIds.
+// Записывает выбор глав в тайтл: снимок берёт главы из filteredChapters (по всем веткам перевода), а окно поверх сайта читает selectedChapterIds.
 // Один набор id в обоих полях: устаревший selectedChapterIds не должен перебить новый диапазон
 function applySelectionToTitle(title, allChapters, selectedIds) {
   const chosen = new Set(selectedIds);

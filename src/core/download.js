@@ -531,7 +531,7 @@ function resetDownloadState() {
     }
 }
 
-// Функция для запуска загрузки (вызывается из prepare.js). Работает от снимка (см. snapshot.js), storage не читает
+// Функция для запуска загрузки (вызывается движком в фоне, engine/). Работает от снимка (см. snapshot.js), storage не читает
 async function startDownload(snapshot) {
     try {
         resetDownloadState();

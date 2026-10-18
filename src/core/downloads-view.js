@@ -203,7 +203,7 @@ async function initDownloadsView() {
   setConnection('connecting');
 
   const speed = byId('speed-mode-checkbox');
-  // «Ускорить» в окне «Подготовка» и здесь - один флаг в storage
+  // «Ускорить» в низу окна и здесь - один флаг в storage
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area === 'local' && changes.speedMode) speed.checked = !!changes.speedMode.newValue;
   });

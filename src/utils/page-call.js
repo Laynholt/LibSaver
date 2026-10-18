@@ -1,6 +1,6 @@
 // page-call.js - выбор вкладки сайта и вызов PAGE_CALLS в ней. Нужен и странице расширения, и service worker.
 
-// Функция для определения сайта и API endpoint (глобальная для popup/prepare)
+// Функция для определения сайта и API endpoint (глобальная для popup и окон расширения)
 function getSiteConfig(url) {
   let hostname;
   try {

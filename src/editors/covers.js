@@ -169,15 +169,6 @@ function setupTippyPreview(preview, imageUrl) {
 let disableDragAnimations = false;
 
 document.addEventListener('DOMContentLoaded', async () => {
-  // Регистрируем окно редактора обложек
-  // Внутри окна с вкладками (iframe) регистрируется само окно
-  if (window === window.top) await chrome.storage.local.set({ currentOpenWindow: 'covers' });
-
-  // Очищаем регистрацию при закрытии
-  window.addEventListener('beforeunload', async () => {
-    await chrome.storage.local.remove('currentOpenWindow');
-  });
-
   // Загружаем и применяем тему
   await loadAndApplyTheme();
 

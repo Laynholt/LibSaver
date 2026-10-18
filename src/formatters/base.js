@@ -324,7 +324,7 @@ class BaseFormatter {
         if (!this.compressedFallbackLogged && this.options.addLog) {
           this.options.addLog(`Сервер оригиналов ${new URL(url).hostname} недоступен (${response?.error || 'нет ответа'}) — картинки берутся с ${new URL(fallbackUrl).hostname}`, true);
         }
-        // Пользователь должен увидеть смену формата и без открытых логов (showToast есть на странице подготовки)
+        // Пользователь должен увидеть смену формата и без открытых логов (showToast есть в окне поверх сайта)
         if (!this.compressedFallbackLogged && typeof showToast === 'function') {
           showToast('Сервер оригиналов недоступен.\nКартинки скачиваются в JPEG того же размера');
         }

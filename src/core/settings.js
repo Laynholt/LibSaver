@@ -248,7 +248,7 @@ function resetSiteMenuOrder() {
 function applySettingsToUI(settings) {
   document.getElementById('cover-quality').value = settings.coverQuality || 'ORIGINAL';
   document.getElementById('image-quality').value = settings.imageQuality || 'ORIGINAL';
-  // Те же значения и умолчание (JPEG), что у выбора в окне «Подготовка»
+  // Те же значения и умолчание (JPEG), что у загрузки с сайта
   document.getElementById('image-server').value = ['normal', 'compressed'].includes(settings.imageServer) ? settings.imageServer : 'compressed';
   document.getElementById('resize-method').value = settings.resizeMethod || 'MIN_SIDE';
   document.getElementById('adaptive-ratio').value = settings.adaptiveRatio || 3;
@@ -315,6 +315,7 @@ function applySettingsToUI(settings) {
 
   // TXT settings
   document.getElementById('txt-image-marker').value = settings.txtImageMarker || 'numbered';
+  document.getElementById('text-only').checked = settings.textOnly === true;
 
   // Show/hide custom format field and disable/enable checkboxes
   updateTocFormatFields();
@@ -448,15 +449,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     } finally {
       checkButton.disabled = false;
     }
-  });
-
-  // Регистрируем окно настроек
-  // Внутри окна с вкладками (iframe) регистрируется само окно
-  if (window === window.top) await chrome.storage.local.set({ currentOpenWindow: 'settings' });
-
-  // Очищаем регистрацию при закрытии
-  window.addEventListener('beforeunload', async () => {
-    await chrome.storage.local.remove('currentOpenWindow');
   });
 
   // Загружаем и применяем тему
@@ -627,6 +619,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     'initialChapters',
     'loadMoreChapters',
     'txtImageMarker',
+    'textOnly',
     'pdfFont',
     'pdfFontSize',
     'pdfPageSize',
@@ -638,7 +631,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   
   // Применяем сохраненные настройки
   applySettingsToUI(settings);
-  // Сервер картинок есть только у манги (сайт - по siteType, как в окне «Подготовка»)
+  // Сервер картинок есть только у манги (сайт - по siteType, как в быстром окошке)
   const { siteType } = await chrome.storage.local.get('siteType');
   document.getElementById('image-server-field').style.display = siteType === 'manga' ? '' : 'none';
   appliedToc = tocSignature(readTocControls()); // по этому формату главы уже оформлены
@@ -841,7 +834,7 @@ const SETTING_KEYS_BY_GROUP = {
   toc: ['disableToc', 'tocFormat', 'customTocFormat', 'hideChapterName', 'hideVolumeNumber'],
   cbz: ['generateComicInfo'],
   pdf: ['pdfFont', 'pdfFontSize', 'pdfPageSize', 'pdfLineSpacing', 'pdfParagraphSpacing', 'pdfImageFormat', 'pdfJpegQuality'],
-  txt: ['txtImageMarker'],
+  txt: ['txtImageMarker', 'textOnly'],
   storage: ['cleanupOnTitleChange', 'cleanupOldTitles']
 };
 
@@ -902,6 +895,7 @@ async function saveSettings() {
     hideChapterName: document.getElementById('hide-chapter-name').checked,
     hideVolumeNumber: document.getElementById('hide-volume-number').checked,
     txtImageMarker: document.getElementById('txt-image-marker').value,
+    textOnly: document.getElementById('text-only').checked,
     pdfFont: document.getElementById('pdf-font').value,
     pdfFontSize: parseInt(document.getElementById('pdf-font-size').value),
     pdfPageSize: document.getElementById('pdf-page-size').value,
@@ -974,7 +968,8 @@ const DEFAULT_SETTINGS_BY_GROUP = {
     'generate-comicinfo': true
   },
   txt: {
-    'txt-image-marker': 'numbered'
+    'txt-image-marker': 'numbered',
+    'text-only': false
   },
   pdf: {
     'pdf-font': 'merriweather',
@@ -1040,7 +1035,9 @@ function resetGroupSettings(group) {
       const element = document.getElementById(key);
       if (!element) continue;
 
-      if (element.tagName === 'SELECT' || element.tagName === 'INPUT') {
+      if (element.type === 'checkbox') {
+        element.checked = value;
+      } else if (element.tagName === 'SELECT' || element.tagName === 'INPUT') {
         element.value = value;
       }
     }

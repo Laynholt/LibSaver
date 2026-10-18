@@ -35,34 +35,34 @@ async function restoreLoggingIfNeeded() {
 restoreLoggingIfNeeded();
 
 // Логирование размера storage каждые 10 секунд
-function logStorageSize() {
-  chrome.storage.local.get(['currentOpenWindow'], async (result) => {
-    if (!result.currentOpenWindow) {
-      // Если нет открытых окон - проверяем время закрытия
-      const sessionResult = await chrome.storage.session.get(['lastWindowCloseTime']);
-      if (!sessionResult.lastWindowCloseTime) {
-        // Первое закрытие окна - записываем время
-        await chrome.storage.session.set({ lastWindowCloseTime: Date.now() });
-        return;
-      }
-
-      // Проверяем прошло ли 2 минуты (120000 мс)
-      const timeSinceClose = Date.now() - sessionResult.lastWindowCloseTime;
-      if (timeSinceClose > 120000) {
-        // Прошло больше 2 минут - выключаем логирование
-        disableLogging();
-        await chrome.storage.session.remove(['lastWindowCloseTime']);
-      }
+async function logStorageSize() {
+  // Окна расширения (popup, окно поверх сайта) показывает getContexts; без них идёт отсчёт до выключения
+  const contexts = await chrome.runtime.getContexts({ contextTypes: ['TAB', 'POPUP'] });
+  if (contexts.length === 0) {
+    // Если нет открытых окон - проверяем время закрытия
+    const sessionResult = await chrome.storage.session.get(['lastWindowCloseTime']);
+    if (!sessionResult.lastWindowCloseTime) {
+      // Первое закрытие окна - записываем время
+      await chrome.storage.session.set({ lastWindowCloseTime: Date.now() });
       return;
     }
 
-    // Если есть открытое окно - сбрасываем таймер закрытия
-    await chrome.storage.session.remove(['lastWindowCloseTime']);
+    // Проверяем прошло ли 2 минуты (120000 мс)
+    const timeSinceClose = Date.now() - sessionResult.lastWindowCloseTime;
+    if (timeSinceClose > 120000) {
+      // Прошло больше 2 минут - выключаем логирование
+      disableLogging();
+      await chrome.storage.session.remove(['lastWindowCloseTime']);
+    }
+    return;
+  }
 
-    chrome.storage.local.getBytesInUse(null, (bytes) => {
-      const mb = (bytes / (1024 * 1024)).toFixed(2);
-      console.log(`[LibSaver] Storage size: ${mb} MB (${bytes} bytes)`);
-    });
+  // Если есть открытое окно - сбрасываем таймер закрытия
+  await chrome.storage.session.remove(['lastWindowCloseTime']);
+
+  chrome.storage.local.getBytesInUse(null, (bytes) => {
+    const mb = (bytes / (1024 * 1024)).toFixed(2);
+    console.log(`[LibSaver] Storage size: ${mb} MB (${bytes} bytes)`);
   });
 }
 
