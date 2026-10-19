@@ -78,7 +78,7 @@ async function loadAnimeMetadata(tabId, slug) {
     ageRestriction: data.ageRestriction?.label || '',
     description: extractDescriptionText(data.summary) || '',
     genres: namesOf(data.genres),
-    tags: namesOf(data.tags), // через запятую, без #: в MP4 метки уходят как есть (комментарий ©cmt)
+    tags: namesOf(data.tags), // через запятую, без #: в MP4 (комментарий ©cmt) и «Описание.txt» метки уходят как есть
     cover: data.cover?.default || data.cover?.md || '',
     allCovers: [],
     totalChapters: data.items_count?.uploaded || 0,

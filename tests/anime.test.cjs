@@ -56,6 +56,21 @@ test('player: Kodik of the chosen team, otherwise the first Kodik; other players
   assert.equal(ctx.pickAnimePlayer([players[0]], '1'), null);
 });
 
+test('«Описание.txt» is plain text: title first, filled fields as «Name: value», the description last', () => {
+  const ctx = animeContext();
+  const text = ctx.buildAnimeInfoText({
+    titleRu: 'Пони', titleOriginal: 'Umayuru', titleAlt: 'Uma\nУмаюру', description: 'Описание <b>', year: '2026-09-27', status: 'Онгоинг', ageRestriction: 'PG-13',
+    publisher: 'Atorie A.B.C.', genres: 'Комедия, Повседневность', tags: 'Еда, Чиби', rating: '6.3', shikimori: 'https://shikimori.io/animes/64867'
+  });
+  assert.equal(text.split('\r\n')[0], 'Пони');
+  for (const line of ['Оригинальное название: Umayuru', 'Другие названия: Uma, Умаюру', 'Год: 2026-09-27', 'Студия: Atorie A.B.C.', 'Жанры: Комедия, Повседневность',
+    'Метки: Еда, Чиби', 'Оценка Shikimori: 6.3', 'Shikimori: https://shikimori.io/animes/64867']) {
+    assert.ok(text.includes(`\r\n${line}\r\n`), line);
+  }
+  assert.ok(text.endsWith('\r\n\r\nОписание:\r\nОписание <b>\r\n'));
+  assert.equal(ctx.buildAnimeInfoText({ titleRu: 'X' }), 'X\r\n\r\n');
+});
+
 // Маленький MP4: ftyp, moov (trak/.../stco со смещением куска видео, старый udta), mdat. moovLast - moov после mdat
 function fakeMp4(ctx, moovLast) {
   const box = ctx.mp4Box;
@@ -164,13 +179,21 @@ test('downloadAnime resolves each selected episode through Kodik, tags the MP4 a
     save: async (url, name, folder) => saved.push([url, name, folder])
   });
   assert.equal(result.filename, 'Пони');
-  assert.deepEqual(saved, [['blob:video', 'Пони - S01E01.mp4', 'Пони']]);
-  const file = Buffer.from(await ctx.blobs[0].arrayBuffer());
+  assert.deepEqual(saved, [['blob:video', 'Описание.txt', 'Пони'], ['https://cover/p.png', 'poster.png', 'Пони'], ['blob:video', 'Пони - S01E01.mp4', 'Пони']]);
+  assert.ok((await ctx.blobs[0].text()).startsWith('Пони\r\n'), 'Описание.txt');
+  const file = Buffer.from(await ctx.blobs.at(-1).arrayBuffer());
   assert.ok(file.includes('tvsh') && file.includes('Пони'), 'описание записано в MP4');
   assert.equal(posts[0][0], 'https://kodikplayer.com/ftor2');
   assert.deepEqual([posts[0][1].hash, posts[0][1].id, posts[0][1].type, posts[0][1].d_sign, 'advert_debug' in posts[0][1]], ['h1', '42', 'seria', 's1', false]);
   assert.ok(logs.some(([line, isError]) => isError && line.includes('Серия 2') && line.includes('нет плеера Kodik')));
   assert.deepEqual(progress.at(-1), [1, 2]);
+
+  // галочки «Видео» выключены: ни описания, ни обложки, только серия
+  saved.length = 0;
+  await ctx.downloadAnime({ ...snapshot, stored: { animeSaveText: false, animeSavePoster: false }, downloadData: { ...snapshot.downloadData, selectedChapterIds: [11] } }, {
+    log: () => {}, progress: () => {}, isCanceled: () => false, save: async (url, name, folder) => saved.push([url, name, folder])
+  });
+  assert.deepEqual(saved.map(([, name]) => name), ['Пони - S01E01.mp4']);
 });
 
 test('only https Kodik hosts are requested: a foreign player, a //host endpoint and a non-https video link are refused', async () => {
@@ -217,7 +240,11 @@ test('AnimeLIB is wired in: title page, buttons under «Начать смотр�
     assert.match(source(page), /engine\/anime\.js"><\/script>\s*<script src="\.\.\/engine\/engine\.js"/, page);
   }
   assert.match(source('src/html/settings.html'), /data-group="video" data-site-type="anime"/);
-  assert.match(source('src/core/snapshot.js'), /'animeQuality', 'animeSaveInfo'/);
+  for (const id of ['anime-save-info', 'anime-save-text', 'anime-save-poster']) {
+    assert.match(source('src/html/settings.html'), new RegExp(`id="${id}" checked`), id);
+    assert.match(source('src/core/settings.js'), new RegExp(`'${id}': true`), id);
+  }
+  assert.match(source('src/core/snapshot.js'), /'animeQuality', 'animeSaveInfo', 'animeSaveText', 'animeSavePoster'/);
   // редакторы под аниме: без обложек, студия вместо художника и типа, серии без «Том/Глава», озвучка вместо перевода
   assert.match(source('src/core/panel.js'), /\.\.\.\(siteType === 'anime' \? \[\] : \[\{ id: 'covers'/);
   const metadata = source('src/editors/metadata.js');

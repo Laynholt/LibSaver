@@ -1,4 +1,5 @@
 // anime.js - загрузка серий AnimeLIB: плеер Kodik серии -> прямая ссылка на MP4 -> файл качается частями -> описание в MP4 -> загрузчик браузера (engine.js, runTitle).
+// Рядом с сериями - «Описание.txt» и обложка тайтла (по галочкам раздела «Видео»).
 // Цепочка Kodik проверена 2026-10-19: HTML плеера (urlParams, vInfo) -> POST на адрес из JS плеера -> ссылки в ROT18 + base64,
 // ссылка вида .../720.mp4:hls:manifest.m3u8 без суффикса - цельный MP4 (H.264 + AAC, moov в начале). Referer Kodik не проверяет.
 // Собственный плеер AnimeLIB (без Kodik) не поддерживается: серии без Kodik пропускаются с записью в журнал.
@@ -255,6 +256,53 @@ async function tagMp4(blob, tags) {
   return new Blob([blob.slice(0, moov.start), tagged, blob.slice(moov.end)], { type: 'video/mp4' });
 }
 
+// «Описание.txt»: всё о тайтле обычным текстом, открывается в Блокноте
+function buildAnimeInfoText(metadata) {
+  const title = metadata.titleRu || metadata.titleOriginal || metadata.titleEn || '';
+  const lines = [
+    ['Оригинальное название', metadata.titleOriginal],
+    ['Английское название', metadata.titleEn],
+    ['Другие названия', String(metadata.titleAlt || '').split('\n').map(name => name.trim()).filter(Boolean).join(', ')],
+    ['Формат', metadata.releaseFormat],
+    ['Год', metadata.year],
+    ['Статус', metadata.status],
+    ['Возраст', metadata.ageRestriction],
+    ['Студия', metadata.publisher],
+    ['Автор', metadata.author],
+    ['Длительность', metadata.duration],
+    ['Жанры', metadata.genres],
+    ['Метки', metadata.tags],
+    ['Оценка Shikimori', metadata.rating],
+    ['Shikimori', metadata.shikimori]
+  ].filter(([, value]) => value).map(([name, value]) => `${name}: ${value}`);
+  return [title, '', ...lines, ...(metadata.description ? ['', 'Описание:', metadata.description] : [])].join('\r\n') + '\r\n';
+}
+
+// Описание (Описание.txt) и обложка в папку серий - каждое по своей галочке «Видео». Обложка тайтла с cover.hentaicdn.org отдаётся без Referer
+async function saveTitleExtras(snapshot, folder, hooks) {
+  const data = snapshot.downloadData;
+  const metadata = data.metadata || {};
+  const firstCover = data.allCovers?.[0];
+  const cover = metadata.cover || (firstCover?.url ?? firstCover) || '';
+  if (snapshot.stored?.animeSaveText !== false) {
+    const text = URL.createObjectURL(new Blob([buildAnimeInfoText(metadata)], { type: 'text/plain;charset=utf-8' }));
+    try {
+      await hooks.save(text, 'Описание.txt', folder);
+    } catch (e) {
+      hooks.log(`Не удалось сохранить описание (Описание.txt): ${e.message}`, true);
+    } finally {
+      setTimeout(() => URL.revokeObjectURL(text), 60000); // загрузчик браузера читает blob уже после download()
+    }
+  }
+  if (snapshot.stored?.animeSavePoster !== false && cover) {
+    try {
+      await hooks.save(cover, `poster.${cover.match(/\.(jpe?g|png|webp)(?=$|\?)/i)?.[1] || 'jpg'}`, folder);
+    } catch (e) {
+      hooks.log(`Не удалось сохранить обложку: ${e.message}`, true);
+    }
+  }
+}
+
 // Серии снимка по очереди. hooks: { log(line, isError), progress(done, total, part), isCanceled(), save(url, name, folder) }
 async function downloadAnime(snapshot, hooks) {
   const data = snapshot.downloadData;
@@ -268,6 +316,7 @@ async function downloadAnime(snapshot, hooks) {
   const withInfo = snapshot.stored?.animeSaveInfo !== false;
   const stop = () => { if (hooks.isCanceled()) throw canceledError(); };
 
+  await saveTitleExtras(snapshot, folder, hooks);
   let saved = 0;
   hooks.progress(0, episodes.length, 0);
   for (const [index, episode] of episodes.entries()) {

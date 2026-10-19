@@ -318,6 +318,8 @@ function applySettingsToUI(settings) {
   document.getElementById('same-width').checked = settings.sameWidth === true;
   document.getElementById('anime-quality').value = settings.animeQuality || 'max';
   document.getElementById('anime-save-info').checked = settings.animeSaveInfo !== false;
+  document.getElementById('anime-save-text').checked = settings.animeSaveText !== false;
+  document.getElementById('anime-save-poster').checked = settings.animeSavePoster !== false;
 
   // Chapters pagination settings
   document.getElementById('initial-chapters').value = settings.initialChapters || 100;
@@ -647,6 +649,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     'sameWidth',
     'animeQuality',
     'animeSaveInfo',
+    'animeSaveText',
+    'animeSavePoster',
     'tocFormat',
     'customTocFormat',
     'hideChapterName',
@@ -864,7 +868,7 @@ const SETTING_KEYS_BY_GROUP = {
   cbz: ['generateComicInfo'],
   pdf: ['pdfFont', 'pdfFontSize', 'pdfPageSize', 'pdfLineSpacing', 'pdfParagraphSpacing', 'pdfImageFormat', 'pdfJpegQuality'],
   txt: ['txtImageMarker', 'textOnly'],
-  video: ['animeQuality', 'animeSaveInfo'],
+  video: ['animeQuality', 'animeSaveInfo', 'animeSaveText', 'animeSavePoster'],
   storage: ['cleanupOnTitleChange', 'cleanupOldTitles']
 };
 
@@ -922,6 +926,8 @@ async function saveSettings() {
     sameWidth: document.getElementById('same-width').checked,
     animeQuality: document.getElementById('anime-quality').value,
     animeSaveInfo: document.getElementById('anime-save-info').checked,
+    animeSaveText: document.getElementById('anime-save-text').checked,
+    animeSavePoster: document.getElementById('anime-save-poster').checked,
     tocFormat: document.getElementById('toc-format').value,
     customTocFormat: document.getElementById('custom-toc-format').value,
     hideChapterName: document.getElementById('hide-chapter-name').checked,
@@ -1012,7 +1018,9 @@ const DEFAULT_SETTINGS_BY_GROUP = {
   },
   video: {
     'anime-quality': 'max',
-    'anime-save-info': true
+    'anime-save-info': true,
+    'anime-save-text': true,
+    'anime-save-poster': true
   },
   storage: {
     'cleanup-on-title-change': true,
