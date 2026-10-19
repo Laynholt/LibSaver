@@ -31,6 +31,8 @@ const STATUS_COMMANDS = {
   canceled: ['remove']
 };
 
+const unitsOf = item => item.siteKey === 'animelib' ? 'серий' : 'глав';
+
 function renderCommandButton(command, id) {
   const [icon, label] = COMMAND_BUTTONS[command];
   return `<button class="dl-btn" data-cmd="${command}" data-id="${escapeHtml(id)}" title="${label}" aria-label="${label}"><i class="fa-solid ${icon}"></i><span>${label}</span></button>`;
@@ -42,11 +44,17 @@ function renderSiteLinks(siteKey) {
     .join(' · ');
 }
 
-function renderStatus(item) {
+// Скорость и оставшееся время идущей загрузки: каждое - когда движок его посчитал (speed есть, etaSeconds не null)
+function liveStats(stats) {
+  return [stats?.speed, stats?.etaSeconds != null && stats.estimated && `осталось ≈${stats.estimated}`].filter(Boolean).join(' · ');
+}
+
+// stats - статистика идущей загрузки (она одна)
+function renderStatus(item, stats) {
   const { current, total } = item.progress;
   switch (item.status) {
     case 'queued': return 'В очереди';
-    case 'running': return 'Загрузка';
+    case 'running': return liveStats(stats) ? `Загрузка · ${escapeHtml(liveStats(stats))}` : 'Загрузка';
     case 'paused': return 'Пауза';
     case 'waiting-tab': return `Откройте страницу ${escapeHtml(SITE_NAMES[item.siteKey] || item.siteKey)}, чтобы продолжить ${renderSiteLinks(item.siteKey)}`;
     case 'waiting-decision': {
@@ -56,7 +64,7 @@ function renderStatus(item) {
     }
     case 'done': {
       // Меньше глав, чем выбрано: часть пропущена (подробности - в логе и статистике)
-      const text = current < total ? `Готово с пропусками: ${current} / ${total} глав` : 'Готово';
+      const text = current < total ? `Готово с пропусками: ${current} / ${total} ${unitsOf(item)}` : 'Готово';
       return item.filename ? `${text} · ${escapeHtml(item.filename)}` : text;
     }
     case 'error': return `Ошибка: ${escapeHtml(item.error)}`;
@@ -66,7 +74,7 @@ function renderStatus(item) {
 }
 
 // Один элемент очереди: чистая разметка, весь текст экранируется
-function renderQueueItem(item) {
+function renderQueueItem(item, stats) {
   const { current, total, part = 0 } = item.progress; // part - доля текущей главы по картинкам
   const percent = total ? Math.min(100, Math.round(((current + part) / total) * 100)) : 0;
   // Файл готового тайтла движок держит только у последнего (canSaveAgain): у остальных пересохранять нечего
@@ -74,15 +82,19 @@ function renderQueueItem(item) {
   const buttons = commands.map(command => renderCommandButton(command, item.id)).join('');
   return `<div class="dl-item dl-${escapeHtml(item.status)}">` +
     `<div class="dl-item-head"><span class="dl-item-title">${escapeHtml(item.title)}</span><span class="dl-format">${escapeHtml(String(item.format ?? '').toUpperCase())}</span></div>` +
-    `<div class="dl-status">${renderStatus(item)}</div>` +
-    `<div class="dl-progress"><div class="progress-bar-container"><div class="progress-bar" style="width: ${percent}%"></div></div><span class="progress-counter">${current} / ${total} глав</span></div>` +
+    `<div class="dl-status">${renderStatus(item, stats)}</div>` +
+    `<div class="dl-progress"><div class="progress-bar-container"><div class="progress-bar" style="width: ${percent}%"></div></div><span class="progress-counter">${current} / ${total} ${unitsOf(item)}</span></div>` +
     `<div class="dl-actions">${buttons}</div>` +
     '</div>';
 }
 
+// Третий элемент true - строку не показываем, пока значения нет. У видео (stats.video) пустые строки не показываются вовсе
 const STATS_ROWS = [
   ['Время загрузки', stats => stats.elapsed],
   ['Примерное время', stats => stats.estimated],
+  ['Скорость', stats => stats.speed, true],
+  ['Скачано серии', stats => stats.episodeDownloaded, true],
+  ['Скачано всего', stats => stats.totalDownloaded, true],
   ['Размер файла', stats => stats.fileSize],
   ['Ошибки', stats => stats.errors],
   ['Главы старого формата', stats => stats.oldFormatChapters, true], // у манги их не бывает - строку не показываем, пока их нет
@@ -97,7 +109,7 @@ const STATS_ROWS = [
 function renderStats(stats) {
   if (!stats) return '';
   return STATS_ROWS
-    .filter(([, value, hideEmpty]) => !hideEmpty || value(stats))
+    .filter(([, value, hideEmpty]) => !(hideEmpty || stats.video) || value(stats))
     .map(([label, value]) => `<div class="analysis-item"><span class="analysis-label">${label}:</span>\n<span class="analysis-value">${escapeHtml(value(stats) ?? '-')}</span></div>`)
     .join('');
 }
@@ -117,6 +129,7 @@ let enginePort = null;
 let pingTimer = 0;
 let autoScrollLog = true;
 let finishedIds = []; // для «Очистить завершённые»: готовые, с ошибкой и отменённые из последнего состояния
+let sourceUrl = ''; // сайт, над которым открыто окно
 const rendered = {}; // последняя разметка по id: state приходит часто, без изменений DOM не трогаем
 
 function setHtml(id, html) {
@@ -126,12 +139,41 @@ function setHtml(id, html) {
   return true;
 }
 
+// Карточки очереди приходят до 4 раз в секунду: меняем только изменившиеся элементы. Кнопку, пересозданную между
+// нажатием и отпусканием мыши, браузер не засчитывал за click - «Отменить» срабатывало не с первого раза
+function patchChildren(parent, nodes) {
+  while (parent.children.length > nodes.length) parent.lastElementChild.remove();
+  nodes.forEach((node, i) => {
+    const old = parent.children[i];
+    if (!old) parent.append(node);
+    else if (old.outerHTML === node.outerHTML) return;
+    // Та же обёртка из одних элементов (карточка, строка кнопок) - сверяем её детей, иначе (текст, атрибуты) - заменяем
+    else if (old.cloneNode(false).outerHTML === node.cloneNode(false).outerHTML && [...node.childNodes].every(child => child.nodeType === 1)) patchChildren(old, [...node.children]);
+    else old.replaceWith(node);
+  });
+}
+
+function setListHtml(html) {
+  if (rendered['dl-list'] === html) return;
+  rendered['dl-list'] = html;
+  const list = document.getElementById('dl-list');
+  if (!html || !list.firstElementChild) { // список был или стал пустым - нажимать нечего, просто заменяем
+    list.innerHTML = html;
+    return;
+  }
+  const fresh = document.createElement('template');
+  fresh.innerHTML = html;
+  patchChildren(list, [...fresh.content.children]);
+}
+
 function renderState({ items = [], stats = null, logTail = [] }) {
   const byId = id => document.getElementById(id);
   byId('dl-empty').hidden = items.length > 0;
   finishedIds = items.filter(item => !ACTIVE_STATUSES.includes(item.status)).map(item => item.id);
   byId('dl-clear-finished').hidden = !finishedIds.length;
-  setHtml('dl-list', items.map(renderQueueItem).join(''));
+  setListHtml(items.map(item => renderQueueItem(item, stats)).join(''));
+  // «Ускорить» - про главы и картинки: над AnimeLIB прячем, пока в очереди нет глав
+  byId('speed-mode').hidden = /animelib\./.test(sourceUrl) && !items.some(item => ACTIVE_STATUSES.includes(item.status) && item.siteKey !== 'animelib');
   byId('dl-current').hidden = !logTail.length && !stats;
   setHtml('dl-stats', renderStats(stats));
   if (setHtml('dl-log', renderLog(logTail)) && autoScrollLog) {
@@ -237,7 +279,9 @@ async function initDownloadsView() {
     enginePort?.postMessage({ cmd: 'speedMode', on: speed.checked });
     chrome.storage.local.set({ speedMode: speed.checked });
   });
-  speed.checked = (await chrome.storage.local.get('speedMode')).speedMode !== false;
+  const stored = await chrome.storage.local.get(['speedMode', 'sourceUrl']);
+  speed.checked = stored.speedMode !== false;
+  sourceUrl = stored.sourceUrl || '';
 
   await connectEngine();
 }

@@ -119,7 +119,7 @@ test('every former executeScript func now lives in PAGE_CALLS and api/base use p
   assert.doesNotMatch(source('src/core/api.js') + source('src/formatters/base.js'), /chrome\.scripting\.executeScript/);
   const ctx = vm.createContext({});
   vm.runInContext(source('src/core/page-calls.js'), ctx);
-  assert.deepEqual(Object.keys(vm.runInContext('PAGE_CALLS', ctx)).sort(), ['chapterPages', 'chapters', 'covers', 'mangaChapterPages', 'metadata', 'metadataExtra']);
+  assert.deepEqual(Object.keys(vm.runInContext('PAGE_CALLS', ctx)).sort(), ['animeApi', 'chapterPages', 'chapters', 'covers', 'mangaChapterPages', 'metadata', 'metadataExtra']);
 });
 
 function functionSource(file, name) {
@@ -220,7 +220,7 @@ test('stats event carries the protocol fields and takes over from storage', () =
   ctx.updateStatisticsDisplay();
   const { type, stats } = events.at(-1);
   assert.equal(type, 'stats');
-  assert.deepEqual(Object.keys(stats).sort(), ['elapsed', 'errors', 'estimated', 'etaSeconds', 'fileSize', 'maxRequestsPerMinute', 'oldFormatChapters', 'requestsPerMinute', 'skippedChapters', 'skippedImages', 'totalChapters', 'totalCovers', 'totalImages']);
+  assert.deepEqual(Object.keys(stats).sort(), ['elapsed', 'errors', 'estimated', 'etaSeconds', 'fileSize', 'maxRequestsPerMinute', 'oldFormatChapters', 'requestsPerMinute', 'skippedChapters', 'skippedImages', 'speed', 'totalChapters', 'totalCovers', 'totalImages']);
   assert.deepEqual([stats.errors, stats.requestsPerMinute, stats.maxRequestsPerMinute, stats.oldFormatChapters], [3, 0, 0, 3]);
 });
 
@@ -533,7 +533,7 @@ test('saveFile is refused to a page context with a tab (content script) and serv
 test('scripts of the engine page use neither storage, tabs, downloads nor the window DOM', () => {
   const scripts = [...source('src/engine/engine.html').matchAll(/<script src="\.\.\/([^"]+)"/g)].map(match => match[1]);
   assert.deepEqual(scripts, ['libs/jszip.min.js', 'libs/pica.min.js', 'core/page-calls.js', 'utils/page-call.js', 'core/api.js', 'utils/protection.js', 'utils/header.js', 'core/statistics.js',
-    'formatters/base.js', 'formatters/epub.js', 'formatters/txt.js', 'formatters/pdf.js', 'formatters/html.js', 'formatters/fb2.js', 'formatters/cbz.js', 'formatters/index.js', 'core/download.js', 'engine/queue.js', 'engine/engine.js']);
+    'formatters/base.js', 'formatters/epub.js', 'formatters/txt.js', 'formatters/pdf.js', 'formatters/html.js', 'formatters/fb2.js', 'formatters/cbz.js', 'formatters/index.js', 'core/download.js', 'engine/queue.js', 'engine/anime.js', 'engine/engine.js']);
   // code only: template literals (html.js builds the reader page's script in one) and line comments are text
   const code = file => source('src/' + file).replace(/`(?:\\[\s\S]|[^`\\])*`/g, '``').replace(/^\s*\/\/.*$/gm, '');
   for (const file of scripts.filter(file => file !== 'utils/page-call.js' && file !== 'engine/engine.js')) {
@@ -688,6 +688,23 @@ test('renderStats prints the protocol fields and escapes them', () => {
   assert.doesNotMatch(html, /Главы старого формата/);
   assert.match(view.renderStats({ oldFormatChapters: 2 }), /Главы старого формата/);
   assert.equal(view.renderStats(null), '');
+});
+
+test('renderStats for anime video shows speed and episode bytes, hides empty manga rows', () => {
+  const html = viewContext().renderStats({ video: true, elapsed: '5 сек', estimated: '1 мин', speed: '2.3 МБ/с', episodeDownloaded: '10 из 100 МБ', totalDownloaded: '110 MB' });
+  assert.match(html, /Скорость:<\/span>\s*<span class="analysis-value">2\.3 МБ\/с</);
+  assert.match(html, /Скачано серии/);
+  assert.doesNotMatch(html, /Пропущено картинок|Ошибок/);
+});
+
+test('running queue item shows speed and time left once the engine has them', () => {
+  const view = viewContext();
+  const item = { id: 'a', title: 'T', status: 'running', siteKey: 'animelib', progress: { current: 0, total: 2, part: 0.5 } };
+  const stats = { video: true, speed: '2.0 МБ/с', estimated: '3 мин 5 сек', etaSeconds: 185 };
+  assert.match(view.renderQueueItem(item, stats), /Загрузка · 2\.0 МБ\/с · осталось ≈3 мин 5 сек/);
+  assert.match(view.renderQueueItem(item, { ...stats, estimated: 'Вычисляется...', etaSeconds: null }), /<div class="dl-status">Загрузка · 2\.0 МБ\/с<\/div>/); // manga: speed before the ETA
+  assert.match(view.renderQueueItem(item, { estimated: 'Вычисляется...', etaSeconds: null }), /<div class="dl-status">Загрузка<\/div>/);
+  assert.match(view.renderQueueItem({ ...item, status: 'paused' }, stats), /<div class="dl-status">Пауза<\/div>/);
 });
 
 test('renderLog escapes lines, marks errors and keeps only safe colors', () => {
@@ -1264,8 +1281,10 @@ test('ensureButtons reports a missing anchor and an unsupported site without tou
 test('ensureButtons takes a full grid row when the grid has several columns, and sizes itself from the anchor', () => {
   const ctx = siteUiContext();
   const narrow = fakeTitleDoc('ranobelib', { columns: '170px 170px' });
+  Object.assign(narrow.anchor.computed, { zIndex: '3', order: '1' }); // телефонная вёрстка: сайт поднимает кнопки над фоном шапки
   ctx.ensureButtons(narrow, 'https://ranobelib.me/ru/book/y');
-  assert.equal(narrow.grid.children[1].style.gridColumn, '1 / -1');
+  const row = narrow.grid.children[1];
+  assert.deepEqual([row.style.gridColumn, row.style['--ls-width'], row.style.zIndex, row.style.order], ['1 / -1', '100%', '3', '1']);
   const wide = fakeTitleDoc('ranobelib');
   ctx.ensureButtons(wide, 'https://ranobelib.me/ru/book/y');
   const host = wide.grid.children[1];
@@ -1312,21 +1331,21 @@ test('accent: the forced one wins, otherwise the site color; the light theme use
   assert.equal(accent('mangalib', 'nonsense', true).color, '#ef6c00');
 });
 
-test('site-ui content script is registered for the four sites, with its stylesheet, font and iframe pages exposed', () => {
+test('site-ui content script is registered for all five sites, with its stylesheet, font and iframe pages exposed', () => {
   const manifest = JSON.parse(source('src/manifest.json'));
   const script = manifest.content_scripts[1];
-  const notAnime = match => !/anilib|animelib/.test(match);
   assert.deepEqual(script.js, ['core/theme.js', 'utils/page-call.js', 'utils/formats.js', 'content/site-ui.js']);
-  assert.deepEqual(script.matches, manifest.content_scripts[0].matches.filter(notAnime));
-  const [libs, anime, ...rest] = manifest.web_accessible_resources;
+  assert.deepEqual(script.matches, manifest.content_scripts[0].matches);
+  assert.ok(script.matches.includes('https://animelib.org/*'));
+  const [libs, ...rest] = manifest.web_accessible_resources;
   for (const resource of ['css/site-ui.css', 'html/panel.html', 'html/quick.html', 'html/downloads.html', 'libs/fontawesome/webfonts/fa-solid-900.woff2']) {
     assert.ok(libs.resources.includes(resource), resource);
   }
   // R14: pages open only on the sites where site-ui.js frames them, not on <all_urls>; the deleted pages and the popup are gone
   assert.deepEqual(libs.matches, script.matches);
   assert.deepEqual(libs.resources.filter(resource => /prepare|workspace|popup/.test(resource)), []);
-  // SiteMenuRestorer.js also runs on AnimeLIB and fetches the menu icons there: only they are exposed to those origins
-  assert.deepEqual([anime.resources, anime.matches, rest.length], [['assets/svg/*.svg'], manifest.content_scripts[0].matches.filter(match => !script.matches.includes(match)), 0]);
+  // SiteMenuRestorer.js fetches the menu icons on the same sites: one entry covers them
+  assert.deepEqual([libs.resources.includes('assets/svg/*.svg'), rest.length], [true, 0]);
   assert.equal(JSON.stringify(manifest).includes('<all_urls>'), JSON.stringify(manifest.host_permissions).includes('<all_urls>'));
   assert.equal(libs.resources.some(resource => resource.startsWith('assets/fonts')), false); // pages load their own fonts, the site never asks for them
   assert.equal(manifest.permissions.some(name => name.startsWith('system.')), false);
@@ -1344,7 +1363,7 @@ test('whoami answers with the sender tab id and url', () => {
 
 test('format options are one list per site type, shared by the panel, the quick popover and the buttons', () => {
   const ctx = vm.createContext({ console });
-  vm.runInContext(['src/utils/formats.js', 'src/core/title-loader.js', 'src/core/site-download.js', 'src/core/quick.js'].map(source).join('\n'), ctx);
+  vm.runInContext(['src/utils/formats.js', 'src/utils/page-call.js', 'src/core/title-loader.js', 'src/core/site-download.js', 'src/core/quick.js'].map(source).join('\n'), ctx);
   const values = siteKey => Array.from(ctx.quickFormatOptions(siteKey), option => option.value);
   assert.ok(!values('ranobelib').includes('cbz'));
   assert.deepEqual(values('ranobelib'), ['epub', 'fb2', 'pdf', 'txt', 'html']);
@@ -1352,8 +1371,9 @@ test('format options are one list per site type, shared by the panel, the quick 
     assert.ok(!values(siteKey).includes('fb2') && !values(siteKey).includes('txt'), siteKey);
     assert.deepEqual(values(siteKey), ['cbz', 'zip', 'pdf', 'epub', 'html']);
   }
-  assert.deepEqual([ctx.defaultFormatFor('manga'), ctx.defaultFormatFor('ranobe'), ctx.defaultFormatFor('anime')], ['cbz', 'epub', 'mkv']);
-  assert.deepEqual([ctx.formatKeyFor('manga'), ctx.formatKeyFor('ranobe')], ['selectedFormat_manga', 'selectedFormat_ranobe']);
+  assert.deepEqual(values('animelib'), ['mp4']);
+  assert.deepEqual([ctx.defaultFormatFor('manga'), ctx.defaultFormatFor('ranobe'), ctx.defaultFormatFor('anime')], ['cbz', 'epub', 'mp4']);
+  assert.deepEqual([ctx.formatKeyFor('manga'), ctx.formatKeyFor('ranobe'), ctx.formatKeyFor('anime'), ctx.formatKeyFor(undefined)], ['selectedFormat_manga', 'selectedFormat_ranobe', 'selectedFormat_anime', 'selectedFormat_ranobe']);
   assert.doesNotMatch(source('src/core/panel.js'), /value: 'cbz'/);
   assert.doesNotMatch(source('src/core/quick.js'), /value: 'cbz'/);
 });
@@ -1472,19 +1492,21 @@ test('the settings URL can carry a section for the window to open on', () => {
   assert.equal(new URL(ctx.buildPanelUrl('https://mangalib.me/ru/manga/123--title', 42, 'https://mangalib.me')).searchParams.has('section'), false);
 });
 
-test('popover frame messages: «Подробнее…» closes the popover and opens the settings window on that section; resize takes numbers only', () => {
+test('popover frame messages: close and resize (numbers only); the popover has no «Подробнее…» - the ⚙ button opens the window', () => {
   const ctx = siteUiContext();
   const log = [];
   ctx.closePopover = () => log.push('close');
   ctx.openSettings = section => log.push(['settings', section]);
   ctx.resizePopover = height => log.push(['resize', height]);
   const handlers = vm.runInContext('popoverMessageHandlers', ctx); // const: not a property of the context
-  handlers.openPanel({ section: 'chapters' });
+  assert.equal(handlers.openPanel, undefined);
+  assert.doesNotMatch(source('src/html/quick.html'), /Подробнее|id="more"/);
+  assert.doesNotMatch(source('src/core/quick.js'), /openPanel|\$\('more'\)/);
   handlers.close();
   handlers.resize({ height: 180 });
   handlers.resize({ height: 'tall' });
   handlers.resize({});
-  assert.deepEqual(log, ['close', ['settings', 'chapters'], 'close', ['resize', 180]]);
+  assert.deepEqual(log, ['close', ['resize', 180]]);
 });
 
 test('the «Скачать» label and accent follow the format and accent saved in storage', async () => {
@@ -1638,6 +1660,7 @@ test('plaqueText: running shows the percent and the rest of the queue, waiting a
   const withEta = { ...stateOf(queueEntry('running', { progress: { current: 9, total: 20, part: 0.5 } })), stats: { estimated: '3 мин 5 сек', etaSeconds: 185 } };
   assert.deepEqual(text(withEta), { title: 'Title A', detail: '48% · ≈3 мин 5 сек', percent: 48 }); // the page share counts, the time left is shown
   assert.equal(text({ ...withEta, stats: { estimated: 'Вычисляется...', etaSeconds: null } }).detail, '48%');
+  assert.equal(text({ ...withEta, stats: { ...withEta.stats, speed: '2.0 МБ/с' } }).detail, '48% · 2.0 МБ/с · ≈3 мин 5 сек'); // video
   assert.equal(text(stateOf(queueEntry('waiting-tab'))).detail, 'Откройте страницу MangaLIB, чтобы продолжить');
   assert.equal(text(stateOf(queueEntry('waiting-tab', { siteKey: 'shlib' }))).detail, 'Откройте страницу SlashLIB, чтобы продолжить');
   assert.equal(text(stateOf(queueEntry('waiting-decision', { decision: { kind: 'chapter', chapterTitle: 'Г1', message: 'x' } }))).detail, 'Нужно решение: ошибка главы');
@@ -2736,7 +2759,7 @@ test('the popup off a title page only points to the sites: no settings button', 
 });
 
 test('the settings tab (no ?group=) lists the sections on the left and shows only the panels of the one in the address', () => {
-  const groups = ['general', 'storage', 'images', 'toc', 'cbz', 'pdf', 'txt', 'about'];
+  const groups = ['general', 'storage', 'images', 'toc', 'cbz', 'pdf', 'txt', 'video', 'about'];
   const panels = groups.map(group => ({ dataset: { group }, classList: { toggle(name, on) { this.on = on; } } }));
   const links = [];
   const nav = { append: link => links.push(link) };
@@ -2755,7 +2778,7 @@ test('the settings tab (no ?group=) lists the sections on the left and shows onl
   });
   vm.runInContext(between('src/core/settings.js', '// Вкладка настроек (без ?group=)', '// Отображение версии расширения'), ctx);
   assert.deepEqual(classes, ['tab-mode']);
-  assert.deepEqual(links.map(link => link.href), ['#general', '#images', '#toc', '#formats', '#about']);
+  assert.deepEqual(links.map(link => link.href), ['#general', '#images', '#toc', '#formats', '#video', '#about']);
   const shown = () => panels.filter(panel => panel.classList.on === false).map(panel => panel.dataset.group);
   assert.deepEqual(shown(), ['cbz', 'pdf', 'txt']);
   assert.equal(links.find(link => link.attrs['aria-current'] === 'page').dataset.section, 'formats');
@@ -3073,11 +3096,11 @@ test('every settings group of the window has a panel, every panel is in some sec
   const html = source('src/html/settings.html');
   const chunks = html.split('<div class="panel" data-group="').slice(1);
   const byGroup = Object.fromEntries(chunks.map(chunk => [chunk.slice(0, chunk.indexOf('"')), chunk]));
-  assert.deepEqual(Object.keys(byGroup).sort(), ['about', 'cbz', 'general', 'images', 'pdf', 'storage', 'toc', 'txt']);
+  assert.deepEqual(Object.keys(byGroup).sort(), ['about', 'cbz', 'general', 'images', 'pdf', 'storage', 'toc', 'txt', 'video']);
   const ctx = settingsGroupsLogic();
   const panelCtx = panelLogic();
   const reachable = new Set();
-  for (const section of panelCtx.PANEL_SECTIONS()) {
+  for (const section of [...panelCtx.PANEL_SECTIONS(), ...panelCtx.PANEL_SECTIONS('anime')]) {
     const group = new URL(section.url, 'chrome-extension://x/').searchParams.get('group');
     if (group) for (const name of ctx.settingsGroupsFromUrl(`?group=${group}`)) reachable.add(name);
   }

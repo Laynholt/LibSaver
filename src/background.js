@@ -286,6 +286,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   const run = request.action === 'pageCall:findTab' ? () => findSiteTab(request.siteKey, request.preferredTabId)
     : request.action === 'pageCall:exec' ? () => execPageCall(request.tabId, request.name, request.args)
+    : request.action === 'pageCall:siteKey' ? () => siteKeyOfTab(request.tabId)
     : null;
   if (!run) return;
   run().then(

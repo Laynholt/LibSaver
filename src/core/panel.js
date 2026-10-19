@@ -16,6 +16,7 @@ const PANEL_GROUPS = [
 
 // Подписи значений - как в settings.html
 const IMAGE_QUALITY_LABELS = { NONE: 'Без картинок', ORIGINAL: 'Без сжатия', '2K': '1600px', QHD: '1440px', FHD: '1080px', HD: '720px', qHD: '540px', SD: '480px' };
+const VIDEO_QUALITY_LABELS = { max: 'Наилучшее', 1080: '1080p', 720: '720p', 480: '480p', 360: '360p' };
 const TOC_FORMAT_LABELS = {
   format1: 'Том X Глава Y Название', format2: 'Том X Глава Y - Название', format3: 'Том X - Глава Y - Название', format4: 'Том X / Глава Y / Название',
   default: 'Том X. Глава Y. Название', no_headers: 'Без заголовков', custom: 'Пользовательский формат'
@@ -23,14 +24,21 @@ const TOC_FORMAT_LABELS = {
 
 // Разделы в порядке меню. group: null - «Загрузки» отдельно внизу.
 // «Форматы» - настройки всех форматов (CBZ/ZIP, PDF, TXT), как во вкладке настроек: их можно поправить заранее, не переключая формат
-function PANEL_SECTIONS() {
-  return [
-    { id: 'chapters', group: 'title', title: 'Главы', url: 'chapters.html' },
+// Аниме (AnimeLIB): без обложек, вместо картинок, оглавления и форматов - «Видео»
+function PANEL_SECTIONS(siteType) {
+  const title = [
+    { id: 'chapters', group: 'title', title: siteType === 'anime' ? 'Серии' : 'Главы', url: 'chapters.html' },
     { id: 'metadata', group: 'title', title: 'Метаданные', url: 'metadata.html' },
-    { id: 'covers', group: 'title', title: 'Обложки', url: 'covers.html' },
+    ...(siteType === 'anime' ? [] : [{ id: 'covers', group: 'title', title: 'Обложки', url: 'covers.html' }])
+  ];
+  const build = siteType === 'anime' ? [{ id: 'video', group: 'build', title: 'Видео', url: 'settings.html?group=video' }] : [
     { id: 'images', group: 'build', title: 'Картинки', url: 'settings.html?group=images' },
     { id: 'toc', group: 'build', title: 'Оглавление', url: 'settings.html?group=toc' },
-    { id: 'formats', group: 'build', title: 'Форматы', url: 'settings.html?group=formats' },
+    { id: 'formats', group: 'build', title: 'Форматы', url: 'settings.html?group=formats' }
+  ];
+  return [
+    ...title,
+    ...build,
     { id: 'general', group: 'extension', title: 'Общие', url: 'settings.html?group=general' },
     { id: 'about', group: 'extension', title: 'О LibSaver', url: 'settings.html?group=about' },
     { id: 'downloads', group: null, title: 'Загрузки', url: 'downloads.html' }
@@ -70,6 +78,7 @@ function sectionSubtitle(id, settings, counts) {
     case 'images': return IMAGE_QUALITY_LABELS[settings.imageQuality || 'ORIGINAL'] ?? '';
     case 'toc': return TOC_FORMAT_LABELS[settings.tocFormat || 'default'] ?? '';
     case 'formats': return settings.format?.toUpperCase() ?? '';
+    case 'video': return VIDEO_QUALITY_LABELS[settings.animeQuality || 'max'] ?? '';
     default: return '';
   }
 }
@@ -115,7 +124,7 @@ function startPanel() {
     show('error');
   };
   const solo = () => single || early; // только «Загрузки», без меню и низа окна
-  const sections = () => solo() ? PANEL_SECTIONS().filter(section => section.id === 'downloads') : PANEL_SECTIONS();
+  const sections = () => solo() ? PANEL_SECTIONS().filter(section => section.id === 'downloads') : PANEL_SECTIONS(info?.siteType);
 
   // Справа от пункта: на широком экране число, на телефоне подпись (для «Загрузок» - тоже число)
   const noteFor = section => {
@@ -210,7 +219,7 @@ function startPanel() {
     const formatKey = formatKeyFor(info.siteType);
     const [{ titleData }, values] = await Promise.all([
       getTitleStore(['titleData'], slug),
-      chrome.storage.local.get(['metadataFields', 'imageQuality', 'tocFormat', formatKey])
+      chrome.storage.local.get(['metadataFields', 'imageQuality', 'tocFormat', 'animeQuality', formatKey])
     ]);
     if (ticket !== refreshTicket) return; // пришёл более свежий ответ
     const title = titleData[slug];
@@ -219,7 +228,7 @@ function startPanel() {
     headerTitle = title?.metadata?.titleRu || info.title;
     format = formatOptionsFor(info.siteType).some(option => option.value === values[formatKey]) ? values[formatKey] : defaultFormatFor(info.siteType);
     formatSelect.value = format;
-    downloadButton.textContent = counts.selected > 0 ? downloadLabel(counts.selected) : 'Скачать';
+    downloadButton.textContent = counts.selected > 0 ? downloadLabel(counts.selected, info.siteType) : 'Скачать';
     downloadButton.disabled = busy || counts.selected === 0;
     update();
   }
@@ -274,7 +283,7 @@ function startPanel() {
     show('main');
     update();
     chrome.storage.onChanged.addListener((changes, area) => {
-      if (area === 'local' && ['titleData:' + slug, 'metadataFields', 'imageQuality', 'tocFormat', formatKeyFor(info.siteType)].some(key => key in changes)) refresh().catch(error => console.error('[LibSaver] panel', error));
+      if (area === 'local' && ['titleData:' + slug, 'metadataFields', 'imageQuality', 'tocFormat', 'animeQuality', formatKeyFor(info.siteType)].some(key => key in changes)) refresh().catch(error => console.error('[LibSaver] panel', error));
     });
     watchQueue();
   }

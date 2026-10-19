@@ -221,7 +221,7 @@ test('title data is only accessed through the title store, which every page usin
 
 test('title loader requests chapters, metadata and covers together without artificial waits', () => {
   const loader = source('src/core/title-loader.js');
-  assert.match(loader, /Promise\.all\(\[\s*trackProgress\(loadChapters\(tabId\)\),\s*trackProgress\(loadMetadata\(tabId\)\),\s*trackProgress\(loadCovers\(tabId, urlSlug\)\)/);
+  assert.match(loader, /Promise\.all\(\[\s*trackProgress\(loadChapters\(tabId, urlSlug\)\),\s*trackProgress\(loadMetadata\(tabId, urlSlug\)\),\s*trackProgress\(loadCovers\(tabId, urlSlug\)\)/);
   assert.doesNotMatch(loader, /await (loadChapters|loadMetadata|loadCovers)\(|setTimeout\(resolve|\b(fast|slowSmooth|ready|animate)Progress\(/);
   assert.doesNotMatch(source('src/core/popup.js'), /\b(loadChapters|loadMetadata|loadCovers)\(/);
 });
@@ -265,7 +265,7 @@ function downloadHarness({ fail = false, partial = false, noDownloadData = false
     resetDownloadState: noop, calculateInitialSpeed: () => 60, updateStatisticsDisplay: noop,
     formatChapterTitle: () => 'Test', trackRequest: noop, trackImageRequest: noop, updateProgress: noop, updateImageProgress: noop, progressSamples: [], throwIfCanceled: noop,
     handleChapterError: noop, handleImageError: noop, onTranslatorSelected: noop,
-    addLog: line => logs.push(line), setExactFileSize: noop, saveAs: () => saved++,
+    addLog: line => logs.push(line), setExactFileSize: noop, addDownloadedBytes: noop, saveAs: () => saved++,
     setInterval: () => { const id = timers.size + 1; timers.add(id); return id; }, clearInterval: id => timers.delete(id),
     getFormatter: () => ({ format: async () => {
       if (fail) throw new Error('Synthetic formatter failure');
@@ -742,12 +742,17 @@ test('chapter cards skip off-screen rendering, except the one whose translator l
   assert.match(source('src/editors/chapters.js'), /div\.classList\.add\('menu-open'\)/);
 });
 
-test('chapters are always shown in parts of 100 with "show more" / "show all", no pagination toggle', () => {
+test('chapters: a single volume is shown in parts of 100 with "show more" / "show all", several volumes - as a collapsed tree, no pagination toggle', () => {
   const js = source('src/editors/chapters.js');
   assert.doesNotMatch(js, /enablePagination/);
   assert.match(js, /initialChapterCount = result\.initialChapters \|\| 100;/);
   assert.match(js, /loadMoreChapterCount = result\.loadMoreChapters \|\| 100;/);
-  assert.match(js, /const endIndex = loadAll \? chapters\.length : Math\.min\(startIndex \+ effectivePageSize, chapters\.length\);/);
+  assert.match(js, /const treeMode = volumeChapters\.size > 1;\s*const endIndex = loadAll \|\| treeMode \? chapters\.length : Math\.min\(startIndex \+ effectivePageSize, chapters\.length\);/);
+  // дерево: карточки всех томов сразу, свёрнуты, главы тома - при раскрытии
+  assert.match(js, /chapters\.forEach\(ch => getVolumeBody\(container, ch\.volume\)\);\s*expandedVolumes\.forEach\(fillVolume\);/);
+  assert.match(js, /setOpen\(volumeChapters\.size <= 1 \|\| expandedVolumes\.has\(key\)\);/);
+  assert.match(js, /setOpen\(open\);\s*if \(open\) fillVolume\(key\);/);
+  assert.match(js, /if \(button\.dataset\.bound\) return;/);
   assert.doesNotMatch(source('src/html/settings.html'), /enable-pagination/);
   assert.doesNotMatch(source('src/core/settings.js'), /enablePagination|enable-pagination/);
 });
@@ -761,4 +766,17 @@ test('cover previews: no inline background over the CSS one, badges sit on the l
   assert.match(html, /img\.loaded \{[^}]*cursor: zoom-in;/);
   assert.match(html, /\.cover-item:has\(img\.loaded\)::after \{\s*display: none;/);
   assert.match(html, /\.cover-item:first-child \.img-container:has\(> img\.loaded\)::before \{\s*content: 'Основная';/);
+});
+
+test('editors fit a phone: no fixed minimum page width, the toolbar and «show more» buttons wrap, anime voiceovers count series', () => {
+  const editorCss = source('src/css/editor.css');
+  for (const file of ['src/css/editor.css', 'src/html/covers.html', 'src/html/chapters.html', 'src/html/metadata.html']) {
+    assert.doesNotMatch(source(file), /min-width:\s*450px/, file);
+  }
+  assert.match(editorCss, /@media \(max-width: 520px\) \{\s*\.toolbar \{\s*height: auto;\s*min-height: 52px;\s*flex-wrap: wrap;/);
+  assert.match(source('src/html/chapters.html'), /\.load-more-buttons \{\s*display: flex;\s*flex-wrap: wrap;/);
+  assert.match(source('src/editors/chapters.js'), /uniqueChapters\[0\]\?\.episode \? ' сер\.' : ' гл\.'/);
+  // полоса прокрутки справа не делает правый отступ больше левого: место под неё с обеих сторон
+  for (const file of ['src/css/editor.css', 'src/css/downloads.css']) assert.match(source(file), /html \{\s*scrollbar-gutter: stable both-edges;/, file);
+  assert.match(source('src/css/settings.css'), /html:has\(> body\.group-mode\) \{\s*scrollbar-gutter: stable both-edges;/);
 });

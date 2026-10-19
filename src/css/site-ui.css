@@ -2,6 +2,7 @@
 
 /* Кнопки: ширина, высота и радиус приходят от «Начать читать» (--ls-*), цвета - от акцента (--ls-accent*) */
 :host([data-libsaver-buttons]) {
+  position: relative; /* z-index из fitToAnchor работает только у позиционированного */
   display: block;
   width: var(--ls-width, 100%);
   max-width: 100%;

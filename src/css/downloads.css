@@ -1,4 +1,9 @@
 /* Раздел «Загрузки»: страница живёт в iframe (окно поверх сайта) */
+/* Разделы окна LibSaver: место под полосу прокрутки и справа, и слева - отступы по краям одинаковые */
+html {
+  scrollbar-gutter: stable both-edges;
+}
+
 body {
   background-color: var(--bg-primary);
   color: var(--text-primary);
@@ -50,6 +55,10 @@ body {
   font-size: 12px;
   font-weight: 600;
   cursor: pointer;
+}
+
+.speed-mode-toggle[hidden] {
+  display: none;
 }
 
 .speed-mode-toggle:hover {

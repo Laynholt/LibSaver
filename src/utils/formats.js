@@ -17,7 +17,7 @@ const FORMAT_OPTIONS = {
     { value: 'html', label: 'HTML' }
   ],
   anime: [
-    { value: 'mkv', label: 'MKV' }
+    { value: 'mp4', label: 'MP4' }
   ]
 };
 
@@ -27,9 +27,9 @@ function formatOptionsFor(siteType) {
 }
 
 function defaultFormatFor(siteType) {
-  return siteType === 'manga' ? 'cbz' : (siteType === 'anime' ? 'mkv' : 'epub');
+  return siteType === 'manga' ? 'cbz' : (siteType === 'anime' ? 'mp4' : 'epub');
 }
 
 function formatKeyFor(siteType) {
-  return siteType === 'manga' ? 'selectedFormat_manga' : 'selectedFormat_ranobe';
+  return siteType === 'manga' || siteType === 'anime' ? `selectedFormat_${siteType}` : 'selectedFormat_ranobe';
 }

@@ -64,8 +64,9 @@ function siteKeyOf(url) {
   return getSiteConfig(url)?.siteType || null;
 }
 
-// Сайт вкладки, если вызывающий не знает его заранее
+// Сайт вкладки, если вызывающий не знает его заранее. Окну расширения внутри страницы сайта Firefox не даёт chrome.tabs - спрашиваем фон
 async function siteKeyOfTab(tabId) {
+  if (!hasTabApi()) return viaServiceWorker({ action: 'pageCall:siteKey', tabId });
   return siteKeyOf((await chrome.tabs.get(tabId)).url);
 }
 
@@ -95,12 +96,19 @@ function siteKeyByHost(url) {
 }
 
 // Название сайта для текстов интерфейса (страница расширения, плашка на сайте)
-const SITE_NAMES = { mangalib: 'MangaLIB', hentailib: 'HentaiLIB', shlib: 'SlashLIB', ranobelib: 'RanobeLIB' };
+// Тип контента, который редакторы читают из storage.siteType ('manga' | 'ranobe' | 'anime')
+function siteTypeOf(siteKey) {
+  if (siteKey === 'mangalib' || siteKey === 'hentailib' || siteKey === 'shlib') return 'manga';
+  if (siteKey === 'animelib') return 'anime';
+  return 'ranobe';
+}
+
+const SITE_NAMES = { mangalib: 'MangaLIB', hentailib: 'HentaiLIB', shlib: 'SlashLIB', ranobelib: 'RanobeLIB', animelib: 'AnimeLIB' };
 
 // Страница тайтла: /ru/manga/<slug> или /ru/book/<slug>, без /read/ и других вложенных путей
 function isTitlePage(url) {
   try {
-    return /^\/ru\/(?:manga|book)\/[^/]+\/?$/.test(new URL(url).pathname);
+    return /^\/ru\/(?:manga|book|anime)\/[^/]+\/?$/.test(new URL(url).pathname);
   } catch (e) {
     return false;
   }

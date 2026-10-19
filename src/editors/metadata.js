@@ -7,6 +7,18 @@ let metadataFields = {}; // Состояние чекбоксов полей и�
 let fieldLabelsLoaded = false; // до загрузки fieldLabels из storage их нельзя записывать: пустой tempFieldLabels затёр бы сохранённые
 let tempFieldLabels = {}; // Изменения названий полей, ещё не записанные в storage (пишет saveMetadata)
 let originalFieldLabels = {}; // Оригинальные названия полей из storage (для отмены)
+let publisherLabel = 'Издательство'; // у аниме - «Студия»
+
+// AnimeLIB: художника и «Тип» (манга, манхва...) у аниме нет, а издатель - это студия
+function applyAnimeFields() {
+  for (const fieldId of ['artist', 'country']) {
+    const field = document.querySelector(`.field[data-field="${fieldId}"]`);
+    if (field) field.style.display = 'none';
+  }
+  publisherLabel = 'Студия';
+  const label = document.querySelector('.field[data-field="publisher"] label');
+  if (label) label.textContent = publisherLabel; // переименование пользователя (fieldLabels) ляжет поверх
+}
 
 // Слушатель сообщений для обновления темы
 setupThemeMessageListener();
@@ -17,8 +29,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   await loadAndApplyTheme();
 
   // Применяем акцентный цвет по сайту (из storage)
-  const result = await chrome.storage.local.get(['sourceUrl']);
+  const result = await chrome.storage.local.get(['sourceUrl', 'siteType']);
   const sourceUrl = result.sourceUrl;
+  if (result.siteType === 'anime') applyAnimeFields();
   if (sourceUrl) {
     window.applySiteAccent(sourceUrl);
   }
@@ -518,7 +531,7 @@ function initFieldResetButtons() {
         'status': 'Статус',
         'country': 'Тип',
         'release-format': 'Формат',
-        'publisher': 'Издательство',
+        'publisher': publisherLabel,
         'age-restriction': 'Возрастной рейтинг',
         'description': 'Описание',
         'genres': 'Жанры',
@@ -676,7 +689,7 @@ function resetAllFieldLabels() {
     'year': 'Год',
     'status': 'Статус',
     'country': 'Тип',
-    'publisher': 'Издательство',
+    'publisher': publisherLabel,
     'age-restriction': 'Возрастной рейтинг',
     'description': 'Описание',
     'genres': 'Жанры',

@@ -7,10 +7,11 @@
 // отдают одну вёрстку: a.btn.is-filled.variant-primary[href*="/read/"], классы родителя хешированные (не использовать).
 // SlashLIB не проверялся: та же платформа. Ссылка чтения - /ru/<slug>/read/..., без /manga/.
 const READ_BUTTON = ['a.btn.variant-primary[href*="/read/"]'];
-const SITE_ANCHORS = { mangalib: READ_BUTTON, hentailib: READ_BUTTON, shlib: READ_BUTTON, ranobelib: READ_BUTTON };
+// AnimeLIB (проверено 2026-10-19): та же кнопка, «Начать смотреть» ведёт на /ru/anime/<slug>/watch
+const SITE_ANCHORS = { mangalib: READ_BUTTON, hentailib: READ_BUTTON, shlib: READ_BUTTON, ranobelib: READ_BUTTON, animelib: ['a.btn.variant-primary[href*="/watch"]'] };
 
 // Акцент сайта - имя в ACCENT_COLORS (core/theme.js)
-const SITE_ACCENT = { mangalib: 'manga', hentailib: 'hentai', shlib: 'slash', ranobelib: 'ranobe' };
+const SITE_ACCENT = { mangalib: 'manga', hentailib: 'hentai', shlib: 'slash', ranobelib: 'ranobe', animelib: 'anime' };
 
 const OVERLAY_Z_INDEX = 2147483000;
 const ANCHOR_WAIT_MS = 10000;
@@ -54,7 +55,7 @@ let overlay = null; // { src, host, frame, overflow, onKey, onMessage }
 let closingOverlay = null; // последнее закрытое окно, пока фрейм доживает: { src, host, frame, timer } (его можно открыть снова)
 const closingHosts = new Set(); // все закрытые и ещё не удалённые окна: каждое удаляет свой таймер
 
-// Сообщения iframe -> страница (протокол: { libsaver: true, type, ... }). Окошко «Скачать» понимает ещё 'resize' и 'openPanel' (popoverMessageHandlers)
+// Сообщения iframe -> страница (протокол: { libsaver: true, type, ... }). Окошко «Скачать» понимает ещё 'resize' (popoverMessageHandlers)
 const frameMessageHandlers = { close: () => closeOverlay() };
 
 // Сообщение настоящее, если пришло из нашего iframe с origin расширения
@@ -219,15 +220,11 @@ function resizePopover(height) {
   placePopover();
 }
 
-// Сообщения окошка -> страница. «Подробнее…» открывает окно расширения на нужном разделе
+// Сообщения окошка -> страница. Окно расширения открывает ⚙ рядом с «Скачать», в окошке ссылки на него нет
 const popoverMessageHandlers = {
   close: () => closePopover(),
   resize: ({ height }) => {
     if (Number.isFinite(height)) resizePopover(height);
-  },
-  openPanel: ({ section }) => {
-    closePopover();
-    openSettings(typeof section === 'string' ? section : undefined);
   }
 };
 
@@ -349,7 +346,7 @@ function createButtonsHost(doc, siteKey) {
   buttonPainters.add(paint);
   paint();
 
-  const siteType = siteKey === 'ranobelib' ? 'ranobe' : 'manga';
+  const siteType = siteTypeOf(siteKey);
   const formatKey = formatKeyFor(siteType);
   const refresh = () => chrome.storage.local.get(['accentColor', 'theme', formatKey]).then(stored => {
     const isDark = stored.theme === 'light' ? false : stored.theme === 'system' ? doc.defaultView.matchMedia('(prefers-color-scheme: dark)').matches : true;
@@ -374,11 +371,16 @@ function createButtonsHost(doc, siteKey) {
 // Размер и радиус - как у «Начать читать»; в узкой сетке (две колонки) занимаем свою строку целиком
 function fitToAnchor(doc, host, anchor) {
   const own = doc.defaultView.getComputedStyle(anchor);
+  const columns = doc.defaultView.getComputedStyle(anchor.parentElement).gridTemplateColumns || '';
+  const wide = columns.trim().split(/\s+/).length > 1;
   host.style.setProperty('--ls-height', own.height);
   host.style.setProperty('--ls-radius', own.borderRadius);
-  host.style.setProperty('--ls-width', own.width);
-  const columns = doc.defaultView.getComputedStyle(anchor.parentElement).gridTemplateColumns || '';
-  host.style.gridColumn = columns.trim().split(/\s+/).length > 1 ? '1 / -1' : '';
+  host.style.setProperty('--ls-width', wide ? '100%' : own.width);
+  host.style.gridColumn = wide ? '1 / -1' : '';
+  // Телефонная вёрстка (проверено 2026-10-19): фон шапки (img, z-index 1) лежит поверх ряда, сайт поднимает над ним свои кнопки,
+  // а «Читать» сдвигает в конец (order). Без того же z-index наши кнопки невидимы, без order встают над рядом
+  host.style.order = own.order || '';
+  host.style.zIndex = own.zIndex && own.zIndex !== 'auto' ? own.zIndex : '';
 }
 
 // Идемпотентно: вызывается после каждого изменения страницы. Что открывать по клику, кнопки узнают в момент клика
@@ -533,7 +535,8 @@ function plaqueText(state, siteKeyOfPage) {
   let detail;
   switch (item.status) {
     case 'running': {
-      const eta = state.stats?.etaSeconds != null && state.stats.estimated ? ` · ≈${state.stats.estimated}` : ''; // stats - всегда идущей загрузки
+      const stats = state.stats; // всегда идущей загрузки; скорость и время - когда движок их посчитал
+      const eta = [stats?.speed, stats?.etaSeconds != null && stats.estimated && `≈${stats.estimated}`].filter(Boolean).map(text => ` · ${text}`).join('');
       const percent = progressPercent(item);
       return { title: item.title || item.slug, detail: `${percent}%${eta}${queued ? ` · +${queued} в очереди` : ''}`, percent };
     }

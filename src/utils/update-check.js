@@ -43,14 +43,20 @@ async function fetchLatestRelease(timeoutMs = 30000) {
   }
 }
 
+// Окну расширения внутри страницы сайта Firefox не даёт chrome.tabs: там ссылка открывается обычной новой вкладкой
+function openTab(url) {
+  if (chrome.tabs?.create) chrome.tabs.create({ url });
+  else window.open(url, '_blank', 'noopener');
+}
+
 // Само себя расширение не перезапишет: Firefox ставит подписанный .xpi, открытый во вкладке; в Chrome скачиваем архив
 // и открываем страницу релиза - там сказано, как заменить папку и нажать «Обновить» на chrome://extensions
 function openUpdate(release) {
   const isFirefox = navigator.userAgent.includes('Firefox');
   if (isFirefox && release.xpi) {
-    chrome.tabs.create({ url: release.xpi });
+    openTab(release.xpi);
     return;
   }
   if (!isFirefox && release.zip) chrome.downloads.download({ url: release.zip }).catch(() => {});
-  chrome.tabs.create({ url: release.page });
+  openTab(release.page);
 }

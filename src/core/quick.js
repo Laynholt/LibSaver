@@ -46,7 +46,7 @@ function startQuick() {
   };
   const range = () => [Number(fromSelect.value), Number(toSelect.value)];
   const updateLabel = () => {
-    downloadButton.textContent = downloadLabel(rangeChapterIds(info.chapters, ...range()).length);
+    downloadButton.textContent = downloadLabel(rangeChapterIds(info.chapters, ...range()).length, info.siteType);
     status.textContent = '';
   };
 
@@ -101,10 +101,6 @@ function startQuick() {
   });
   formatSelect.addEventListener('change', () => chrome.storage.local.set({ [formatKeyFor(info.siteType)]: formatSelect.value }));
   $('retry').addEventListener('click', () => load(true));
-  $('more').addEventListener('click', event => {
-    event.preventDefault();
-    post({ type: 'openPanel', section: 'chapters' });
-  });
   $('form').addEventListener('submit', async event => {
     event.preventDefault();
     downloadButton.disabled = true;

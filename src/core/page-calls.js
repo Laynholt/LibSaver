@@ -923,5 +923,16 @@ const PAGE_CALLS = {
               downloadedBranchId
             }
           };
-        }
+        },
+  // AnimeLIB: GET к API сайта из его страницы (Referer ставит браузер, без него API отвечает 403). Только пути /api/...
+  animeApi: async (path) => {
+    if (typeof path !== 'string' || !path.startsWith('/api/')) return { success: false, error: 'Недопустимый запрос' };
+    try {
+      const response = await fetch('https://hapi.hentaicdn.org' + path, { headers: { 'Site-Id': '5' } });
+      if (!response.ok) return { success: false, error: `HTTP ${response.status}` };
+      return { success: true, data: (await response.json()).data };
+    } catch (e) {
+      return { success: false, error: e.toString() };
+    }
+  }
 };

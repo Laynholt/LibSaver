@@ -650,6 +650,11 @@ body.group-mode {
   min-height: 0;
 }
 
+/* Место под полосу прокрутки и справа, и слева - отступы раздела по краям одинаковые */
+html:has(> body.group-mode) {
+  scrollbar-gutter: stable both-edges;
+}
+
 body.group-mode .toolbar {
   display: none;
 }
