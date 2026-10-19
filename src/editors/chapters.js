@@ -1027,7 +1027,7 @@ function updatePriorityList(listElement) {
     
     const count = document.createElement('span');
     count.className = 'translator-priority-count';
-    count.textContent = translatorCounts[translatorKey] + ' гл.';
+    count.textContent = translatorCounts[translatorKey] + (uniqueChapters[0]?.episode ? ' сер.' : ' гл.');
     
     const controls = document.createElement('div');
     controls.className = 'translator-priority-controls';

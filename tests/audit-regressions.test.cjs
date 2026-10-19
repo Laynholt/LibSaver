@@ -767,3 +767,16 @@ test('cover previews: no inline background over the CSS one, badges sit on the l
   assert.match(html, /\.cover-item:has\(img\.loaded\)::after \{\s*display: none;/);
   assert.match(html, /\.cover-item:first-child \.img-container:has\(> img\.loaded\)::before \{\s*content: 'Основная';/);
 });
+
+test('editors fit a phone: no fixed minimum page width, the toolbar and «show more» buttons wrap, anime voiceovers count series', () => {
+  const editorCss = source('src/css/editor.css');
+  for (const file of ['src/css/editor.css', 'src/html/covers.html', 'src/html/chapters.html', 'src/html/metadata.html']) {
+    assert.doesNotMatch(source(file), /min-width:\s*450px/, file);
+  }
+  assert.match(editorCss, /@media \(max-width: 520px\) \{\s*\.toolbar \{\s*height: auto;\s*min-height: 52px;\s*flex-wrap: wrap;/);
+  assert.match(source('src/html/chapters.html'), /\.load-more-buttons \{\s*display: flex;\s*flex-wrap: wrap;/);
+  assert.match(source('src/editors/chapters.js'), /uniqueChapters\[0\]\?\.episode \? ' сер\.' : ' гл\.'/);
+  // полоса прокрутки справа не делает правый отступ больше левого: место под неё с обеих сторон
+  for (const file of ['src/css/editor.css', 'src/css/downloads.css']) assert.match(source(file), /html \{\s*scrollbar-gutter: stable both-edges;/, file);
+  assert.match(source('src/css/settings.css'), /html:has\(> body\.group-mode\) \{\s*scrollbar-gutter: stable both-edges;/);
+});

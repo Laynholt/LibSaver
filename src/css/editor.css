@@ -1,7 +1,12 @@
 /* Стили для редакторов (metadata, chapters, covers) */
 
+/* Разделы окна LibSaver: место под полосу прокрутки и справа, и слева - отступы по краям одинаковые */
+html {
+  scrollbar-gutter: stable both-edges;
+}
+
+
 body {
-  min-width: 450px;
   padding: 0;
   margin: 0;
 }
@@ -428,4 +433,18 @@ label.editing {
 .chapter-item.episode .chapter-title {
   font-size: 14px;
   color: var(--text-primary);
+}
+
+/* Узкое окно (телефон): кнопки и счётчики панели переносятся на новую строку, а не растягивают страницу вбок */
+@media (max-width: 520px) {
+  .toolbar {
+    height: auto;
+    min-height: 52px;
+    flex-wrap: wrap;
+    padding: var(--spacing-sm) var(--spacing-md);
+  }
+  .toolbar-left,
+  .toolbar-right {
+    flex-wrap: wrap;
+  }
 }

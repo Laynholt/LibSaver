@@ -1,4 +1,9 @@
 /* Раздел «Загрузки»: страница живёт в iframe (окно поверх сайта) */
+/* Разделы окна LibSaver: место под полосу прокрутки и справа, и слева - отступы по краям одинаковые */
+html {
+  scrollbar-gutter: stable both-edges;
+}
+
 body {
   background-color: var(--bg-primary);
   color: var(--text-primary);
