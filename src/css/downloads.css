@@ -57,6 +57,10 @@ body {
   cursor: pointer;
 }
 
+.speed-mode-toggle[hidden] {
+  display: none;
+}
+
 .speed-mode-toggle:hover {
   border-color: var(--border-hover);
 }

@@ -690,6 +690,22 @@ test('renderStats prints the protocol fields and escapes them', () => {
   assert.equal(view.renderStats(null), '');
 });
 
+test('renderStats for anime video shows speed and episode bytes, hides empty manga rows', () => {
+  const html = viewContext().renderStats({ video: true, elapsed: '5 сек', estimated: '1 мин', speed: '2.3 МБ/с', episodeDownloaded: '10 из 100 МБ', totalDownloaded: '110 MB' });
+  assert.match(html, /Скорость:<\/span>\s*<span class="analysis-value">2\.3 МБ\/с</);
+  assert.match(html, /Скачано серии/);
+  assert.doesNotMatch(html, /Пропущено картинок|Ошибок/);
+});
+
+test('running queue item shows speed and time left once the engine has them', () => {
+  const view = viewContext();
+  const item = { id: 'a', title: 'T', status: 'running', siteKey: 'animelib', progress: { current: 0, total: 2, part: 0.5 } };
+  const stats = { video: true, speed: '2.0 МБ/с', estimated: '3 мин 5 сек', etaSeconds: 185 };
+  assert.match(view.renderQueueItem(item, stats), /Загрузка · 2\.0 МБ\/с · осталось ≈3 мин 5 сек/);
+  assert.match(view.renderQueueItem(item, { ...stats, estimated: 'Вычисляется...', etaSeconds: null }), /<div class="dl-status">Загрузка<\/div>/);
+  assert.match(view.renderQueueItem({ ...item, status: 'paused' }, stats), /<div class="dl-status">Пауза<\/div>/);
+});
+
 test('renderLog escapes lines, marks errors and keeps only safe colors', () => {
   const view = viewContext();
   const html = view.renderLog([{ line: '<img src=x>', isError: true, color: null }, { line: 'ok', isError: false, color: '#2e7d32' }, { line: 'bad', isError: false, color: 'red;background:url(x)' }]);
@@ -1643,6 +1659,7 @@ test('plaqueText: running shows the percent and the rest of the queue, waiting a
   const withEta = { ...stateOf(queueEntry('running', { progress: { current: 9, total: 20, part: 0.5 } })), stats: { estimated: '3 мин 5 сек', etaSeconds: 185 } };
   assert.deepEqual(text(withEta), { title: 'Title A', detail: '48% · ≈3 мин 5 сек', percent: 48 }); // the page share counts, the time left is shown
   assert.equal(text({ ...withEta, stats: { estimated: 'Вычисляется...', etaSeconds: null } }).detail, '48%');
+  assert.equal(text({ ...withEta, stats: { ...withEta.stats, speed: '2.0 МБ/с' } }).detail, '48% · 2.0 МБ/с · ≈3 мин 5 сек'); // video
   assert.equal(text(stateOf(queueEntry('waiting-tab'))).detail, 'Откройте страницу MangaLIB, чтобы продолжить');
   assert.equal(text(stateOf(queueEntry('waiting-tab', { siteKey: 'shlib' }))).detail, 'Откройте страницу SlashLIB, чтобы продолжить');
   assert.equal(text(stateOf(queueEntry('waiting-decision', { decision: { kind: 'chapter', chapterTitle: 'Г1', message: 'x' } }))).detail, 'Нужно решение: ошибка главы');

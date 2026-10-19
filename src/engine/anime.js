@@ -102,7 +102,7 @@ async function resolveKodik(src, qualityLimit) {
 const pad2 = value => String(value).padStart(2, '0');
 
 // MP4 частями по VIDEO_CHUNK в VIDEO_CONNECTIONS потоков -> Blob. Размер узнаётся запросом первого байта; сервер без Range отдаёт файл целиком.
-// onPart(доля) - ход серии, stop() бросает отмену. Части - Blob: большие браузер держит на диске, а не в памяти страницы
+// onPart(скачано байт, размер файла) - ход серии, stop() бросает отмену. Части - Blob: большие браузер держит на диске, а не в памяти страницы
 async function fetchVideo(url, onPart, stop) {
   const abort = new AbortController();
   const get = async (from, to) => {
@@ -124,7 +124,8 @@ async function fetchVideo(url, onPart, stop) {
   const count = Math.ceil(total / VIDEO_CHUNK);
   const parts = [];
   let next = 0;
-  let done = 0;
+  let doneBytes = 0;
+  onPart(0, total);
   const worker = async () => {
     while (next < count) {
       stop();
@@ -132,9 +133,18 @@ async function fetchVideo(url, onPart, stop) {
       const from = index * VIDEO_CHUNK;
       const to = Math.min(from + VIDEO_CHUNK, total) - 1;
       const response = await get(from, to);
-      parts[index] = await response.blob();
-      if (response.status !== 206 || parts[index].size !== to - from + 1) throw new Error('сервер прислал не ту часть файла');
-      onPart(++done / count);
+      if (response.status !== 206) throw new Error('сервер прислал не ту часть файла');
+      // Тело - по кускам сети: поток на ~0.3 МБ/с качает часть секунд 15, и без этого скорость и ход стояли бы на месте
+      const pieces = [];
+      for (const reader = response.body.getReader(); ;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        pieces.push(value);
+        doneBytes += value.length;
+        onPart(doneBytes, total);
+      }
+      parts[index] = new Blob(pieces);
+      if (parts[index].size !== to - from + 1) throw new Error('сервер прислал не ту часть файла');
     }
   };
   try {
@@ -303,7 +313,40 @@ async function saveTitleExtras(snapshot, folder, hooks) {
   }
 }
 
-// Серии снимка по очереди. hooks: { log(line, isError), progress(done, total, part), isCanceled(), save(url, name, folder) }
+// Скорость - за последние 10 с; оставшееся время - остаток серии и столько же на каждую следующую выбранную
+const SPEED_WINDOW_MS = 10000;
+function createVideoMeter(episodeCount, now = () => Date.now()) {
+  const start = now();
+  const samples = [];
+  let finishedBytes = 0; // серии, скачанные целиком
+  const megabytes = bytes => (bytes / 1048576).toFixed(0);
+  return {
+    // index - номер серии в выборе, done/size - байты этой серии -> строки статистики загрузки
+    update(index, done, size) {
+      const t = now();
+      samples.push({ t, bytes: finishedBytes + done });
+      while (samples.length > 2 && t - samples[1].t >= SPEED_WINDOW_MS) samples.shift();
+      const first = samples[0];
+      const seconds = (t - first.t) / 1000;
+      const speed = seconds >= 1 ? (finishedBytes + done - first.bytes) / seconds : 0;
+      const remaining = Math.max(size - done, 0) + Math.max(episodeCount - index - 1, 0) * size;
+      return {
+        video: true,
+        elapsed: formatTime((t - start) / 1000),
+        estimated: speed > 0 ? formatTime(remaining / speed) : 'Вычисляется...',
+        etaSeconds: speed > 0 ? remaining / speed : null, // по нему окно загрузок и плашка на сайте решают, показывать ли время
+        speed: speed > 0 ? `${(speed / 1048576).toFixed(1)} МБ/с` : 'Вычисляется...',
+        episodeDownloaded: `${megabytes(done)} из ${megabytes(size)} МБ`,
+        totalDownloaded: formatFileSize(finishedBytes + done)
+      };
+    },
+    finishEpisode(size) {
+      finishedBytes += size;
+    }
+  };
+}
+
+// Серии снимка по очереди. hooks: { log(line, isError), progress(done, total, part), stats(строки), isCanceled(), save(url, name, folder) }
 async function downloadAnime(snapshot, hooks) {
   const data = snapshot.downloadData;
   const metadata = data.metadata || {};
@@ -319,6 +362,7 @@ async function downloadAnime(snapshot, hooks) {
   await saveTitleExtras(snapshot, folder, hooks);
   let saved = 0;
   hooks.progress(0, episodes.length, 0);
+  const meter = createVideoMeter(episodes.length);
   for (const [index, episode] of episodes.entries()) {
     stop();
     const label = `Сезон ${episode.volume}. Серия ${episode.number}${episode.name ? '. ' + episode.name : ''}`;
@@ -330,7 +374,11 @@ async function downloadAnime(snapshot, hooks) {
       if (!player) throw new Error('нет плеера Kodik');
       const video = await resolveKodik(player.src, quality);
       stop();
-      let file = await fetchVideo(video.url, part => hooks.progress(index, episodes.length, part), stop);
+      let file = await fetchVideo(video.url, (done, size) => {
+        hooks.progress(index, episodes.length, size ? done / size : 0);
+        hooks.stats?.(meter.update(index, done, size));
+      }, stop);
+      meter.finishEpisode(file.size);
       stop();
       if (withInfo) {
         try {

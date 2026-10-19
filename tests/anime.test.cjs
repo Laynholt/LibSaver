@@ -11,7 +11,7 @@ const source = file => fs.readFileSync(path.join(root, file), 'utf8');
 function animeContext({ fetch, pageCall } = {}) {
   const ctx = vm.createContext({
     console, URL, URLSearchParams, Blob, atob, btoa, setTimeout: fn => fn(), AbortController, TextEncoder,
-    fetch, pageCall,
+    fetch, pageCall, formatTime: seconds => `${Math.round(seconds)} сек`, formatFileSize: bytes => `${bytes} B`,
     canceledError: () => Object.assign(new Error('Загрузка отменена'), { canceled: true })
   });
   ctx.blobs = [];
@@ -122,16 +122,20 @@ test('fetchVideo: the size from the first byte, then 4 MB parts in parallel, ret
     await new Promise(resolve => setImmediate(resolve));
     inFlight--;
     if (from === 4 << 20 && failOnce) { failOnce = false; return { ok: false, status: 503 }; }
-    return { ok: true, status: 206, headers: { get: () => `bytes ${from}-${to}/${file.length}` }, body: { cancel() {} }, blob: async () => new Blob([file.subarray(from, to + 1)]) };
+    const piece = file.subarray(from, to + 1);
+    const body = new ReadableStream({ start(c) { c.enqueue(piece.subarray(0, piece.length >> 1)); c.enqueue(piece.subarray(piece.length >> 1)); c.close(); } });
+    return new Response(body, { status: 206, headers: { 'content-range': `bytes ${from}-${to}/${file.length}` } });
   };
   const ctx = animeContext({ fetch });
   const parts = [];
-  const blob = await ctx.fetchVideo('https://cdn.example/x.mp4', part => parts.push(part), () => {});
+  const blob = await ctx.fetchVideo('https://cdn.example/x.mp4', (done, size) => parts.push([done, size]), () => {});
   assert.equal(blob.size, file.length);
   assert.equal(Buffer.from(await blob.slice(-3).arrayBuffer()).toString(), 'END');
   assert.equal(maxInFlight, 3);
   assert.deepEqual(calls.filter(from => from === 4 << 20).length, 2, 'упавшая часть запрошена ещё раз');
-  assert.equal(parts.at(-1), 1);
+  assert.deepEqual(parts[0], [0, file.length]);
+  assert.deepEqual(parts.at(-1), [file.length, file.length], 'в конце скачан весь файл');
+  assert.ok(parts.some(([done]) => done % (4 << 20) !== 0 && done < file.length), 'ход виден и посреди части');
 
   const whole = animeContext({ fetch: async () => ({ ok: true, status: 200, headers: { get: () => null }, blob: async () => new Blob(['all']) }) });
   assert.equal(await (await whole.fetchVideo('https://cdn.example/x.mp4', () => {}, () => {})).text(), 'all');
@@ -219,6 +223,25 @@ test('only https Kodik hosts are requested: a foreign player, a //host endpoint 
     assert.throws(() => ctx.kodikMp4Url(link), /локальную сеть/, link);
   }
   assert.equal(ctx.kodikMp4Url('//cloud.solodcdn.com/u/720.mp4:hls:manifest.m3u8'), 'https://cloud.solodcdn.com/u/720.mp4');
+});
+
+test('speed over the last 10 s, ETA = the rest of this episode plus as much for each next one', () => {
+  const ctx = animeContext();
+  let t = 0;
+  const meter = ctx.createVideoMeter(3, () => t);
+  const MB = 1048576;
+  const first = meter.update(0, 0, 100 * MB);
+  assert.deepEqual([first.speed, first.etaSeconds], ['Вычисляется...', null]);
+  t = 5000;
+  let row = meter.update(0, 10 * MB, 100 * MB);
+  assert.deepEqual([row.video, row.speed, row.episodeDownloaded, row.elapsed], [true, '2.0 МБ/с', '10 из 100 МБ', '5 сек']);
+  assert.equal(row.estimated, `${Math.round((90 + 2 * 100) / 2)} сек`); // 90 МБ этой серии + 2 серии по 100 МБ при 2 МБ/с
+  assert.equal(row.etaSeconds, (90 + 2 * 100) / 2);
+  meter.finishEpisode(100 * MB);
+  t = 50000;
+  row = meter.update(1, 20 * MB, 100 * MB); // окно 10 с: скорость не по всей загрузке, а по последним замерам
+  assert.equal(row.totalDownloaded, `${120 * MB} B`);
+  assert.equal(row.speed, `${((120 - 10) / 45).toFixed(1)} МБ/с`);
 });
 
 test('downloadAnime stops on cancel and fails when nothing was saved', async () => {
