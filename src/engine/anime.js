@@ -105,19 +105,48 @@ const pad2 = value => String(value).padStart(2, '0');
 // onPart(скачано байт, размер файла) - ход серии, stop() бросает отмену. Части - Blob: большие браузер держит на диске, а не в памяти страницы
 async function fetchVideo(url, onPart, stop) {
   const abort = new AbortController();
-  const get = async (from, to) => {
+  const retry = async task => {
     for (let attempt = 1; ; attempt++) {
       try {
-        const response = await fetch(url, { headers: { Range: `bytes=${from}-${to}` }, signal: abort.signal, credentials: 'omit' });
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
-        return response;
+        return await task();
       } catch (e) {
-        if (abort.signal.aborted || attempt >= VIDEO_CHUNK_TRIES) throw e;
+        if (e.canceled || abort.signal.aborted || attempt >= VIDEO_CHUNK_TRIES) throw e;
         await new Promise(resolve => setTimeout(resolve, 1000 * attempt));
       }
     }
   };
-  const probe = await get(0, 0);
+  const get = async (from, to) => {
+    const response = await fetch(url, { headers: { Range: `bytes=${from}-${to}` }, signal: abort.signal, credentials: 'omit' });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    return response;
+  };
+  // Тело части - по кускам сети: поток на ~0.3 МБ/с качает часть секунд 15, а ход и скорость видны сразу.
+  // Перед каждым куском - «Пауза» и отмена (download.js), они срабатывают тут же. Оборвалась часть - её байты из хода вычитаются
+  const part = (from, to) => retry(async () => {
+    let got = 0;
+    try {
+      const response = await get(from, to);
+      if (response.status !== 206) throw new Error('сервер прислал не ту часть файла');
+      const pieces = [];
+      for (const reader = response.body.getReader(); ;) {
+        await checkPause();
+        stop();
+        const { done, value } = await reader.read();
+        if (done) break;
+        pieces.push(value);
+        got += value.length;
+        doneBytes += value.length;
+        onPart(doneBytes, total);
+      }
+      const blob = new Blob(pieces);
+      if (blob.size !== to - from + 1) throw new Error('сервер прислал не ту часть файла');
+      return blob;
+    } catch (e) {
+      doneBytes -= got;
+      throw e;
+    }
+  });
+  const probe = await retry(() => get(0, 0));
   const total = probe.status === 206 ? Number(probe.headers.get('content-range')?.match(/\/(\d+)$/)?.[1]) : 0;
   if (!total) return probe.blob();
   probe.body?.cancel();
@@ -131,20 +160,7 @@ async function fetchVideo(url, onPart, stop) {
       stop();
       const index = next++;
       const from = index * VIDEO_CHUNK;
-      const to = Math.min(from + VIDEO_CHUNK, total) - 1;
-      const response = await get(from, to);
-      if (response.status !== 206) throw new Error('сервер прислал не ту часть файла');
-      // Тело - по кускам сети: поток на ~0.3 МБ/с качает часть секунд 15, и без этого скорость и ход стояли бы на месте
-      const pieces = [];
-      for (const reader = response.body.getReader(); ;) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        pieces.push(value);
-        doneBytes += value.length;
-        onPart(doneBytes, total);
-      }
-      parts[index] = new Blob(pieces);
-      if (parts[index].size !== to - from + 1) throw new Error('сервер прислал не ту часть файла');
+      parts[index] = await part(from, Math.min(from + VIDEO_CHUNK, total) - 1);
     }
   };
   try {
@@ -313,8 +329,7 @@ async function saveTitleExtras(snapshot, folder, hooks) {
   }
 }
 
-// Скорость - за последние 10 с; оставшееся время - остаток серии и столько же на каждую следующую выбранную
-const SPEED_WINDOW_MS = 10000;
+// Скорость - trackSpeed из download.js (последние 10 с); оставшееся время - остаток серии и столько же на каждую следующую выбранную
 function createVideoMeter(episodeCount, now = () => Date.now()) {
   const start = now();
   const samples = [];
@@ -324,18 +339,14 @@ function createVideoMeter(episodeCount, now = () => Date.now()) {
     // index - номер серии в выборе, done/size - байты этой серии -> строки статистики загрузки
     update(index, done, size) {
       const t = now();
-      samples.push({ t, bytes: finishedBytes + done });
-      while (samples.length > 2 && t - samples[1].t >= SPEED_WINDOW_MS) samples.shift();
-      const first = samples[0];
-      const seconds = (t - first.t) / 1000;
-      const speed = seconds >= 1 ? (finishedBytes + done - first.bytes) / seconds : 0;
+      const speed = trackSpeed(samples, t, finishedBytes + done);
       const remaining = Math.max(size - done, 0) + Math.max(episodeCount - index - 1, 0) * size;
       return {
         video: true,
         elapsed: formatTime((t - start) / 1000),
         estimated: speed > 0 ? formatTime(remaining / speed) : 'Вычисляется...',
         etaSeconds: speed > 0 ? remaining / speed : null, // по нему окно загрузок и плашка на сайте решают, показывать ли время
-        speed: speed > 0 ? `${(speed / 1048576).toFixed(1)} МБ/с` : 'Вычисляется...',
+        speed: speed > 0 ? formatSpeed(speed) : undefined, // неизвестную окна не показывают
         episodeDownloaded: `${megabytes(done)} из ${megabytes(size)} МБ`,
         totalDownloaded: formatFileSize(finishedBytes + done)
       };

@@ -44,9 +44,9 @@ function renderSiteLinks(siteKey) {
     .join(' · ');
 }
 
-// Скорость и оставшееся время идущей загрузки: пока движок их не посчитал (etaSeconds), не показываем
+// Скорость и оставшееся время идущей загрузки: каждое - когда движок его посчитал (speed есть, etaSeconds не null)
 function liveStats(stats) {
-  return stats?.etaSeconds != null && stats.estimated ? [stats.speed, `осталось ≈${stats.estimated}`].filter(Boolean).join(' · ') : '';
+  return [stats?.speed, stats?.etaSeconds != null && stats.estimated && `осталось ≈${stats.estimated}`].filter(Boolean).join(' · ');
 }
 
 // stats - статистика идущей загрузки (она одна)
@@ -139,12 +139,39 @@ function setHtml(id, html) {
   return true;
 }
 
+// Карточки очереди приходят до 4 раз в секунду: меняем только изменившиеся элементы. Кнопку, пересозданную между
+// нажатием и отпусканием мыши, браузер не засчитывал за click - «Отменить» срабатывало не с первого раза
+function patchChildren(parent, nodes) {
+  while (parent.children.length > nodes.length) parent.lastElementChild.remove();
+  nodes.forEach((node, i) => {
+    const old = parent.children[i];
+    if (!old) parent.append(node);
+    else if (old.outerHTML === node.outerHTML) return;
+    // Та же обёртка из одних элементов (карточка, строка кнопок) - сверяем её детей, иначе (текст, атрибуты) - заменяем
+    else if (old.cloneNode(false).outerHTML === node.cloneNode(false).outerHTML && [...node.childNodes].every(child => child.nodeType === 1)) patchChildren(old, [...node.children]);
+    else old.replaceWith(node);
+  });
+}
+
+function setListHtml(html) {
+  if (rendered['dl-list'] === html) return;
+  rendered['dl-list'] = html;
+  const list = document.getElementById('dl-list');
+  if (!html || !list.firstElementChild) { // список был или стал пустым - нажимать нечего, просто заменяем
+    list.innerHTML = html;
+    return;
+  }
+  const fresh = document.createElement('template');
+  fresh.innerHTML = html;
+  patchChildren(list, [...fresh.content.children]);
+}
+
 function renderState({ items = [], stats = null, logTail = [] }) {
   const byId = id => document.getElementById(id);
   byId('dl-empty').hidden = items.length > 0;
   finishedIds = items.filter(item => !ACTIVE_STATUSES.includes(item.status)).map(item => item.id);
   byId('dl-clear-finished').hidden = !finishedIds.length;
-  setHtml('dl-list', items.map(item => renderQueueItem(item, stats)).join(''));
+  setListHtml(items.map(item => renderQueueItem(item, stats)).join(''));
   // «Ускорить» - про главы и картинки: над AnimeLIB прячем, пока в очереди нет глав
   byId('speed-mode').hidden = /animelib\./.test(sourceUrl) && !items.some(item => ACTIVE_STATUSES.includes(item.status) && item.siteKey !== 'animelib');
   byId('dl-current').hidden = !logTail.length && !stats;

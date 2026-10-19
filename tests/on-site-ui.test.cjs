@@ -220,7 +220,7 @@ test('stats event carries the protocol fields and takes over from storage', () =
   ctx.updateStatisticsDisplay();
   const { type, stats } = events.at(-1);
   assert.equal(type, 'stats');
-  assert.deepEqual(Object.keys(stats).sort(), ['elapsed', 'errors', 'estimated', 'etaSeconds', 'fileSize', 'maxRequestsPerMinute', 'oldFormatChapters', 'requestsPerMinute', 'skippedChapters', 'skippedImages', 'totalChapters', 'totalCovers', 'totalImages']);
+  assert.deepEqual(Object.keys(stats).sort(), ['elapsed', 'errors', 'estimated', 'etaSeconds', 'fileSize', 'maxRequestsPerMinute', 'oldFormatChapters', 'requestsPerMinute', 'skippedChapters', 'skippedImages', 'speed', 'totalChapters', 'totalCovers', 'totalImages']);
   assert.deepEqual([stats.errors, stats.requestsPerMinute, stats.maxRequestsPerMinute, stats.oldFormatChapters], [3, 0, 0, 3]);
 });
 
@@ -702,7 +702,8 @@ test('running queue item shows speed and time left once the engine has them', ()
   const item = { id: 'a', title: 'T', status: 'running', siteKey: 'animelib', progress: { current: 0, total: 2, part: 0.5 } };
   const stats = { video: true, speed: '2.0 МБ/с', estimated: '3 мин 5 сек', etaSeconds: 185 };
   assert.match(view.renderQueueItem(item, stats), /Загрузка · 2\.0 МБ\/с · осталось ≈3 мин 5 сек/);
-  assert.match(view.renderQueueItem(item, { ...stats, estimated: 'Вычисляется...', etaSeconds: null }), /<div class="dl-status">Загрузка<\/div>/);
+  assert.match(view.renderQueueItem(item, { ...stats, estimated: 'Вычисляется...', etaSeconds: null }), /<div class="dl-status">Загрузка · 2\.0 МБ\/с<\/div>/); // manga: speed before the ETA
+  assert.match(view.renderQueueItem(item, { estimated: 'Вычисляется...', etaSeconds: null }), /<div class="dl-status">Загрузка<\/div>/);
   assert.match(view.renderQueueItem({ ...item, status: 'paused' }, stats), /<div class="dl-status">Пауза<\/div>/);
 });
 

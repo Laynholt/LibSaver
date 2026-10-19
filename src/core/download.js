@@ -184,7 +184,8 @@ function formatChapterTitle(vol, num, name, tocFormat, customTocFormat, hideChap
 
 // Интервал обновления статистики
 let statsUpdateInterval = null;
-let totalBytesDownloaded = 0; // Общее количество скачанных байт
+let totalBytesDownloaded = 0; // Скачано байт: тексты глав и картинки (addDownloadedBytes) - для скорости
+let speedSamples = [];
 
 // Состояние обработки ошибок
 let currentErrorChapter = null; // Текущая глава с ошибкой
@@ -455,6 +456,24 @@ function reportProgress() {
     emit({ type: 'progress', current, total, part });
 }
 
+function addDownloadedBytes(bytes) {
+    totalBytesDownloaded += bytes;
+}
+
+// Скорость по замерам { t, bytes } (скачано всего к моменту t) за последние 10 с, байт/с; 0, пока замеры короче секунды.
+// Общая с загрузкой серий AnimeLIB (engine/anime.js)
+const SPEED_WINDOW_MS = 10000;
+function trackSpeed(samples, t, bytes) {
+    samples.push({ t, bytes });
+    while (samples.length > 2 && t - samples[1].t >= SPEED_WINDOW_MS) samples.shift();
+    const seconds = (t - samples[0].t) / 1000;
+    return seconds >= 1 ? (bytes - samples[0].bytes) / seconds : 0;
+}
+
+function formatSpeed(bytesPerSecond) {
+    return bytesPerSecond >= 1048576 ? `${(bytesPerSecond / 1048576).toFixed(1)} МБ/с` : `${Math.round(bytesPerSecond / 1024)} КБ/с`;
+}
+
 // Секунды до конца или null, пока скорость не ясна. Время с последнего отчёта входит в оценку: застой растит её
 function estimateRemainingSeconds(samples, now) {
     const first = samples[0], last = samples[samples.length - 1];
@@ -535,6 +554,7 @@ function resetDownloadState() {
     // Очищаем статистику через statistics.js
     window.resetStatistics();
     totalBytesDownloaded = 0;
+    speedSamples = [];
     
     // Очищаем RateLimiter
     requestsInLastMinute = 0;
@@ -631,6 +651,7 @@ async function startDownload(snapshot) {
         // Инициализируем статистику через statistics.js
         window.setDownloadStartTime();
         totalBytesDownloaded = 0;
+        speedSamples = [];
         progressSamples = [];
 
         // Сбрасываем счётчики пауз
@@ -683,6 +704,7 @@ async function startDownload(snapshot) {
             incrementErrorCount: window.incrementErrorCount,
             incrementSkippedImagesCount: window.incrementSkippedImagesCount,
             addFileSize: window.addFileSize,
+            addDownloadedBytes: addDownloadedBytes,
             updateChapterIndex: window.updateChapterIndex,
             recordChapterTime: window.recordChapterTime,
             debug: debugMode, // Передаем флаг debug
@@ -864,6 +886,7 @@ function updateStatisticsDisplay() {
             elapsed: formatTime(downloadStartTime ? (Date.now() - downloadStartTime) / 1000 : 0),
             estimated: calculateEstimatedTime(),
             etaSeconds: estimateRemainingSeconds(progressSamples, Date.now()),
+            speed: downloadSpeedText(),
             fileSize: formatFileSize(window.getStatisticsValue('totalFileSize')),
             errors: window.getStatisticsValue('totalErrorCount'),
             skippedChapters: window.getStatisticsValue('skippedChaptersCount'),
@@ -904,6 +927,12 @@ function formatFileSize(bytes) {
     } else {
         return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
     }
+}
+
+// undefined, пока скачивать нечего (ждём вкладку, решение, стоим на паузе): окна такую строку не показывают
+function downloadSpeedText() {
+    const speed = trackSpeed(speedSamples, Date.now(), totalBytesDownloaded);
+    return speed > 0 ? formatSpeed(speed) : undefined;
 }
 
 function calculateEstimatedTime() {

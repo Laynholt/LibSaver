@@ -74,6 +74,7 @@ async function runTitle(item, snapshot) {
   logTail = [];
   try {
     if (snapshot.siteType === 'anime') {
+      downloadControl.resume(); // пауза общая с download.js (её ждёт fetchVideo): прошлая загрузка могла кончиться на паузе
       return await downloadAnime(snapshot, {
         log: (line, isError) => onDownloadEvent({ type: 'log', line, isError }),
         progress: (done, total, part) => onDownloadEvent({ type: 'progress', current: done, total, part }),

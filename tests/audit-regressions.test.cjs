@@ -265,7 +265,7 @@ function downloadHarness({ fail = false, partial = false, noDownloadData = false
     resetDownloadState: noop, calculateInitialSpeed: () => 60, updateStatisticsDisplay: noop,
     formatChapterTitle: () => 'Test', trackRequest: noop, trackImageRequest: noop, updateProgress: noop, updateImageProgress: noop, progressSamples: [], throwIfCanceled: noop,
     handleChapterError: noop, handleImageError: noop, onTranslatorSelected: noop,
-    addLog: line => logs.push(line), setExactFileSize: noop, saveAs: () => saved++,
+    addLog: line => logs.push(line), setExactFileSize: noop, addDownloadedBytes: noop, saveAs: () => saved++,
     setInterval: () => { const id = timers.size + 1; timers.add(id); return id; }, clearInterval: id => timers.delete(id),
     getFormatter: () => ({ format: async () => {
       if (fail) throw new Error('Synthetic formatter failure');

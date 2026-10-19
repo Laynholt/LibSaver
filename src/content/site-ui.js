@@ -535,8 +535,8 @@ function plaqueText(state, siteKeyOfPage) {
   let detail;
   switch (item.status) {
     case 'running': {
-      const stats = state.stats; // всегда идущей загрузки; speed есть только у видео
-      const eta = stats?.etaSeconds != null && stats.estimated ? `${stats.speed ? ` · ${stats.speed}` : ''} · ≈${stats.estimated}` : '';
+      const stats = state.stats; // всегда идущей загрузки; скорость и время - когда движок их посчитал
+      const eta = [stats?.speed, stats?.etaSeconds != null && stats.estimated && `≈${stats.estimated}`].filter(Boolean).map(text => ` · ${text}`).join('');
       const percent = progressPercent(item);
       return { title: item.title || item.slug, detail: `${percent}%${eta}${queued ? ` · +${queued} в очереди` : ''}`, percent };
     }

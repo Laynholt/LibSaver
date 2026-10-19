@@ -11,13 +11,14 @@ const source = file => fs.readFileSync(path.join(root, file), 'utf8');
 function animeContext({ fetch, pageCall } = {}) {
   const ctx = vm.createContext({
     console, URL, URLSearchParams, Blob, atob, btoa, setTimeout: fn => fn(), AbortController, TextEncoder,
-    fetch, pageCall, formatTime: seconds => `${Math.round(seconds)} сек`, formatFileSize: bytes => `${bytes} B`,
+    fetch, pageCall, window: { getStatisticsValue: () => 0 },
     canceledError: () => Object.assign(new Error('Загрузка отменена'), { canceled: true })
   });
   ctx.blobs = [];
   ctx.URL.createObjectURL = blob => (ctx.blobs.push(blob), 'blob:video');
   ctx.URL.revokeObjectURL = () => {};
-  vm.runInContext(source('src/engine/anime.js'), ctx);
+  // В движке download.js грузится раньше: формат времени и размера, скорость, «Пауза» - его
+  vm.runInContext(source('src/core/download.js') + '\nthis.downloadControl = downloadControl;' + source('src/engine/anime.js'), ctx);
   return ctx;
 }
 
@@ -105,6 +106,45 @@ test('tags go into moov/udta: the old udta is replaced, chunk offsets follow a g
     assert.equal(new DataView(tagged.buffer).getUint32(tves + 20), 2, 'номер серии - целое');
   }
   await assert.rejects(ctx.tagMp4(new Blob([ctx.mp4Box('mdat', new Uint8Array(4))]), tags), /нет блока moov/);
+});
+
+// Сервер видео: Range -> 206, тело двумя кусками; breakOnce(from) - тело этой части один раз обрывается после первого куска
+function videoServer(file, { breakOnce = null } = {}) {
+  const broken = new Set();
+  return async (url, { headers }) => {
+    const [from, to] = headers.Range.match(/(\d+)-(\d+)/).slice(1).map(Number);
+    const piece = file.subarray(from, to + 1);
+    const cut = from === breakOnce && !broken.has(from) && broken.add(from);
+    const body = new ReadableStream({ start(c) { c.enqueue(piece.subarray(0, piece.length >> 1)); if (cut) c.error(new Error('обрыв')); else { c.enqueue(piece.subarray(piece.length >> 1)); c.close(); } } });
+    return new Response(body, { status: 206, headers: { 'content-range': `bytes ${from}-${to}/${file.length}` } });
+  };
+}
+
+test('fetchVideo: cancel stops in the middle of a part, pause holds the reads until resume', async () => {
+  const file = Buffer.alloc((4 << 20) * 3, 1);
+  let checks = 0;
+  const ctx = animeContext({ fetch: videoServer(file) });
+  await assert.rejects(ctx.fetchVideo('https://cdn.example/x.mp4', () => {}, () => { if (++checks > 2) throw ctx.canceledError(); }), error => error.canceled);
+
+  const paused = animeContext({ fetch: videoServer(file) });
+  paused.setTimeout = setTimeout; // checkPause ждёт по 100 мс
+  const progress = [];
+  paused.downloadControl.pause();
+  const run = paused.fetchVideo('https://cdn.example/x.mp4', done => progress.push(done), () => {});
+  await new Promise(resolve => setTimeout(resolve, 250));
+  assert.deepEqual(progress, [0], 'на паузе ни байта');
+  paused.downloadControl.resume();
+  assert.equal((await run).size, file.length);
+});
+
+test('fetchVideo: a part cut off mid-body is fetched again and its bytes are not counted twice', async () => {
+  const file = Buffer.alloc((4 << 20) * 2, 2);
+  const progress = [];
+  const ctx = animeContext({ fetch: videoServer(file, { breakOnce: 4 << 20 }) });
+  const blob = await ctx.fetchVideo('https://cdn.example/x.mp4', done => progress.push(done), () => {});
+  assert.equal(blob.size, file.length);
+  assert.equal(progress.at(-1), file.length);
+  assert.ok(Math.max(...progress) <= file.length);
 });
 
 test('fetchVideo: the size from the first byte, then 4 MB parts in parallel, retried; no Range - the whole file', async () => {
@@ -231,16 +271,16 @@ test('speed over the last 10 s, ETA = the rest of this episode plus as much for 
   const meter = ctx.createVideoMeter(3, () => t);
   const MB = 1048576;
   const first = meter.update(0, 0, 100 * MB);
-  assert.deepEqual([first.speed, first.etaSeconds], ['Вычисляется...', null]);
+  assert.deepEqual([first.speed, first.etaSeconds, first.estimated], [undefined, null, 'Вычисляется...']);
   t = 5000;
   let row = meter.update(0, 10 * MB, 100 * MB);
   assert.deepEqual([row.video, row.speed, row.episodeDownloaded, row.elapsed], [true, '2.0 МБ/с', '10 из 100 МБ', '5 сек']);
-  assert.equal(row.estimated, `${Math.round((90 + 2 * 100) / 2)} сек`); // 90 МБ этой серии + 2 серии по 100 МБ при 2 МБ/с
-  assert.equal(row.etaSeconds, (90 + 2 * 100) / 2);
+  assert.equal(row.etaSeconds, (90 + 2 * 100) / 2); // 90 МБ этой серии + 2 серии по 100 МБ при 2 МБ/с
+  assert.equal(row.estimated, '2 мин 25 сек');
   meter.finishEpisode(100 * MB);
   t = 50000;
   row = meter.update(1, 20 * MB, 100 * MB); // окно 10 с: скорость не по всей загрузке, а по последним замерам
-  assert.equal(row.totalDownloaded, `${120 * MB} B`);
+  assert.equal(row.totalDownloaded, '120.00 MB');
   assert.equal(row.speed, `${((120 - 10) / 45).toFixed(1)} МБ/с`);
 });
 

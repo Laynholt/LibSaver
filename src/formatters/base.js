@@ -241,7 +241,9 @@ class BaseFormatter {
           continue;
         }
 
-        const json = await resp.json();
+        const body = await resp.arrayBuffer();
+        this.options.addDownloadedBytes?.(body.byteLength); // для скорости загрузки
+        const json = JSON.parse(new TextDecoder().decode(body));
 
         if (!json || typeof json !== 'object') {
           continue;
@@ -348,6 +350,7 @@ class BaseFormatter {
       // Получаем оригинальный размер в байтах для статистики
       const originalBlob = await (await fetch(base64)).blob();
       const originalSize = originalBlob.size;
+      this.options.addDownloadedBytes?.(originalSize); // для скорости загрузки
       const originalType = originalBlob.type;
       const originalFormat = originalType.replace('image/', '').toUpperCase();
       const originalKB = (originalSize / 1024).toFixed(1);
