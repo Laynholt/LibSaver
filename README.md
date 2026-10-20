@@ -11,7 +11,6 @@
 
 [![Release](https://img.shields.io/github/v/release/dfy-dpg/LibSaver?sort=date&display_name=tag&style=for-the-badge&label=Релиз&color=ef6c00)](https://github.com/dfy-dpg/LibSaver/releases/latest)
 [![License](https://img.shields.io/github/license/dfy-dpg/LibSaver?style=for-the-badge&label=Лицензия&color=bd0000)](LICENSE)
-[![Stars](https://img.shields.io/github/stars/dfy-dpg/LibSaver?style=for-the-badge&label=★&color=f5b301)](https://github.com/dfy-dpg/LibSaver/stargazers)
 
 ![MangaLIB](https://img.shields.io/badge/MangaLIB-ef6c00?style=flat-square)
 ![HentaiLIB](https://img.shields.io/badge/HentaiLIB-b71c1c?style=flat-square)
