@@ -724,9 +724,9 @@ test('each status offers exactly its commands, all addressed to the item', () =>
 
 test('copied log starts with the LibSaver version and the title, then the lines', () => {
   const view = viewContext();
-  view.chrome.runtime = { getManifest: () => ({ version: '2.2' }) };
+  view.chrome.runtime = { getManifest: () => ({ version: '2.2.0' }) };
   const text = view.logText({ title: 'Тайтл', format: 'epub' }, [{ line: '[12:00] a' }, { line: '[12:01] b', isError: true }]);
-  assert.equal(text, 'LibSaver 2.2\nТайтл (EPUB)\n\n[12:00] a\n[12:01] b');
+  assert.equal(text, 'LibSaver 2.2.0\nТайтл (EPUB)\n\n[12:00] a\n[12:01] b');
 });
 
 test('progress shows chapters done out of total; a finished title with fewer chapters is reported as partial', () => {
