@@ -1,3 +1,15 @@
+// Настоящий тип картинки по первым байтам файла; null - формат не распознан
+async function sniffImageType(blob) {
+  const bytes = new Uint8Array(await blob.slice(0, 12).arrayBuffer());
+  const text = (from, to) => String.fromCharCode(...bytes.slice(from, to));
+  if (bytes[0] === 0xFF && bytes[1] === 0xD8 && bytes[2] === 0xFF) return 'image/jpeg';
+  if (bytes[0] === 0x89 && text(1, 4) === 'PNG') return 'image/png';
+  if (text(0, 4) === 'GIF8') return 'image/gif';
+  if (text(0, 4) === 'RIFF' && text(8, 12) === 'WEBP') return 'image/webp';
+  if (text(4, 8) === 'ftyp' && (text(8, 12) === 'avif' || text(8, 12) === 'avis')) return 'image/avif';
+  return null;
+}
+
 // Самое частое значение массива (при равенстве — встреченное первым); пустой массив → undefined
 function mostCommonValue(values) {
   const counts = new Map();
@@ -69,22 +81,6 @@ class BaseFormatter {
       totalOriginalSize: 0,
       totalFinalSize: 0
     };
-  }
-
-  // Получить строку статистики форматов
-  getFormatsString(formats) {
-    const entries = Object.entries(formats).sort((a, b) => b[1] - a[1]);
-    return entries.map(([format, count]) => `${count} - ${format}`).join(', ');
-  }
-
-  // Логировать итоговую статистику по картинкам (отключено по запросу пользователя)
-  logImageStats() {
-    // Функция оставлена для внутреннего использования, но не логирует
-  }
-
-  // Логировать итоговую статистику по обложкам (отключено по запросу пользователя)
-  logCoverStats() {
-    // Функция оставлена для внутреннего использования, но не логирует
   }
 
   async format(chapters, metadata) {
@@ -348,7 +344,9 @@ class BaseFormatter {
       });
 
       // Получаем оригинальный размер в байтах для статистики
-      const originalBlob = await (await fetch(base64)).blob();
+      // Сервер подписывает WebP/AVIF как image/jpeg: тип берём по первым байтам, иначе PDF падает «SOI not found», а EPUB пишет WebP в .jpg
+      const fetchedBlob = await (await fetch(base64)).blob();
+      const originalBlob = new Blob([fetchedBlob], { type: (await sniffImageType(fetchedBlob)) || fetchedBlob.type });
       const originalSize = originalBlob.size;
       this.options.addDownloadedBytes?.(originalSize); // для скорости загрузки
       const originalType = originalBlob.type;
@@ -606,7 +604,7 @@ class BaseFormatter {
       }
 
       // Без изменений - возвращаем оригинальный blob
-      const blob = await (await fetch(base64)).blob();
+      const blob = originalBlob;
 
       // Логируем итоговую картинку
       if (this.options.addLog) {
@@ -676,12 +674,14 @@ class BaseFormatter {
     const attachmentMap = {};
     if (Array.isArray(attachments)) {
       for (const att of attachments) {
-        if (att.name && att.url) {
-          attachmentMap[att.name] = {
-            url: att.url.startsWith('http') ? att.url : `https://ranobelib.me${att.url}`,
-            extension: att.extension || 'jpg'
-          };
-        }
+        if (!att.url) continue;
+        const entry = {
+          url: att.url.startsWith('http') ? att.url : `https://ranobelib.me${att.url}`,
+          extension: att.extension || 'jpg'
+        };
+        // картинку в тексте главы ищут по UUID (новый формат) или по имени файла (старый)
+        if (att.id) attachmentMap[att.id] = entry;
+        if (att.name) attachmentMap[att.name] = entry;
       }
     }
     return attachmentMap;
@@ -700,13 +700,14 @@ class BaseFormatter {
 
 
 
+  // Обложка - строка-адрес или объект редактора обложек; у загруженного пользователем файла есть dataUrl, он важнее url
   extractCoverUrl(coverUrl) {
     if (!coverUrl) return null;
     
-    if (typeof coverUrl === 'object' && coverUrl.url) {
-      return coverUrl.url;
-    } else if (typeof coverUrl === 'object' && coverUrl.dataUrl) {
+    if (typeof coverUrl === 'object' && coverUrl.dataUrl) {
       return coverUrl.dataUrl;
+    } else if (typeof coverUrl === 'object' && coverUrl.url) {
+      return coverUrl.url;
     }
     
     if (typeof coverUrl === 'string' && coverUrl) {

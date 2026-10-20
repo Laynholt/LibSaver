@@ -159,12 +159,7 @@ class Fb2Formatter extends BaseFormatter {
       const firstCover = allCovers[0];
 
       if (firstCover) {
-        // Если это объект с dataUrl (локальный файл), используем dataUrl
-        const coverUrl = typeof firstCover === 'object' && firstCover.dataUrl
-          ? firstCover.dataUrl
-          : firstCover;
-
-        const actualUrl = this.extractCoverUrl(coverUrl);
+        const actualUrl = this.extractCoverUrl(firstCover);
         if (actualUrl) {
           try {
             const blob = await this.downloadCoverWithFallback(actualUrl, coverQuality);

@@ -5,21 +5,11 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   }
 });
 
-// Проверка обновлений в popup. Окно открывают часто, а GitHub API без ключа даёт 60 запросов в час - релиз помним 6 часов
-const UPDATE_CHECK_INTERVAL = 6 * 60 * 60 * 1000;
-
+// Обновление из фоновой проверки (раз в 6 часов, background.js): GitHub отсюда не спрашиваем
 async function checkForUpdatesPopup() {
   try {
-    const { updateNotifications, lastUpdateCheck } = await chrome.storage.local.get(['updateNotifications', 'lastUpdateCheck']);
-    if (updateNotifications === false) return;
-
-    let release = lastUpdateCheck?.release;
-    if (!release || !(Date.now() - lastUpdateCheck.at < UPDATE_CHECK_INTERVAL)) {
-      release = await fetchLatestRelease();
-      await chrome.storage.local.set({ lastUpdateCheck: { at: Date.now(), release } });
-    }
-
-    if (compareVersions(release.version, chrome.runtime.getManifest().version) > 0) {
+    const release = await storedUpdate();
+    if (release) {
       showToast(`Доступно обновление v${release.version}`, 'update', 8000, () => openUpdate(release));
     }
   } catch (error) {
@@ -202,26 +192,3 @@ document.getElementById('btn-animelib').addEventListener('click', async () => {
   await chrome.tabs.create({ url: 'https://animelib.org' });
 });
 
-// Секретное переключение логирования storage: 10 нажатий на текст сообщения за 8 секунд
-let secretClicks = [];
-const SECRET_CLICK_THRESHOLD = 10;
-const SECRET_CLICK_WINDOW = 8000; // 8 секунд
-
-document.getElementById('error-text').addEventListener('click', () => {
-  const now = Date.now();
-
-  // Удаляем клики старше 8 секунд
-  secretClicks = secretClicks.filter(click => now - click < SECRET_CLICK_WINDOW);
-  secretClicks.push(now);
-
-  if (secretClicks.length >= SECRET_CLICK_THRESHOLD) {
-    chrome.storage.session.get(['isLoggingEnabled'], (result) => {
-      if (result.isLoggingEnabled) {
-        chrome.runtime.sendMessage({ action: 'disableStorageLogging' });
-      } else {
-        chrome.runtime.sendMessage({ action: 'enableStorageLogging' });
-      }
-    });
-    secretClicks = []; // Сбрасываем
-  }
-});

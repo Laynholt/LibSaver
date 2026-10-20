@@ -1,8 +1,8 @@
 /* Стили для редакторов (metadata, chapters, covers) */
 
-/* Разделы окна LibSaver: место под полосу прокрутки и справа, и слева - отступы по краям одинаковые */
+/* Место под полосу прокрутки только справа: с both-edges панель кнопок во всю ширину отступала от левого края */
 html {
-  scrollbar-gutter: stable both-edges;
+  scrollbar-gutter: stable;
 }
 
 
@@ -132,6 +132,11 @@ body {
   color: var(--text-secondary);
 }
 
+/* «от» и «до» разной ширины: без общей ширины подписи списки начинались бы с разного отступа */
+.range-row span {
+  min-width: 2em;
+}
+
 .range-row select {
   flex: 1;
   min-width: 0;
@@ -233,9 +238,12 @@ body {
   width: 100%;
 }
 
-/* Подпись поля на одной линии с его кнопками (общее правило label прижимает её к верху) */
+/* Подпись поля метаданных - ручка перетаскивания поля, на одной линии с его кнопками.
+   Только здесь: подписи «от/до» диапазона глав тоже <label>, но их не тащат */
 .field-header label {
   align-self: center;
+  cursor: grab;
+  user-select: none;
 }
 
 .field-header-buttons {
@@ -243,22 +251,16 @@ body {
   gap: var(--spacing-xs);
 }
 
-label {
-  align-self: flex-start;
-  cursor: grab;
-  user-select: none;
-}
-
-label:hover {
+.field-header label:hover {
   color: var(--text-primary);
 }
 
-label:active {
+.field-header label:active {
   cursor: grabbing;
   color: var(--text-primary);
 }
 
-label.editing {
+.field-header label.editing {
   cursor: text;
   user-select: text;
   outline: none;

@@ -1,121 +1,43 @@
 // Вызовы в странице сайта (выбор вкладки, PAGE_CALLS). В Firefox background.js - часть фоновой страницы
 // engine/background-firefox.html: эти скрипты она грузит своими <script>, importScripts там нет
-if (typeof importScripts === 'function') importScripts('core/page-calls.js', 'utils/page-call.js');
+if (typeof importScripts === 'function') importScripts('core/page-calls.js', 'utils/page-call.js', 'utils/update-check.js');
 
-// Хранилище auth токенов с TTL
-const authTokens = {};
-const TOKEN_TTL = 3600000; // 1 час в миллисекундах
+// Обновления: раз в 6 часов фон запоминает последний релиз в lastUpdateCheck (его читают окошко и панель на сайте)
+// и ставит «NEW» на иконку. GitHub API без ключа даёт 60 запросов в час - чаще не спрашиваем
+const UPDATE_ALARM = 'libsaver-update-check';
 
-// Очистка истекших токенов
-function cleanupExpiredTokens() {
-  const now = Date.now();
-  for (const key in authTokens) {
-    if (authTokens[key].timestamp && (now - authTokens[key].timestamp > TOKEN_TTL)) {
-      delete authTokens[key];
-    }
+async function checkUpdatesInBackground() {
+  const { updateNotifications } = await chrome.storage.local.get('updateNotifications');
+  if (updateNotifications === false) return;
+  try {
+    await chrome.storage.local.set({ lastUpdateCheck: { at: Date.now(), release: await fetchLatestRelease() } });
+  } catch (e) {
+    console.warn('[LibSaver] Проверка обновлений:', e.message); // нет сети или GitHub недоступен - следующая через 6 часов
   }
 }
 
-// Периодическая очистка токенов (каждые 30 минут)
-setInterval(cleanupExpiredTokens, 1800000);
-
-// Флаг для включения логирования (хранится в chrome.storage.session - переживает засыпание service worker)
-let loggingInterval = null;
-
-// Автоматическое восстановление логирования при пробуждении Service Worker
-async function restoreLoggingIfNeeded() {
-  const result = await chrome.storage.session.get(['isLoggingEnabled']);
-  if (result.isLoggingEnabled && !loggingInterval) {
-    console.log('[LibSaver] Storage logging restored after Service Worker wakeup');
-    logStorageSize(); // Лог сразу
-    loggingInterval = setInterval(logStorageSize, 10000);
-  }
+async function showUpdateBadge() {
+  const release = await storedUpdate();
+  await chrome.action.setBadgeText({ text: release ? 'NEW' : '' });
+  await chrome.action.setTitle({ title: release ? `LibSaver - доступно обновление v${release.version}` : 'LibSaver - Скачивание тайтлов' });
+  if (release) await chrome.action.setBadgeBackgroundColor({ color: '#3cce7b' });
 }
+const refreshUpdateBadge = () => showUpdateBadge().catch(e => console.warn('[LibSaver] Значок обновления:', e.message));
 
-// Проверяем при запуске
-restoreLoggingIfNeeded();
-
-// Логирование размера storage каждые 10 секунд
-async function logStorageSize() {
-  // Окна расширения (popup, окно поверх сайта) показывает getContexts; без них идёт отсчёт до выключения.
-  // В Firefox getContexts нет: окна не видны, поэтому логирование не выключается само
-  const contexts = chrome.runtime.getContexts ? await chrome.runtime.getContexts({ contextTypes: ['TAB', 'POPUP'] }) : null;
-  if (contexts && contexts.length === 0) {
-    // Если нет открытых окон - проверяем время закрытия
-    const sessionResult = await chrome.storage.session.get(['lastWindowCloseTime']);
-    if (!sessionResult.lastWindowCloseTime) {
-      // Первое закрытие окна - записываем время
-      await chrome.storage.session.set({ lastWindowCloseTime: Date.now() });
-      return;
-    }
-
-    // Проверяем прошло ли 2 минуты (120000 мс)
-    const timeSinceClose = Date.now() - sessionResult.lastWindowCloseTime;
-    if (timeSinceClose > 120000) {
-      // Прошло больше 2 минут - выключаем логирование
-      disableLogging();
-      await chrome.storage.session.remove(['lastWindowCloseTime']);
-    }
-    return;
-  }
-
-  // Если есть открытое окно - сбрасываем таймер закрытия
-  await chrome.storage.session.remove(['lastWindowCloseTime']);
-
-  chrome.storage.local.getBytesInUse(null, (bytes) => {
-    const mb = (bytes / (1024 * 1024)).toFixed(2);
-    console.log(`[LibSaver] Storage size: ${mb} MB (${bytes} bytes)`);
-  });
-}
-
-// Включение логирования
-async function enableLogging() {
-  const result = await chrome.storage.session.get(['isLoggingEnabled']);
-  if (!result.isLoggingEnabled) {
-    await chrome.storage.session.set({ isLoggingEnabled: true });
-    await chrome.storage.session.remove(['lastWindowCloseTime']); // Сбрасываем таймер закрытия
-    console.log('[LibSaver] Storage logging ENABLED');
-    logStorageSize(); // Лог сразу
-    loggingInterval = setInterval(logStorageSize, 10000);
-  }
-}
-
-// Выключение логирования
-async function disableLogging() {
-  const result = await chrome.storage.session.get(['isLoggingEnabled']);
-  if (result.isLoggingEnabled) {
-    await chrome.storage.session.set({ isLoggingEnabled: false });
-    console.log('[LibSaver] Storage logging DISABLED');
-    if (loggingInterval) {
-      clearInterval(loggingInterval);
-      loggingInterval = null;
-    }
-  }
-}
-
-// Слушатель сообщений для управления логированием
-chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  if (message.action === 'enableStorageLogging') {
-    enableLogging();
-  } else if (message.action === 'disableStorageLogging') {
-    disableLogging();
-  }
+chrome.alarms.onAlarm.addListener(alarm => {
+  if (alarm.name === UPDATE_ALARM) checkUpdatesInBackground();
 });
-
-// Общая функция для fetch с заголовками
-async function fetchWithHeaders(url, headers) {
-  const response = await fetch(url, { headers });
-  if (!response.ok) {
-    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-  }
-  const blob = await response.blob();
-  const reader = new FileReader();
-  return new Promise((resolve, reject) => {
-    reader.onloadend = () => resolve(reader.result);
-    reader.onerror = () => reject(new Error('FileReader error'));
-    reader.readAsDataURL(blob);
-  });
-}
+// Будильник переживает перезапуск service worker: создаём, только если его нет, иначе каждое пробуждение сдвигало бы срок
+chrome.alarms.get(UPDATE_ALARM).then(alarm => {
+  if (!alarm) chrome.alarms.create(UPDATE_ALARM, { delayInMinutes: 1, periodInMinutes: 6 * 60 });
+});
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area !== 'local') return;
+  const notify = changes.updateNotifications;
+  if (notify && notify.oldValue === false && notify.newValue !== false) checkUpdatesInBackground(); // включили - не ждём 6 часов
+  if (changes.updateNotifications || changes.lastUpdateCheck) refreshUpdateBadge();
+});
+refreshUpdateBadge(); // значок не переживает перезапуск браузера, а после обновления расширения должен пропасть
 
 // Прямой fetch с заголовками (declarativeNetRequest добавит Referer, User-Agent, sec-ch-ua через rules.json)
 async function directFetch(request, sendResponse) {
@@ -184,44 +106,6 @@ async function directFetch(request, sendResponse) {
   sendResponse({ success: false, error: lastError?.message || 'Max retries exceeded' });
 }
 
-// Перехватываем auth токены из запросов к API
-chrome.webRequest.onBeforeSendHeaders.addListener(
-  (details) => {
-    if (details.url.startsWith('https://api.cdnlibs.org/')) {
-      const authHeader = details.requestHeaders?.find(h => h.name.toLowerCase() === 'authorization');
-      if (authHeader?.value?.startsWith('Bearer ')) {
-        const newToken = authHeader.value.substring(7);
-        if (authTokens['ranobelib']?.token !== newToken) {
-          authTokens['ranobelib'] = { token: newToken, timestamp: Date.now() };
-        }
-      }
-    }
-  },
-  { urls: ['https://api.cdnlibs.org/*'] },
-  ['requestHeaders']
-);
-
-// Инжектируем auth токены в запросы от расширения
-chrome.webRequest.onBeforeSendHeaders.addListener(
-  (details) => {
-    if (details.tabId === -1 && details.url.startsWith('https://api.cdnlibs.org/')) {
-      if (authTokens['ranobelib']?.token) {
-        const headers = details.requestHeaders || [];
-        const authIdx = headers.findIndex(h => h.name.toLowerCase() === 'authorization');
-        const authValue = `Bearer ${authTokens['ranobelib'].token}`;
-        if (authIdx !== -1) {
-          headers[authIdx].value = authValue;
-        } else {
-          headers.push({ name: 'Authorization', value: authValue });
-        }
-        return { requestHeaders: headers };
-      }
-    }
-  },
-  { urls: ['https://api.cdnlibs.org/*'] },
-  ['requestHeaders']
-);
-
 // Функция для случайной задержки
 function randomDelay(min, max) {
   return Math.floor(Math.random() * (max - min + 1)) + min;
@@ -237,42 +121,21 @@ async function reloadTabsSequentially(tabs) {
   }
 }
 
+// После установки, обновления и запуска браузера в уже открытых вкладках тайтлов нет content script - перезагружаем их
+async function reloadTitleTabs() {
+  const tabs = await chrome.tabs.query({ url: Object.values(SITE_TAB_PATTERNS).flat() });
+  await reloadTabsSequentially(tabs.filter(tab => isTitlePage(tab.url)));
+}
+
 chrome.runtime.onInstalled.addListener(async () => {
   // Включаем declarativeNetRequest rules для manga CDN
   await chrome.declarativeNetRequest.updateEnabledRulesets({
     enableRulesetIds: ['manga_headers']
   });
-
-  // При установке или обновлении расширения перезагружаем вкладки LIB сайтов последовательно
-  const patterns = [
-    '*://*.ranobelib.me/*/book/*',
-    '*://*.mangalib.me/*/manga/*',
-    '*://*.hentailib.me/*/manga/*',
-    '*://*.shlib.life/*/manga/*',
-    '*://*.animelib.org/*/anime/*'
-  ];
-  
-  for (const pattern of patterns) {
-    const tabs = await chrome.tabs.query({ url: pattern });
-    await reloadTabsSequentially(tabs);
-  }
+  await reloadTitleTabs();
 });
 
-chrome.runtime.onStartup.addListener(async () => {
-  // При запуске браузера перезагружаем вкладки LIB сайтов последовательно
-  const patterns = [
-    '*://*.ranobelib.me/*/book/*',
-    '*://*.mangalib.me/*/manga/*',
-    '*://*.hentailib.me/*/manga/*',
-    '*://*.shlib.life/*/manga/*',
-    '*://*.animelib.org/*/anime/*'
-  ];
-
-  for (const pattern of patterns) {
-    const tabs = await chrome.tabs.query({ url: pattern });
-    await reloadTabsSequentially(tabs);
-  }
-});
+chrome.runtime.onStartup.addListener(reloadTitleTabs);
 
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === 'fetchImage') {
@@ -350,11 +213,26 @@ function handleEngineMessage(request, sender, sendResponse) {
       sendResponse({ ok: false, error: 'saveFile доступен только фоновому движку' });
       return;
     }
+    downloadNames.set(request.url, request.filename);
     chrome.downloads.download({ url: request.url, filename: request.filename, saveAs: false }).then(
       () => sendResponse({ ok: true }),
-      error => sendResponse({ ok: false, error: error.message })
+      error => {
+        downloadNames.delete(request.url);
+        sendResponse({ ok: false, error: error.message });
+      }
     );
     return true;
   }
 }
 chrome.runtime.onMessage.addListener(handleEngineMessage);
+
+// Chrome теряет filename у blob-ссылки из offscreen-документа: файл получает имя-GUID и расширение по MIME (.zip вместо .epub).
+// Имя, переданное в download, ставим ещё раз, когда Chrome выбирает имя файла. Чужие загрузки не трогаем
+const downloadNames = new Map(); // url -> filename
+function suggestDownloadName(item, suggest) {
+  const filename = downloadNames.get(item.url);
+  if (!filename) return;
+  downloadNames.delete(item.url);
+  suggest({ filename, conflictAction: 'uniquify' });
+}
+chrome.downloads.onDeterminingFilename?.addListener(suggestDownloadName); // в Firefox события нет, имя там не теряется

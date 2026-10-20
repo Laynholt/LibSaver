@@ -200,22 +200,3 @@ async function loadCovers(tabId, slug) {
     return { success: false, error: e.message };
   }
 }
-
-// Загрузка страниц главы для манги
-async function loadChapterPages(tabId, chapterId, slug, imageServer = 'normal') {
-  try {
-    const result = await pageCall(await siteKeyOfTab(tabId), 'chapterPages', [chapterId, slug, imageServer], tabId);
-
-    if (result) {
-      return result;
-    }
-    
-    return { success: false, error: 'Не удалось загрузить страницы главы' };
-  } catch (e) {
-    console.error('Ошибка при загрузке страниц главы:', e);
-    return { success: false, error: e.message };
-  }
-}
-
-// Экспортируем функцию в window для использования в других модулях
-window.loadChapterPages = loadChapterPages;

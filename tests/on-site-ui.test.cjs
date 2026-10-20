@@ -12,7 +12,7 @@ const toRegExp = pattern => new RegExp('^' + pattern.replace(/[.+?^${}()|[\]\\]/
 // page-call.js in a vm with a fake chrome over the `tabs` array.
 // onNoTab(tabs) runs when pageCall asks the user to open the site; onExec(tabId, tabs, n) may throw or change tabs.
 function pageCallContext(tabs, { onNoTab = () => {}, onExec = () => {}, noTabApi = false, sendMessage } = {}) {
-  const ctx = { tabs, handlerCalls: [], execTabs: [], delays: [] };
+  const ctx = { tabs, handlerCalls: [], execTabs: [], injected: [], delays: [] };
   const chrome = { runtime: { sendMessage } };
   if (!noTabApi) {
     chrome.tabs = {
@@ -20,7 +20,8 @@ function pageCallContext(tabs, { onNoTab = () => {}, onExec = () => {}, noTabApi
       query: async ({ url }) => tabs.filter(tab => url.some(pattern => toRegExp(pattern).test(tab.url)))
     };
     chrome.scripting = {
-      executeScript: async ({ target, func, args }) => {
+      executeScript: async ({ target, func, args, files }) => {
+        if (files) { ctx.injected.push(...files); return []; }
         ctx.execTabs.push(target.tabId);
         const custom = onExec(target.tabId, tabs, ctx.execTabs.length);
         return [{ result: custom === undefined ? 'ok' : custom }];
@@ -70,9 +71,10 @@ test('pageCall waits through the no-tab handler and retries when the tab disappe
       }
     }
   });
-  assert.equal(await ctx.pageCall('mangalib', 'chapterPages', [1, 's', 'normal']), 'ok');
+  assert.equal(await ctx.pageCall('mangalib', 'mangaChapterPages', [1, 1, 1, 's', 'normal', null]), 'ok');
   assert.deepEqual(ctx.handlerCalls, ['mangalib']);
   assert.deepEqual(ctx.execTabs, [3, 4]);
+  assert.deepEqual(ctx.injected, ['core/page-helpers.js', 'core/page-helpers.js']); // the shared helpers go in before every call
   assert.deepEqual(ctx.delays, [1000]); // pause before retrying a gone tab, no hot loop
 });
 
@@ -119,7 +121,43 @@ test('every former executeScript func now lives in PAGE_CALLS and api/base use p
   assert.doesNotMatch(source('src/core/api.js') + source('src/formatters/base.js'), /chrome\.scripting\.executeScript/);
   const ctx = vm.createContext({});
   vm.runInContext(source('src/core/page-calls.js'), ctx);
-  assert.deepEqual(Object.keys(vm.runInContext('PAGE_CALLS', ctx)).sort(), ['animeApi', 'chapterPages', 'chapters', 'covers', 'mangaChapterPages', 'metadata', 'metadataExtra']);
+  assert.deepEqual(Object.keys(vm.runInContext('PAGE_CALLS', ctx)).sort(), ['animeApi', 'chapters', 'covers', 'mangaChapterPages', 'metadata', 'metadataExtra']);
+});
+
+test('the site config injected into the tab is the same as getSiteConfig in page-call.js', () => {
+  const body = (file, name) => functionSource(file, name).replace(name, 'F').replace(/\r/g, '');
+  assert.equal(body('src/core/page-helpers.js', 'libsaverSiteConfig'), body('src/utils/page-call.js', 'getSiteConfig'));
+});
+
+test('PAGE_CALLS run on the injected helpers: SlashLIB chapters use Site-Id 4, chapter pages carry the JWT and no Content-Type', async () => {
+  const jwt = 'eyJa.eyJb.c';
+  const requests = [];
+  const storage = items => ({ getItem: key => items[key] ?? null, key: i => Object.keys(items)[i], get length() { return Object.keys(items).length; } });
+  const ctx = vm.createContext({
+    URL, console, setTimeout,
+    window: { location: { href: 'https://shlib.life/ru/manga/123--title' } },
+    document: { querySelector: () => ({ innerText: ' Тайтл ' }) },
+    navigator: { userAgent: 'UA' },
+    localStorage: storage({}),
+    sessionStorage: storage({ auth: JSON.stringify({ token: `Bearer ${jwt}` }) }),
+    fetch: async (url, { headers }) => {
+      requests.push({ url, headers });
+      return { ok: true, json: async () => ({ data: url.includes('/chapters') ? [{ id: 1 }] : { pages: [{ url: '//manga/p.jpg' }], teams: [] } }) };
+    }
+  });
+  vm.runInContext(source('src/core/page-helpers.js') + source('src/core/page-calls.js'), ctx);
+  const chapters = await vm.runInContext('PAGE_CALLS.chapters()', ctx);
+  assert.equal(chapters.success, true);
+  assert.equal(chapters.slug, '123--title');
+  assert.equal(requests[0].url, 'https://hapi.hentaicdn.org/api/manga/123--title/chapters');
+  assert.equal(requests[0].headers['Site-Id'], '4');
+  assert.equal(requests[0].headers['X-DL-Service'], 'shlib');
+  const pages = await vm.runInContext("PAGE_CALLS.mangaChapterPages('1-2', 1, 2, '123--title', 'normal', 'null')", ctx);
+  assert.equal(pages.pages[0].url, 'https://img2.hentaicdn.org/manga/p.jpg');
+  assert.equal(requests[1].url, 'https://hapi.hentaicdn.org/api/manga/123--title/chapter?volume=1&number=2');
+  assert.equal(requests[1].headers['Site-Id'], '2');
+  assert.equal(requests[1].headers.Authorization, `Bearer ${jwt}`);
+  assert.equal('Content-Type' in requests[1].headers, false);
 });
 
 function functionSource(file, name) {
@@ -369,7 +407,7 @@ function engineContext({ findSiteTab = async () => 1, startDownload, downloads }
   const chrome = { runtime: { onConnect: { addListener: fn => { onConnect = fn; } }, sendMessage: async message => { ctx.sent.push(JSON.parse(JSON.stringify(message))); return { ok: true }; } } };
   if (downloads) chrome.downloads = downloads;
   Object.assign(ctx, {
-    chrome, console, structuredClone, Date,
+    chrome, console, structuredClone, Date, Blob,
     URL: { createObjectURL: () => { ctx.urls.push('blob:' + ctx.urls.length); return ctx.urls.at(-1); }, revokeObjectURL: url => ctx.revoked.push(url) },
     setTimeout: (fn, ms) => { ctx.delays.push(ms); setImmediate(fn); return ctx.delays.length; }, // a macrotask, so a polling loop cannot starve the test
     clearTimeout() {},
@@ -476,7 +514,7 @@ test('engine turns download events into state, forwards commands and saves the f
   const states = port.posted.filter(m => m.type === 'state');
   assert.equal(states.length, 2); // the burst of changes goes out as one throttled state
   assert.deepEqual(states[1].state, {
-    items: [{ id: 'a', slug: 'a', siteKey: 'mangalib', title: 'T a', format: 'cbz', status: 'waiting-decision', progress: { current: 1, total: 2, part: 0 }, decision: { kind: 'chapter', chapterTitle: 'Г1', message: 'boom' } }],
+    items: [{ id: 'a', slug: 'a', siteKey: 'mangalib', title: 'T a', format: 'cbz', status: 'waiting-decision', progress: { current: 1, total: 2, part: 0 }, decision: { kind: 'chapter', chapterTitle: 'Г1', message: 'boom' }, hasLog: true }],
     stats: { elapsed: '00:01' },
     logTail: [{ line: 'L1', isError: false, color: null }]
   });
@@ -492,8 +530,18 @@ test('engine turns download events into state, forwards commands and saves the f
   port.send({ cmd: 'saveAgain', id: 'a' });
   await settle();
   assert.equal(ctx.sent.length, 2);
+  // the whole log of one title: by id for «Логи» in history, without id - the current or last title, for «Скопировать»
+  port.send({ cmd: 'log', id: 'a' });
+  port.send({ cmd: 'log', copy: true });
+  const logs = port.posted.filter(m => m.type === 'titleLog');
+  assert.deepEqual(logs, [
+    { type: 'titleLog', id: 'a', lines: [{ line: 'L1', isError: false, color: null }], copy: false },
+    { type: 'titleLog', id: 'a', lines: [{ line: 'L1', isError: false, color: null }], copy: true }
+  ]);
   port.send({ cmd: 'remove', id: 'a' });
   assert.deepEqual(ctx.revoked, ['blob:0']);
+  port.send({ cmd: 'log', id: 'a' });
+  assert.deepEqual(port.posted.at(-1).lines, []); // the log leaves with the title
 });
 
 test('engine saves through chrome.downloads where it exists', async () => {
@@ -520,7 +568,7 @@ test('ensureEngine creates one offscreen document even for concurrent calls', as
 test('saveFile is refused to a page context with a tab (content script) and served to the engine', async () => {
   const downloads = [];
   const ctx = vm.createContext({ chrome: { downloads: { download: async options => { downloads.push({ ...options }); return 1; } } }, console });
-  vm.runInContext(functionSource('src/background.js', 'handleEngineMessage'), ctx);
+  vm.runInContext('const downloadNames = new Map();\n' + functionSource('src/background.js', 'handleEngineMessage') + functionSource('src/background.js', 'suggestDownloadName'), ctx);
   const ask = sender => new Promise(resolve => ctx.handleEngineMessage({ action: 'saveFile', url: 'blob:x', filename: 'a.cbz' }, sender, response => resolve(JSON.parse(JSON.stringify(response)))));
   const refused = await ask({ id: 'ext', tab: { id: 3 } });
   assert.equal(refused.ok, false);
@@ -528,11 +576,18 @@ test('saveFile is refused to a page context with a tab (content script) and serv
   assert.deepEqual(downloads, []);
   assert.deepEqual(await ask({ id: 'ext', url: 'chrome-extension://ext/engine/engine.html' }), { ok: true });
   assert.deepEqual(downloads, [{ url: 'blob:x', filename: 'a.cbz', saveAs: false }]);
+  // Chrome drops the name of a blob from the offscreen document (GUID, extension by MIME): the name is suggested again, once
+  const suggested = [];
+  ctx.suggestDownloadName({ url: 'blob:x' }, value => suggested.push({ ...value }));
+  ctx.suggestDownloadName({ url: 'blob:x' }, value => suggested.push({ ...value }));
+  ctx.suggestDownloadName({ url: 'https://other.example/file.zip' }, value => suggested.push({ ...value }));
+  assert.deepEqual(suggested, [{ filename: 'a.cbz', conflictAction: 'uniquify' }]);
+  assert.match(source('src/background.js'), /chrome\.downloads\.onDeterminingFilename\?\.addListener\(suggestDownloadName\)/);
 });
 
 test('scripts of the engine page use neither storage, tabs, downloads nor the window DOM', () => {
   const scripts = [...source('src/engine/engine.html').matchAll(/<script src="\.\.\/([^"]+)"/g)].map(match => match[1]);
-  assert.deepEqual(scripts, ['libs/jszip.min.js', 'libs/pica.min.js', 'core/page-calls.js', 'utils/page-call.js', 'core/api.js', 'utils/protection.js', 'utils/header.js', 'core/statistics.js',
+  assert.deepEqual(scripts, ['libs/jszip.min.js', 'core/page-calls.js', 'utils/page-call.js', 'core/api.js', 'utils/protection.js', 'utils/header.js', 'core/statistics.js',
     'formatters/base.js', 'formatters/epub.js', 'formatters/txt.js', 'formatters/pdf.js', 'formatters/html.js', 'formatters/fb2.js', 'formatters/cbz.js', 'formatters/index.js', 'core/download.js', 'engine/queue.js', 'engine/anime.js', 'engine/engine.js']);
   // code only: template literals (html.js builds the reader page's script in one) and line comments are text
   const code = file => source('src/' + file).replace(/`(?:\\[\s\S]|[^`\\])*`/g, '``').replace(/^\s*\/\/.*$/gm, '');
@@ -568,12 +623,14 @@ test('firefoxManifest: background page instead of the service worker, gecko id, 
 test('Firefox background page loads background.js and every engine.html script once, with no top-level name clash', () => {
   const scripts = file => [...source(file).matchAll(/<script src="\.\.\/([^"]+)"/g)].map(match => match[1]);
   const page = scripts('src/engine/background-firefox.html');
-  assert.deepEqual(page.filter(file => file !== 'background.js'), scripts('src/engine/engine.html'));
+  // background.js and its update check (utils/update-check.js) on top of the engine scripts
+  assert.deepEqual(page.filter(file => file !== 'background.js' && file !== 'utils/update-check.js'), scripts('src/engine/engine.html'));
   assert.equal(page.filter(file => file === 'background.js').length, 1);
+  assert.ok(page.indexOf('utils/update-check.js') < page.indexOf('background.js'));
   // a const declared twice in one page is a SyntaxError for the whole script; a second function silently replaces the first
   const names = file => [...source('src/' + file).matchAll(/^(?:async )?(?:const|let|var|function|class) +([\w$]+)/gm)].map(match => match[1]);
-  const engineNames = new Set(page.filter(file => file !== 'background.js' && !file.startsWith('libs/')).flatMap(names));
-  assert.deepEqual(names('background.js').filter(name => engineNames.has(name)), []);
+  const engineNames = new Set(page.filter(file => file !== 'background.js' && file !== 'utils/update-check.js' && !file.startsWith('libs/')).flatMap(names));
+  assert.deepEqual(['background.js', 'utils/update-check.js'].flatMap(names).filter(name => engineNames.has(name)), []);
 });
 
 test('in the Firefox background page the engine calls the page, saves and fetches images directly, not via runtime.sendMessage', async () => {
@@ -583,7 +640,7 @@ test('in the Firefox background page the engine calls the page, saves and fetche
     // the page does not receive its own message: nobody answers
     runtime: { sendMessage: (message, reply) => { sent.push(message.action); reply?.(undefined); return Promise.resolve(undefined); } },
     tabs: { get: async () => tab, query: async () => [tab] },
-    scripting: { executeScript: async ({ target }) => { executed.push(target.tabId); return [{ result: 'ok' }]; } },
+    scripting: { executeScript: async ({ target, files }) => { if (files) return []; executed.push(target.tabId); return [{ result: 'ok' }]; } },
     downloads: { download: async options => { downloads.push({ ...options }); return 1; } }
   };
   const ctx = vm.createContext({
@@ -655,16 +712,23 @@ test('each status offers exactly its commands, all addressed to the item', () =>
     paused: ['resume', 'cancel'],
     'waiting-tab': ['cancel'],
     'waiting-decision': ['retry', 'skip', 'cancel'],
-    done: ['saveAgain', 'remove'],
-    error: ['remove'],
-    canceled: ['remove']
+    done: ['log', 'saveAgain', 'remove'],
+    error: ['log', 'remove'],
+    canceled: ['log', 'remove']
   };
   for (const [status, commands] of Object.entries(expected)) {
-    const html = view.renderQueueItem(queueItem({ status, decision: { kind: 'chapter', chapterTitle: '', message: '' }, canSaveAgain: true }));
+    const html = view.renderQueueItem(queueItem({ status, decision: { kind: 'chapter', chapterTitle: '', message: '' }, canSaveAgain: true, hasLog: true }));
     assert.deepEqual(cmds(html), commands, status);
     assert.equal((html.match(/data-id="a"/g) || []).length, commands.length, status);
   }
-  assert.deepEqual(cmds(view.renderQueueItem(queueItem({ status: 'done' }))), ['remove']); // the engine released its file (R32)
+  assert.deepEqual(cmds(view.renderQueueItem(queueItem({ status: 'done' }))), ['remove']); // the engine released its file (R32); no log - no «Логи»
+});
+
+test('copied log starts with the LibSaver version and the title, then the lines', () => {
+  const view = viewContext();
+  view.chrome.runtime = { getManifest: () => ({ version: '2.2.0' }) };
+  const text = view.logText({ title: 'Тайтл', format: 'epub' }, [{ line: '[12:00] a' }, { line: '[12:01] b', isError: true }]);
+  assert.equal(text, 'LibSaver 2.2.0\nТайтл (EPUB)\n\n[12:00] a\n[12:01] b');
 });
 
 test('progress shows chapters done out of total; a finished title with fewer chapters is reported as partial', () => {
@@ -733,7 +797,7 @@ test('downloads page is self-contained: theme, port client and view, no download
 function wiringContext({ failures = 0 } = {}) {
   const elements = {};
   const clone = value => JSON.parse(JSON.stringify(value)); // vm objects have another Object.prototype
-  const element = id => elements[id] ||= { id, innerHTML: '', hidden: false, style: {}, checked: false, scrollTop: 0, scrollHeight: 100, clientHeight: 50, listeners: {}, textContent: '', classes: new Set(), classList: { toggle: (name, on) => { on ? elements[id].classes.add(name) : elements[id].classes.delete(name); } }, addEventListener(type, fn) { this.listeners[type] = fn; } };
+  const element = id => elements[id] ||= { id, innerHTML: '', hidden: false, style: {}, checked: false, scrollTop: 0, scrollHeight: 100, clientHeight: 50, listeners: {}, textContent: '', classes: new Set(), classList: { toggle: (name, on) => { on ? elements[id].classes.add(name) : elements[id].classes.delete(name); } }, addEventListener(type, fn) { this.listeners[type] = fn; }, setAttribute(name, value) { this[name] = value; } };
   const ports = [];
   const created = [];
   const stored = [];
@@ -785,13 +849,24 @@ test('view ensures the engine, connects to the port and draws the state it recei
   assert.equal(element('dl-list').innerHTML, '');
 });
 
-test('«Очистить завершённые» shows only with finished items and removes all of them at once, leaving the active ones', async () => {
+test('finished titles go to «История» (issue #23); «Очистить историю» shows there only with finished items and removes all of them at once', async () => {
   const { ctx, element, ports } = wiringContext();
   await ctx.initDownloadsView();
   const port = ports[1];
   port.receive({ type: 'state', state: { items: [queueItem({ id: 'run', status: 'running' }), queueItem({ id: 'q', status: 'queued' })], stats: null, logTail: [] } });
   assert.equal(element('dl-clear-finished').hidden, true);
-  port.receive({ type: 'state', state: { items: [queueItem({ id: 'run', status: 'running' }), queueItem({ id: 'd', status: 'done' }), queueItem({ id: 'e', status: 'error' }), queueItem({ id: 'c', status: 'canceled' })], stats: null, logTail: [] } });
+  const state = { items: [queueItem({ id: 'run', status: 'running' }), queueItem({ id: 'd', status: 'done' }), queueItem({ id: 'e', status: 'error' }), queueItem({ id: 'c', status: 'canceled' })], stats: { errors: 0 }, logTail: [{ line: 'L' }] };
+  port.receive({ type: 'state', state });
+  // queue tab: only the active title, with its log; counters on both tabs
+  assert.equal(element('dl-list').innerHTML.match(/class="dl-item /g).length, 1);
+  assert.equal(element('dl-clear-finished').hidden, true);
+  assert.equal(element('dl-current').hidden, false);
+  assert.deepEqual([element('dl-count-queue').textContent, element('dl-count-history').textContent], [1, 3]);
+  element('dl-tab-history').listeners.click();
+  assert.equal(element('dl-list').innerHTML.match(/class="dl-item /g).length, 3);
+  assert.doesNotMatch(element('dl-list').innerHTML, /dl-running/);
+  assert.equal(element('dl-current').hidden, true);
+  assert.equal(element('dl-tab-history').classes.has('on'), true);
   assert.equal(element('dl-clear-finished').hidden, false);
   element('dl-clear-finished').listeners.click();
   assert.deepEqual(port.posted, [{ cmd: 'remove', id: 'd' }, { cmd: 'remove', id: 'e' }, { cmd: 'remove', id: 'c' }]);
@@ -837,6 +912,19 @@ test('view pings the engine every 20 s while a title is in work, and stops when 
 });
 
 // --- Safe file names for chrome.downloads ---
+
+test('saved file gets a type matching its extension: Edge/Chrome name EPUB and CBZ by type, application/zip gave .zip', async () => {
+  const ctx = vm.createContext({ Blob });
+  vm.runInContext(source('src/engine/engine.js').match(/const FILE_TYPES[\s\S]*?\r?\n}\r?\n/)[0].replace('const FILE_TYPES', 'var FILE_TYPES'), ctx);
+  const zip = new Blob(['PK'], { type: 'application/zip' });
+  assert.equal(ctx.typedBlob(zip, 'Тайтл.epub').type, 'application/epub+zip');
+  assert.equal(ctx.typedBlob(zip, 'Том 1.CBZ').type, 'application/vnd.comicbook+zip');
+  assert.equal(ctx.typedBlob(new Blob(['<x/>'], { type: 'application/fb2+zip' }), 'a.fb2').type, 'application/x-fictionbook+xml');
+  assert.equal(await ctx.typedBlob(zip, 'a.epub').text(), 'PK');
+  assert.equal(ctx.typedBlob(zip, 'Тома.zip'), zip); // архив томов и TXT с картинками - настоящий zip
+  const pdf = new Blob(['%PDF'], { type: 'application/pdf' });
+  assert.equal(ctx.typedBlob(pdf, 'a.pdf'), pdf);
+});
 
 test('safeDownloadFilename replaces reserved characters, strips trailing dots and spaces, keeps the extension', () => {
   const ctx = vm.createContext({});
@@ -2213,7 +2301,7 @@ test('stopSiteUi takes everything down: observer, resize and storage listeners, 
 
 // ---- Task 10: the settings window (panel.html) ----
 
-const panelScripts = ['src/utils/title-store.js', 'src/utils/page-call.js', 'src/core/chapter-range.js', 'src/utils/formats.js', 'src/core/title-loader.js', 'src/core/site-download.js', 'src/core/panel.js'];
+const panelScripts = ['src/utils/title-store.js', 'src/utils/page-call.js', 'src/core/chapter-range.js', 'src/utils/formats.js', 'src/core/title-loader.js', 'src/core/site-download.js', 'src/utils/update-check.js', 'src/core/panel.js'];
 const jsonCopy = value => JSON.parse(JSON.stringify(value));
 
 function panelLogic() {
@@ -2789,29 +2877,6 @@ test('the settings tab (no ?group=) lists the sections on the left and shows onl
   assert.deepEqual(jsonCopy(vm.runInContext('TAB_SECTIONS', ctx).flatMap(section => section.groups).sort()), [...groups].sort());
 });
 
-test('storage logging never throws without getContexts (Firefox) and does not switch itself off there', async () => {
-  const session = {};
-  const logs = [];
-  const ctx = vm.createContext({
-    console: { log: message => logs.push(message) },
-    disableLogging: () => logs.push('disabled'),
-    chrome: { runtime: {}, storage: {
-      session: { get: async () => session, set: async values => Object.assign(session, values), remove: async () => {} },
-      local: { getBytesInUse: (_keys, done) => done(1048576) }
-    } }
-  });
-  vm.runInContext(functionSource('src/background.js', 'logStorageSize'), ctx);
-  await ctx.logStorageSize();
-  assert.deepEqual(logs, ['[LibSaver] Storage size: 1.00 MB (1048576 bytes)']);
-  // with getContexts and no windows the timer starts and later switches logging off
-  ctx.chrome.runtime.getContexts = async () => [];
-  await ctx.logStorageSize();
-  assert.equal(typeof session.lastWindowCloseTime, 'number');
-  session.lastWindowCloseTime = Date.now() - 121000;
-  await ctx.logStorageSize();
-  assert.equal(logs.at(-1), 'disabled');
-});
-
 test('the popup keeps no range, preparation or editor-window code', () => {
   const popup = source('src/core/popup.js');
   assert.doesNotMatch(popup, /chapter-from|chapter-to|btn-download|loadTitleData|openPopupWindow|syncOpenWindows|canOpenWindow|windowNames/);
@@ -2983,26 +3048,13 @@ test('enableAutosave: a failed save is a toast with the error text and a console
   assert.deepEqual(jsonCopy(messages), [{ action: 'showToast', message: 'Не удалось сохранить: quota <b>exceeded</b>', type: 'error', duration: 4000 }]);
   assert.equal(errors.length, 1);
   fail = false;
+  let saved = 0;
+  ctx.enableAutosave({ save: () => { saved++; } });
   emit('input');
   clock.advance(400);
   await flush();
-  assert.equal(messages.at(-1).message, 'Сохранено!');
-});
-
-test('enableAutosave: «Сохранено!» is shown at most once in 5 seconds, not after every change', async () => {
-  const { ctx, clock, emit, messages } = autosaveContext();
-  ctx.enableAutosave({ save: () => {} });
-  for (let i = 0; i < 4; i++) {
-    emit('input');
-    clock.advance(1000);
-    await flush();
-  }
-  assert.equal(messages.filter(message => message.message === 'Сохранено!').length, 1);
-  clock.advance(5000);
-  emit('input');
-  clock.advance(400);
-  await flush();
-  assert.equal(messages.filter(message => message.message === 'Сохранено!').length, 2);
+  assert.ok(saved > 0);
+  assert.equal(messages.length, 1); // a successful save shows no toast (issue #20)
 });
 
 test('toasts insert their text with textContent, so an error text cannot inject markup', () => {
@@ -3174,7 +3226,8 @@ test('about: the version is from the manifest and the update check asks the late
   const settings = source('src/core/settings.js');
   assert.match(functionSource('src/core/settings.js', 'displayVersion'), /chrome[.]runtime[.]getManifest[(][)]/);
   assert.match(functionSource('src/core/settings.js', 'checkForUpdates'), /fetchLatestRelease[(][)]/);
-  assert.match(source('src/core/popup.js'), /fetchLatestRelease[(][)]/);
+  assert.match(functionSource('src/background.js', 'checkUpdatesInBackground'), /fetchLatestRelease[(][)]/);
+  assert.match(functionSource('src/core/popup.js', 'checkForUpdatesPopup'), /storedUpdate[(][)]/); // the popup reads the background result, GitHub is asked once
   assert.match(settings, /getElementById[(]'btn-check-updates'[)]/);
 });
 
@@ -3463,34 +3516,119 @@ function updateCheckContext(release, { status = 200, userAgent = 'Chrome' } = {}
 
 test('update check: the tag of the latest release is compared with the manifest version, assets come only from the repository', async () => {
   const assets = [
-    { name: 'LibSaver-v2.1.0.zip', browser_download_url: 'https://github.com/Laynholt/LibSaver/releases/download/v2.1.0/LibSaver-v2.1.0.zip' },
-    { name: 'LibSaver-v2.1.0-firefox.zip', browser_download_url: 'https://github.com/Laynholt/LibSaver/releases/download/v2.1.0/LibSaver-v2.1.0-firefox.zip' },
+    { name: 'LibSaver-v2.1.0.zip', browser_download_url: 'https://github.com/dfy-dpg/LibSaver/releases/download/v2.1.0/LibSaver-v2.1.0.zip' },
+    { name: 'LibSaver-v2.1.0-firefox.zip', browser_download_url: 'https://github.com/dfy-dpg/LibSaver/releases/download/v2.1.0/LibSaver-v2.1.0-firefox.zip' },
     { name: 'evil.xpi', browser_download_url: 'https://evil.example/evil.xpi' }
   ];
   const { ctx, calls } = updateCheckContext({ tag_name: 'v2.1.0', assets });
   const release = jsonOf(await ctx.fetchLatestRelease());
-  assert.equal(calls.fetched[0], 'https://api.github.com/repos/Laynholt/LibSaver/releases/latest');
-  assert.deepEqual(release, { version: '2.1.0', page: 'https://github.com/Laynholt/LibSaver/releases/latest', zip: assets[0].browser_download_url });
+  assert.equal(calls.fetched[0], 'https://api.github.com/repos/dfy-dpg/LibSaver/releases/latest');
+  assert.deepEqual(release, { version: '2.1.0', page: 'https://github.com/dfy-dpg/LibSaver/releases/latest', zip: assets[0].browser_download_url });
   assert.equal(ctx.compareVersions('2.1.0', '2.0.0'), 1);
   assert.equal(ctx.compareVersions('2.0', '2.0.0'), 0);
   assert.equal(ctx.compareVersions('1.7', '2.0.0'), -1);
   ctx.openUpdate(release);
   assert.deepEqual(calls.downloads, [assets[0].browser_download_url]);
-  assert.deepEqual(calls.tabs, ['https://github.com/Laynholt/LibSaver/releases/latest']);
+  assert.deepEqual(calls.tabs, ['https://github.com/dfy-dpg/LibSaver/releases/latest']);
 });
 
 test('update check: no releases or a tag that is not a version is an error, Firefox opens a signed xpi', async () => {
   await assert.rejects(updateCheckContext({}, { status: 404 }).ctx.fetchLatestRelease(), { message: 'HTTP 404' });
   await assert.rejects(updateCheckContext({ tag_name: 'nightly' }).ctx.fetchLatestRelease(), { message: 'Нет версии в релизе' });
-  const xpi = 'https://github.com/Laynholt/LibSaver/releases/download/v2.1.0/libsaver.xpi';
+  const xpi = 'https://github.com/dfy-dpg/LibSaver/releases/download/v2.1.0/libsaver.xpi';
   const { ctx, calls } = updateCheckContext({ tag_name: 'v2.1.0', assets: [{ name: 'libsaver.xpi', browser_download_url: xpi }] }, { userAgent: 'Mozilla/5.0 Firefox/130.0' });
   ctx.openUpdate(await ctx.fetchLatestRelease());
   assert.deepEqual([calls.tabs, calls.downloads], [[xpi], []]);
 });
 
+test('storedUpdate offers the stored release only when it is newer than the manifest and notifications are on', async () => {
+  const run = async stored => {
+    const ctx = vm.createContext({ chrome: { storage: { local: { get: async () => stored } }, runtime: { getManifest: () => ({ version: '2.2.0' }) } } });
+    vm.runInContext(source('src/utils/update-check.js'), ctx);
+    return (await ctx.storedUpdate())?.version ?? null;
+  };
+  const check = version => ({ lastUpdateCheck: { at: 1, release: { version, page: 'p' } } });
+  assert.equal(await run(check('2.2.1')), '2.2.1');
+  assert.equal(await run(check('2.2')), null);
+  assert.equal(await run(check('2.1.9')), null);
+  assert.equal(await run({ ...check('3.0.0'), updateNotifications: false }), null);
+  assert.equal(await run({}), null);
+});
+
+test('background checks GitHub every 6 hours, keeps the alarm it has, and shows NEW on the icon while an update waits', async () => {
+  const store = { lastUpdateCheck: { at: 1, release: { version: '2.2.0' } } };
+  const created = [], badge = [], titles = [], listeners = {};
+  let alarm = null;
+  const chrome = {
+    storage: {
+      local: {
+        get: async keys => Object.fromEntries([].concat(keys).filter(key => key in store).map(key => [key, store[key]])),
+        set: async values => {
+          const changes = Object.fromEntries(Object.entries(values).map(([key, value]) => [key, { oldValue: store[key], newValue: value }]));
+          Object.assign(store, values);
+          listeners.storage(changes, 'local');
+        }
+      },
+      onChanged: { addListener: fn => listeners.storage = fn }
+    },
+    runtime: { getManifest: () => ({ version: '2.2.0' }) },
+    alarms: { onAlarm: { addListener: fn => listeners.alarm = fn }, get: async () => alarm, create: (name, info) => created.push({ name, ...info }) },
+    action: { setBadgeText: async ({ text }) => badge.push(text), setTitle: async ({ title }) => titles.push(title), setBadgeBackgroundColor: async () => {} }
+  };
+  const ctx = vm.createContext({ chrome, console: { warn: () => {} }, AbortController, setTimeout, clearTimeout,
+    fetch: async () => ({ ok: true, json: async () => ({ tag_name: 'v2.3.0', assets: [] }) }) });
+  const background = source('src/background.js');
+  const block = background.slice(background.indexOf('const UPDATE_ALARM'), background.indexOf('refreshUpdateBadge(); //') + 'refreshUpdateBadge();'.length);
+  vm.runInContext(source('src/utils/update-check.js') + block, ctx);
+  const settle = () => new Promise(resolve => setImmediate(resolve));
+  await settle();
+  assert.deepEqual(created, [{ name: 'libsaver-update-check', delayInMinutes: 1, periodInMinutes: 360 }]);
+  assert.deepEqual(badge, ['']); // the stored release is the installed version
+  listeners.alarm({ name: 'libsaver-update-check' });
+  await settle(); await settle();
+  assert.equal(store.lastUpdateCheck.release.version, '2.3.0');
+  assert.deepEqual(badge, ['', 'NEW']);
+  assert.equal(titles.at(-1), 'LibSaver - доступно обновление v2.3.0');
+  // notifications off: the badge goes, no request; a service worker waking up again does not move the alarm
+  await chrome.storage.local.set({ updateNotifications: false });
+  await settle();
+  assert.equal(badge.at(-1), '');
+  alarm = { name: 'libsaver-update-check' };
+  vm.runInContext(block, vm.createContext({ ...ctx, chrome }));
+  await settle();
+  assert.equal(created.length, 1);
+});
+
+test('the site panel shows the waiting update in its header and the settings check stores what it found', () => {
+  assert.match(source('src/html/panel.html'), /id="update"/);
+  assert.match(source('src/html/panel.html'), /utils\/update-check\.js/);
+  assert.match(functionSource('src/core/settings.js', 'checkForUpdates'), /lastUpdateCheck: [{] at: Date[.]now[(][)], release [}]/);
+  assert.ok(JSON.parse(source('src/manifest.json')).permissions.includes('alarms'));
+  // the window stays open: a check finishing meanwhile shows the button at once, a click downloads that release
+  const store = {}, opened = [];
+  let onChanged;
+  const els = { update: { listeners: [], title: '', classes: new Set(['hidden']), addEventListener(type, fn) { this.listeners.push(fn); }, classList: { toggle: (name, on) => on ? els.update.classes.add(name) : els.update.classes.delete(name) } }, 'update-version': { textContent: '' } };
+  const ctx = vm.createContext({
+    console, document: { getElementById: id => els[id] }, openUpdate: release => opened.push(release.version),
+    chrome: { storage: { local: { get: async () => store }, onChanged: { addListener: fn => onChanged = fn } }, runtime: { getManifest: () => ({ version: '2.2.0' }) } }
+  });
+  vm.runInContext(['storedUpdate', 'compareVersions'].map(name => functionSource('src/utils/update-check.js', name)).join('\n') + functionSource('src/core/panel.js', 'showPanelUpdate'), ctx);
+  ctx.showPanelUpdate();
+  return new Promise(resolve => setImmediate(resolve)).then(async () => {
+    assert.equal(els.update.classes.has('hidden'), true);
+    store.lastUpdateCheck = { at: 1, release: { version: '2.3.0' } };
+    onChanged({ lastUpdateCheck: { newValue: store.lastUpdateCheck } }, 'local');
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(els.update.classes.has('hidden'), false);
+    assert.equal(els['update-version'].textContent, 'Обновление v2.3.0');
+    els.update.listeners[0]();
+    assert.deepEqual(opened, ['2.3.0']);
+  });
+});
+
 test('«Сообщить о проблеме» opens the issue form of the 2.x repository with version, title page and browser filled in', async () => {
   const ctx = vm.createContext({
-    URLSearchParams, LIBSAVER_REPO: 'Laynholt/LibSaver', navigator: { userAgent: 'UA 1' },
+    URLSearchParams, ISSUES_REPO: 'Laynholt/LibSaver', navigator: { userAgent: 'UA 1' },
     chrome: { storage: { local: { get: async () => ({ sourceUrl: 'https://mangalib.me/ru/manga/1--a' }) } }, runtime: { getManifest: () => ({ version: '2.0.0' }) } }
   });
   vm.runInContext(functionSource('src/core/settings.js', 'buildIssueUrl'), ctx);

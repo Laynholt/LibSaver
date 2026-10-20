@@ -12,8 +12,12 @@
 </head>
 <body>
   <div class="dl-header">
-    <h2><i class="fa-solid fa-download"></i> Загрузки</h2>
-    <button class="dl-btn dl-clear" id="dl-clear-finished" hidden title="Убрать из списка готовые, отменённые и с ошибкой"><i class="fa-solid fa-broom"></i><span>Очистить завершённые</span></button>
+    <!-- «Загрузки» - очередь и то, что качается сейчас; готовые, отменённые и с ошибкой уходят в «Историю» -->
+    <div class="dl-tabs" role="tablist">
+      <button class="dl-tab on" id="dl-tab-queue" type="button" role="tab" aria-selected="true"><i class="fa-solid fa-download"></i> Загрузки <small id="dl-count-queue"></small></button>
+      <button class="dl-tab" id="dl-tab-history" type="button" role="tab" aria-selected="false"><i class="fa-solid fa-clock-rotate-left"></i> История <small id="dl-count-history"></small></button>
+    </div>
+    <button class="dl-btn dl-clear" id="dl-clear-finished" hidden title="Убрать из истории готовые, отменённые и с ошибкой"><i class="fa-solid fa-broom"></i><span>Очистить историю</span></button>
     <div class="speed-mode-toggle" id="speed-mode">
       <label class="checkbox-group" title="Без пауз и без ограничения запросов в минуту: главы и картинки качаются на полной скорости, картинки - по 3 сразу. Если снять, запросы глав и картинок ограничатся 60-90 в минуту, а между ними появятся случайные паузы - для случаев, когда сайт отвечает ошибками на частые запросы. Действует сразу, даже на идущую загрузку">
         <input type="checkbox" id="speed-mode-checkbox">
@@ -33,7 +37,7 @@
   <!-- Лог и статистика текущего (или последнего) тайтла -->
   <div class="dl-current" id="dl-current" hidden>
     <details class="dl-zone" open>
-      <summary><i class="fa-solid fa-terminal"></i> Логи</summary>
+      <summary><i class="fa-solid fa-terminal"></i> Логи <button class="dl-icon-btn" id="dl-log-copy" type="button" title="Скопировать весь лог" aria-label="Скопировать весь лог"><i class="fa-solid fa-copy"></i></button></summary>
       <div class="logs-panel" id="dl-log-panel">
         <div class="log" id="dl-log"></div>
       </div>
@@ -42,6 +46,18 @@
       <summary><i class="fa-solid fa-chart-line"></i> Статистика</summary>
       <div class="analysis-info" id="dl-stats"></div>
     </details>
+  </div>
+
+  <!-- Лог одного тайтла из «Истории» (кнопка «Логи» на карточке) -->
+  <div class="dl-zone dl-title-log" id="dl-title-log" hidden>
+    <div class="dl-title-log-head">
+      <span class="dl-title-log-name"><i class="fa-solid fa-terminal"></i> <span id="dl-title-log-name"></span></span>
+      <button class="dl-icon-btn" id="dl-title-log-copy" type="button" title="Скопировать лог" aria-label="Скопировать лог"><i class="fa-solid fa-copy"></i></button>
+      <button class="dl-icon-btn" id="dl-title-log-close" type="button" title="Закрыть" aria-label="Закрыть"><i class="fa-solid fa-xmark"></i></button>
+    </div>
+    <div class="logs-panel">
+      <div class="log" id="dl-title-log-body"></div>
+    </div>
   </div>
 
   <script src="../utils/page-call.js"></script>

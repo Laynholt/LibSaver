@@ -623,15 +623,19 @@ function renderChapterRow(container, ch, originalCh, globalIndex) {
       document.querySelectorAll('.chapter-translator-dropdown').forEach(dd => {
         if (dd !== dropdown) dd.style.display = 'none';
       });
-      const rect = translatorSelect.getBoundingClientRect();
-      dropdown.style.position = 'fixed';
-      dropdown.style.top = (rect.bottom + 2) + 'px';
-      dropdown.style.left = rect.left + 'px';
-      dropdown.style.display = dropdown.style.display !== 'none' ? 'none' : 'block';
+      if (dropdown.style.display !== 'none') {
+        dropdown.style.display = 'none';
+        return;
+      }
       div.classList.add('menu-open');
+      dropdown.style.position = 'fixed';
+      dropdown.style.display = 'block';
+      // У нижних глав список открывается вверх, у правого края сдвигается влево - иначе он за краем окна
+      const rect = translatorSelect.getBoundingClientRect();
+      const fitsBelow = rect.bottom + 2 + dropdown.offsetHeight <= window.innerHeight;
+      dropdown.style.top = (fitsBelow ? rect.bottom + 2 : Math.max(0, rect.top - 2 - dropdown.offsetHeight)) + 'px';
+      dropdown.style.left = Math.max(0, Math.min(rect.left, window.innerWidth - dropdown.offsetWidth)) + 'px';
     });
-    
-    inputWrapper.appendChild(translatorSelect);
   }
   
   (episode ? header : div).appendChild(inputWrapper);

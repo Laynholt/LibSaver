@@ -3,6 +3,7 @@
 // поэтому saveFile и page-call.js идут в них напрямую, без runtime.sendMessage (своё сообщение страница не получает)
 
 const LOG_TAIL_SIZE = 500;
+const TITLE_LOG_SIZE = 10000; // строк лога одного тайтла для «Логи» в истории и «Скопировать»
 const STATE_INTERVAL = 250; // state уходит в порты не чаще раза в 250 мс
 const TAB_POLL_INTERVAL = 2000;
 
@@ -12,6 +13,10 @@ const ports = new Set();
 let lastFile = null;
 let stats = null;
 let logTail = [];
+// Лог каждого тайтла целиком (до TITLE_LOG_SIZE строк): id -> строки. Уходит вместе с тайтлом из очереди.
+// logOwner - чей лог сейчас в logTail (идущий или последний тайтл)
+const titleLogs = new Map();
+let logOwner = null;
 let current = null; // { id, canceled, stopWait }: идущая загрузка
 
 const canceledError = () => Object.assign(new Error('Загрузка отменена'), { canceled: true });
@@ -25,7 +30,7 @@ function post(port, message) {
 }
 
 const currentState = () => ({
-  items: queue.items().map(item => item.id === lastFile?.id ? { ...item, canSaveAgain: true } : item),
+  items: queue.items().map(item => ({ ...item, canSaveAgain: item.id === lastFile?.id || undefined, hasLog: titleLogs.get(item.id)?.length > 0 || undefined })),
   stats,
   logTail
 });
@@ -57,6 +62,13 @@ function safeDownloadFilename(name) {
   return (safe || 'LibSaver') + extension;
 }
 
+// Chrome и Edge ставят расширение по типу файла, а не по имени: EPUB и CBZ (внутри zip) с типом application/zip сохранялись как .zip
+const FILE_TYPES = { epub: 'application/epub+zip', cbz: 'application/vnd.comicbook+zip', fb2: 'application/x-fictionbook+xml' };
+function typedBlob(blob, filename) {
+  const type = FILE_TYPES[String(filename).split('.').pop().toLowerCase()];
+  return type && blob.type !== type ? new Blob([blob], { type }) : blob;
+}
+
 // folder - папка внутри загрузок (серии аниме). Имя папки чистится как имя файла; «.dir» - чтобы её точка не сошла за расширение
 async function saveFile(url, name, folder) {
   const filename = (folder ? safeDownloadFilename(`${folder}.dir`).slice(0, -4) + '/' : '') + safeDownloadFilename(name);
@@ -72,6 +84,8 @@ async function runTitle(item, snapshot) {
   current = { id: item.id, canceled: false, stopWait: null };
   stats = null;
   logTail = [];
+  logOwner = item.id;
+  titleLogs.set(item.id, []);
   try {
     if (snapshot.siteType === 'anime') {
       downloadControl.resume(); // пауза общая с download.js (её ждёт fetchVideo): прошлая загрузка могла кончиться на паузе
@@ -86,7 +100,7 @@ async function runTitle(item, snapshot) {
     const { blob, filename } = await startDownload(snapshot);
     if (current.canceled) throw canceledError();
     releaseFile();
-    const url = URL.createObjectURL(blob);
+    const url = URL.createObjectURL(typedBlob(blob, filename));
     lastFile = { id: item.id, url, filename };
     await saveFile(url, filename);
     return { filename };
@@ -101,6 +115,9 @@ function onDownloadEvent(event) {
     const line = { line: event.line, isError: event.isError, color: event.color };
     logTail.push(line);
     if (logTail.length > LOG_TAIL_SIZE) logTail.splice(0, logTail.length - LOG_TAIL_SIZE);
+    const full = titleLogs.get(current.id);
+    full?.push(line);
+    if (full?.length > TITLE_LOG_SIZE) full.splice(0, full.length - TITLE_LOG_SIZE);
     for (const port of ports) post(port, { type: 'log', id: current.id, ...line });
     scheduleState();
   } else if (event.type === 'progress') {
@@ -164,6 +181,7 @@ function releaseFile() {
 
 function remove(id) {
   if (!queue.remove(id)) return;
+  titleLogs.delete(id);
   if (lastFile?.id === id) releaseFile();
 }
 
@@ -179,6 +197,11 @@ function handleCommand(port, message) {
     case 'saveAgain': // только для элемента с canSaveAgain: blob остальных уже отпущен
       if (lastFile?.id === message.id) saveFile(lastFile.url, lastFile.filename).catch(e => console.error('[LibSaver engine]', e));
       break;
+    case 'log': { // весь лог тайтла; без id - того, что в logTail. copy возвращается как есть: окно знает, копировать или показать
+      const id = message.id ?? logOwner;
+      post(port, { type: 'titleLog', id, lines: titleLogs.get(id) || [], copy: !!message.copy });
+      break;
+    }
     case 'ping': break; // клиент будит фоновую страницу Firefox во время загрузки: важен сам факт сообщения, состояние не рассылаем
   }
 }

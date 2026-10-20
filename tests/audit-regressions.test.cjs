@@ -42,7 +42,7 @@ function epub() {
 }
 
 for (const status of [429, 503]) {
-  for (const target of ['base', 'background', 'download']) {
+  for (const target of ['base', 'background']) {
     test(`${target}: HTTP ${status} retries always wait and remain bounded`, async () => {
       const delays = [];
       let requests = 0;
@@ -55,17 +55,14 @@ for (const status of [429, 503]) {
       if (target === 'base') {
         vm.runInContext(source('src/formatters/base.js') + '\nthis.Formatter = BaseFormatter;', context);
         await assert.rejects(new context.Formatter({}).fetchWithRetry('https://example.invalid'));
-      } else if (target === 'background') {
+      } else {
         vm.runInContext(functionSource('src/background.js', 'directFetch'), context);
         let result;
         await context.directFetch({ url: 'https://example.invalid' }, value => result = value);
         assert.equal(result.success, false);
-      } else {
-        vm.runInContext(functionSource('src/core/download.js', 'fetchWithRetry'), context);
-        await assert.rejects(context.fetchWithRetry('https://example.invalid'));
       }
       assert.equal(requests, 6);
-      assert.deepEqual(delays, target === 'download' ? [3000, 5000, 8000, 8000, 8000] : [5000, 10000, 15000, 15000, 15000]);
+      assert.deepEqual(delays, [5000, 10000, 15000, 15000, 15000]);
     });
   }
 }
@@ -516,7 +513,7 @@ test('HTML export escapes titles, author, metadata and captions', async () => {
 });
 
 for (const status of [403, 404]) {
-  for (const target of ['base', 'background', 'download']) {
+  for (const target of ['base', 'background']) {
     test(`${target}: HTTP ${status} fails at once without retries`, async () => {
       const delays = [];
       let requests = 0;
@@ -529,15 +526,12 @@ for (const status of [403, 404]) {
       if (target === 'base') {
         vm.runInContext(source('src/formatters/base.js') + '\nthis.Formatter = BaseFormatter;', context);
         await assert.rejects(new context.Formatter({}).fetchWithRetry('https://example.invalid'), new RegExp(`HTTP ${status}`));
-      } else if (target === 'background') {
+      } else {
         vm.runInContext(functionSource('src/background.js', 'directFetch'), context);
         let result;
         await context.directFetch({ url: 'https://example.invalid' }, value => result = value);
         assert.equal(result.success, false);
         assert.match(result.error, new RegExp(`HTTP ${status}`));
-      } else {
-        vm.runInContext(functionSource('src/core/download.js', 'fetchWithRetry'), context);
-        await assert.rejects(context.fetchWithRetry('https://example.invalid'), new RegExp(`HTTP ${status}`));
       }
       assert.equal(requests, 1);
       assert.deepEqual(delays, []);
@@ -545,22 +539,31 @@ for (const status of [403, 404]) {
   }
 }
 
-// page-calls.js keeps a copy of fetchWithRetry inside every function injected into the site tab
-const apiRetryCopies = source('src/core/page-calls.js').match(/async function fetchWithRetry\(url, options = \{\}, maxRetries = 3[\s\S]*?throw lastError \|\| new Error\('Max retries exceeded'\);\s*\}/g);
-test('page-calls has four injected retry loops', () => assert.equal(apiRetryCopies.length, 4));
-apiRetryCopies.forEach((copy, index) => {
-  for (const [status, expectedRequests] of [[404, 1], [403, 1], [503, 4]]) {
-    test(`page-calls retry loop #${index + 1}: HTTP ${status} makes ${expectedRequests} request(s)`, async () => {
-      let requests = 0;
-      const context = vm.createContext({
-        fetch: async () => { requests++; return { ok: false, status }; },
-        setTimeout: fn => fn()
-      });
-      vm.runInContext(copy, context);
-      await assert.rejects(context.fetchWithRetry('https://example.invalid'));
-      assert.equal(requests, expectedRequests);
+// PAGE_CALLS share one retry loop from page-helpers.js instead of a copy each
+test('page-calls keeps no own copy of the retry loop, the config or the JWT scan', () => {
+  assert.doesNotMatch(source('src/core/page-calls.js'), /function (fetchWithRetry|getSiteConfig|findJwt)\b/);
+});
+for (const [status, expectedRequests] of [[404, 1], [403, 1], [503, 4]]) {
+  test(`page-helpers retry loop: HTTP ${status} makes ${expectedRequests} request(s)`, async () => {
+    let requests = 0;
+    const context = vm.createContext({
+      fetch: async () => { requests++; return { ok: false, status }; },
+      setTimeout: fn => fn()
     });
-  }
+    vm.runInContext(source('src/core/page-helpers.js'), context);
+    await assert.rejects(context.libsaverFetchWithRetry('https://example.invalid'));
+    assert.equal(requests, expectedRequests);
+  });
+}
+
+test('HTML uses the base cover, extension and mangaId helpers; a user-uploaded cover file wins over its url', () => {
+  const context = vm.createContext({});
+  vm.runInContext(source('src/formatters/base.js') + source('src/formatters/html.js') + '\nthis.Base = BaseFormatter; this.Html = HtmlFormatter;', context);
+  for (const name of ['getImageExtension', 'extractCoverUrl', 'extractMangaId']) assert.equal(Object.hasOwn(context.Html.prototype, name), false, name);
+  const formatter = new context.Base({});
+  assert.equal(formatter.extractCoverUrl({ type: 'file', url: 'https://x/c.jpg', dataUrl: 'data:image/png;base64,' }), 'data:image/png;base64,');
+  assert.equal(formatter.extractCoverUrl({ url: 'https://x/c.jpg' }), 'https://x/c.jpg');
+  assert.equal(formatter.extractCoverUrl('https://x/c.jpg'), 'https://x/c.jpg');
 });
 
 for (const [file, className] of [['src/formatters/epub.js', 'EpubFormatter'], ['src/formatters/html.js', 'HtmlFormatter']]) {
@@ -664,7 +667,8 @@ test('same-width option scales manga pages to the most common width of the first
     siteKeyOfTab: async () => 'mangalib',
     pageCall: async () => ({ success: true, pages: pageWidths.map(width => ({ width })) }),
     Image: class { set src(value) { this.width = 1000; this.height = 1500; this.onload(); } },
-    fetch: async () => ({ blob: async () => ({ size: 1000, type: 'image/png' }) }),
+    Blob,
+    fetch: async () => ({ blob: async () => new Blob([new Uint8Array(1000)], { type: 'image/png' }) }),
     document: { createElement: () => {
       const canvas = { getContext: () => ({ drawImage() {} }), toBlob: done => done({ size: 500 }) };
       canvases.push(canvas);
@@ -777,6 +781,59 @@ test('editors fit a phone: no fixed minimum page width, the toolbar and «show m
   assert.match(source('src/html/chapters.html'), /\.load-more-buttons \{\s*display: flex;\s*flex-wrap: wrap;/);
   assert.match(source('src/editors/chapters.js'), /uniqueChapters\[0\]\?\.episode \? ' сер\.' : ' гл\.'/);
   // полоса прокрутки справа не делает правый отступ больше левого: место под неё с обеих сторон
-  for (const file of ['src/css/editor.css', 'src/css/downloads.css']) assert.match(source(file), /html \{\s*scrollbar-gutter: stable both-edges;/, file);
+  // у редакторов панель кнопок во всю ширину: место под полосу только справа, иначе слева пустая полоса (issue #18)
+  assert.match(source('src/css/downloads.css'), /html \{\s*scrollbar-gutter: stable both-edges;/);
+  assert.match(source('src/css/editor.css'), /html \{\s*scrollbar-gutter: stable;/);
   assert.match(source('src/css/settings.css'), /html:has\(> body\.group-mode\) \{\s*scrollbar-gutter: stable both-edges;/);
+});
+
+test('image type comes from the file bytes, and PDF embeds a WebP labelled image/jpeg by re-encoding it (issue #19: «SOI not found»)', async () => {
+  const bytes = text => new Uint8Array([...text].map(c => c.charCodeAt(0)));
+  const png = new Uint8Array([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]);
+  const jpeg = new Uint8Array([0xFF, 0xD8, 0xFF, 0xE0]);
+  const webp = bytes('RIFF\0\0\0\0WEBPVP8 ');
+  const bitmaps = [];
+  const context = vm.createContext({
+    URL, Blob,
+    createImageBitmap: async blob => { bitmaps.push(blob.type); return { width: 3, height: 4, close() {} }; },
+    document: { createElement: () => ({ getContext: () => ({ drawImage() {} }), toBlob: (done, type) => done(new Blob([png], { type })) }) }
+  });
+  vm.runInContext(source('src/formatters/base.js') + source('src/formatters/pdf.js') + '\nthis.PdfFormatter = PdfFormatter;', context);
+  const sniff = data => context.sniffImageType(new Blob([data], { type: 'image/jpeg' }));
+  assert.equal(await sniff(png), 'image/png');
+  assert.equal(await sniff(jpeg), 'image/jpeg');
+  assert.equal(await sniff(webp), 'image/webp');
+  assert.equal(await sniff(bytes('\0\0\0\x1cftypavif')), 'image/avif');
+  assert.equal(await sniff(bytes('GIF89a')), 'image/gif');
+  assert.equal(await sniff(new Uint8Array(4)), null);
+
+  const embedded = [];
+  const pdfDoc = {
+    embedPng: async data => { embedded.push(['png', new Uint8Array(data)[0]]); return 'png-image'; },
+    embedJpg: async data => { embedded.push(['jpg', new Uint8Array(data)[0]]); return 'jpg-image'; }
+  };
+  const formatter = new context.PdfFormatter({ pdfImageFormat: 'original-png' });
+  assert.equal(await formatter.embedImage(pdfDoc, new Blob([png], { type: 'image/jpeg' })), 'png-image'); // label lies, bytes win
+  assert.equal(await formatter.embedImage(pdfDoc, new Blob([jpeg], { type: 'image/png' })), 'jpg-image');
+  assert.deepEqual(bitmaps, []);
+  assert.equal(await formatter.embedImage(pdfDoc, new Blob([webp], { type: 'image/jpeg' })), 'png-image'); // re-encoded, not passed to embedJpg
+  assert.equal(bitmaps.length, 1);
+  assert.deepEqual(embedded, [['png', 0x89], ['jpg', 0xFF], ['png', 0x89]]);
+});
+
+test('chapters tab: «от/до» labels are not drag handles and line up, the toolbar is the shared one, the translator list opens upward near the bottom (issues #15, #16, #18, #22)', () => {
+  const css = source('src/css/editor.css');
+  assert.doesNotMatch(css, /^label\b/m); // a bare label rule also hit the range labels: grab cursor over «от/до»
+  assert.match(css, /\.field-header label \{[^}]*cursor: grab;/);
+  assert.match(css, /\.range-row span \{\s*min-width: 2em;/);
+  assert.doesNotMatch(source('src/html/chapters.html'), /^\s*\.toolbar \{/m);
+  assert.match(source('src/editors/chapters.js'), /fitsBelow \? rect\.bottom \+ 2 : Math\.max\(0, rect\.top - 2 - dropdown\.offsetHeight\)/);
+});
+
+test('queue state every 250 ms does not rebuild the panel menu: hover stays and clicks land while a title downloads', () => {
+  const code = between('src/core/panel.js', 'const setActive = number => {', 'port.onMessage.addListener');
+  const context = vm.createContext({ active: 0, renders: 0, renderMenu() { context.renders++; } });
+  vm.runInContext(`${code}\nthis.setActive = setActive;`, context);
+  for (const n of [1, 1, 1, 1, 2, 2, 0]) context.setActive(n);
+  assert.equal(context.renders, 3); // 0 -> 1 -> 2 -> 0
 });

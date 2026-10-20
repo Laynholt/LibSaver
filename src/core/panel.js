@@ -176,6 +176,7 @@ function startPanel() {
     if (!frame) {
       frame = document.createElement('iframe');
       frame.setAttribute('title', section.title);
+      frame.setAttribute('allow', 'clipboard-write'); // разрешение доходит до раздела, только если его передал каждый iframe по пути
       // Страницы расширения - того же origin, до их документа можно дотянуться
       frame.addEventListener('load', () => {
         try { frame.contentDocument.addEventListener('keydown', onEscape); } catch (e) { /* чужой документ */ }
@@ -239,7 +240,9 @@ function startPanel() {
       await chrome.runtime.sendMessage({ action: 'ensureEngine' });
       const port = chrome.runtime.connect({ name: 'libsaver-engine' });
       queuePort = port;
+      // state приходит каждые 250 мс; пересборка меню на каждый сбивала наведение и съедала клики - только при смене числа
       const setActive = number => {
+        if (number === active) return;
         active = number;
         renderMenu();
       };
@@ -350,4 +353,25 @@ function startPanel() {
   })();
 }
 
-if (typeof document !== 'undefined') startPanel();
+// Обновление из фоновой проверки (utils/update-check.js): кнопка в шапке скачивает его, как надпись в настройках
+function showPanelUpdate() {
+  const button = document.getElementById('update');
+  let release = null;
+  button.addEventListener('click', () => { if (release) openUpdate(release); });
+  const render = () => storedUpdate().then(found => {
+    release = found;
+    document.getElementById('update-version').textContent = release ? `Обновление v${release.version}` : '';
+    button.title = release ? `Доступно обновление v${release.version} - скачать` : '';
+    button.classList.toggle('hidden', !release);
+  }).catch(e => console.error('[LibSaver] Обновление:', e.message));
+  // Окно живёт долго (его не закрывают между тайтлами): кнопка следует за проверкой в фоне и в «Настройках» без переоткрытия
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area === 'local' && (changes.lastUpdateCheck || changes.updateNotifications)) render();
+  });
+  render();
+}
+
+if (typeof document !== 'undefined') {
+  startPanel();
+  showPanelUpdate();
+}

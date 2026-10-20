@@ -1314,6 +1314,7 @@ async function checkForUpdates() {
 
   try {
     const release = await fetchLatestRelease();
+    await chrome.storage.local.set({ lastUpdateCheck: { at: Date.now(), release } }); // значок на иконке и панель узнают сразу
     if (compareVersions(release.version, currentVersion) > 0) {
       // Обновление есть - надпись остаётся и по клику скачивает релиз
       versionElement.textContent = `v${currentVersion} → v${release.version} · скачать`;
@@ -1471,7 +1472,7 @@ async function buildIssueUrl() {
     page: sourceUrl || '',
     browser: navigator.userAgent
   });
-  return `https://github.com/${LIBSAVER_REPO}/issues/new?${params}`;
+  return `https://github.com/${ISSUES_REPO}/issues/new?${params}`;
 }
 
 // Подсказка tippy вставляется в body, поэтому клик ловим делегированием

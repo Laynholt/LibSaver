@@ -44,6 +44,25 @@ body {
   color: var(--text-primary);
 }
 
+/* Доступно обновление: кнопка в шапке, видна, пока фоновая проверка видит релиз новее */
+.pn-update {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 10px;
+  border-radius: 14px;
+  background: var(--success-color);
+  color: #fff;
+  font-size: var(--font-size-sm);
+  white-space: nowrap;
+}
+
+.pn-update:hover {
+  filter: brightness(1.1);
+}
+
 .pn-msg {
   margin: 0;
   padding: var(--spacing-lg);
