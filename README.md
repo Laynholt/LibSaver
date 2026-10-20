@@ -9,6 +9,7 @@
 ![HentaiLIB](https://img.shields.io/badge/HentaiLIB-b71c1c?style=flat-square)
 ![SlashLIB](https://img.shields.io/badge/SlashLIB-ad1457?style=flat-square)
 ![RanobeLIB](https://img.shields.io/badge/RanobeLIB-1565c0?style=flat-square)
+![AnimeLIB](https://img.shields.io/badge/AnimeLIB-5e35b1?style=flat-square)
 
 [![DarkInterface](screenshots/popup_gif/dark_popup-main.gif)](https://github.com/dfy-dpg/LibSaver/releases/latest)
 [![LightInterface](screenshots/popup_gif/light_popup-main.gif)](https://github.com/dfy-dpg/LibSaver/releases/latest)
