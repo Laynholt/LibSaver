@@ -1,8 +1,9 @@
 // update-check.js - обновления по релизам GitHub: тег последнего релиза (v2.0.0) против версии манифеста
-// LIBSAVER_REPO - репозиторий версии 2.x: релизы и форма «Сообщить о проблеме»
-const LIBSAVER_REPO = 'Laynholt/LibSaver';
-const RELEASES_PAGE = `https://github.com/${LIBSAVER_REPO}/releases/latest`;
-const RELEASE_ASSET_PREFIX = `https://github.com/${LIBSAVER_REPO}/releases/download/`;
+// Релизы выходят в репозитории владельца (dfy-dpg); ошибки 2.x собирает форма «Сообщить о проблеме» в репозитории Laynholt
+const RELEASES_REPO = 'dfy-dpg/LibSaver';
+const ISSUES_REPO = 'Laynholt/LibSaver';
+const RELEASES_PAGE = `https://github.com/${RELEASES_REPO}/releases/latest`;
+const RELEASE_ASSET_PREFIX = `https://github.com/${RELEASES_REPO}/releases/download/`;
 
 // 1, если v1 новее v2; -1, если старее; 0 - равны ('2.0' и '2.0.0' равны)
 function compareVersions(v1, v2) {
@@ -21,7 +22,7 @@ async function fetchLatestRelease(timeoutMs = 30000) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const response = await fetch(`https://api.github.com/repos/${LIBSAVER_REPO}/releases/latest`, {
+    const response = await fetch(`https://api.github.com/repos/${RELEASES_REPO}/releases/latest`, {
       signal: controller.signal,
       headers: { Accept: 'application/vnd.github+json' }
     });

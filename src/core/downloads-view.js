@@ -128,7 +128,9 @@ function renderLog(logTail) {
 let enginePort = null;
 let pingTimer = 0;
 let autoScrollLog = true;
-let finishedIds = []; // для «Очистить завершённые»: готовые, с ошибкой и отменённые из последнего состояния
+let finishedIds = []; // для «Очистить историю»: готовые, с ошибкой и отменённые из последнего состояния
+let view = 'queue'; // вкладка: 'queue' - очередь и идущая загрузка, 'history' - завершённые
+let lastState = null; // для перерисовки при смене вкладки; до первого состояния от движка рисовать нечего
 let sourceUrl = ''; // сайт, над которым открыто окно
 const rendered = {}; // последняя разметка по id: state приходит часто, без изменений DOM не трогаем
 
@@ -166,15 +168,25 @@ function setListHtml(html) {
   patchChildren(list, [...fresh.content.children]);
 }
 
-function renderState({ items = [], stats = null, logTail = [] }) {
+function renderState(state) {
+  lastState = state;
+  const { items = [], stats = null, logTail = [] } = state;
   const byId = id => document.getElementById(id);
-  byId('dl-empty').hidden = items.length > 0;
-  finishedIds = items.filter(item => !ACTIVE_STATUSES.includes(item.status)).map(item => item.id);
-  byId('dl-clear-finished').hidden = !finishedIds.length;
-  setListHtml(items.map(item => renderQueueItem(item, stats)).join(''));
+  const active = items.filter(item => ACTIVE_STATUSES.includes(item.status));
+  const finished = items.filter(item => !ACTIVE_STATUSES.includes(item.status));
+  const history = view === 'history';
+  const shown = history ? finished : active;
+  finishedIds = finished.map(item => item.id);
+  byId('dl-count-queue').textContent = active.length || '';
+  byId('dl-count-history').textContent = finished.length || '';
+  byId('dl-empty').textContent = history ? 'История пуста' : 'Очередь пуста';
+  byId('dl-empty').hidden = shown.length > 0;
+  byId('dl-clear-finished').hidden = !history || !finishedIds.length;
+  setListHtml(shown.map(item => renderQueueItem(item, stats)).join(''));
   // «Ускорить» - про главы и картинки: над AnimeLIB прячем, пока в очереди нет глав
-  byId('speed-mode').hidden = /animelib\./.test(sourceUrl) && !items.some(item => ACTIVE_STATUSES.includes(item.status) && item.siteKey !== 'animelib');
-  byId('dl-current').hidden = !logTail.length && !stats;
+  byId('speed-mode').hidden = history || (/animelib\./.test(sourceUrl) && !active.some(item => item.siteKey !== 'animelib'));
+  // Лог и статистика текущего или последнего тайтла - на вкладке очереди
+  byId('dl-current').hidden = history || (!logTail.length && !stats);
   setHtml('dl-stats', renderStats(stats));
   if (setHtml('dl-log', renderLog(logTail)) && autoScrollLog) {
     const panel = byId('dl-log-panel');
@@ -257,6 +269,17 @@ async function initDownloadsView() {
     const button = event.target.closest('[data-cmd]');
     if (button && enginePort) sendCommand(button.dataset.cmd, button.dataset.id);
   });
+
+  for (const [id, name] of [['dl-tab-queue', 'queue'], ['dl-tab-history', 'history']]) {
+    byId(id).addEventListener('click', () => {
+      view = name;
+      for (const tab of ['dl-tab-queue', 'dl-tab-history']) {
+        byId(tab).classList.toggle('on', tab === id);
+        byId(tab).setAttribute('aria-selected', String(tab === id));
+      }
+      if (lastState) renderState(lastState);
+    });
+  }
 
   // Движок убирает по одному: те же команды remove, что и у кнопки на карточке
   byId('dl-clear-finished').addEventListener('click', () => {

@@ -31,6 +31,7 @@
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(200px, 230px));
       justify-content: center;
+      align-items: start; /* карточка высотой по своей обложке, а не по самой высокой в ряду */
       gap: var(--spacing-sm);
       padding-top: 2px; /* место под подъём карточки при наведении: список обрезает всё, что выше него */
     }
@@ -69,12 +70,17 @@
       flex-shrink: 0;
       position: relative;
     }
-    /* Поля вокруг картинки другого соотношения сторон - цвета карточки; картинка прижата к верху, чтобы обложки ряда начинались на одной линии */
+    /* Загруженная картинка задаёт высоту превью: обложка другого соотношения сторон - без пустых полей вокруг */
     .cover-preview.has-image {
       background-color: var(--bg-secondary);
+      aspect-ratio: auto;
     }
-    .cover-preview.has-image .img-wrapper {
-      align-items: flex-start;
+    .cover-preview.has-image .img-wrapper .img-container,
+    .cover-preview.has-image .img-wrapper .img-container img {
+      width: 100%;
+    }
+    .cover-preview.has-image .img-wrapper .img-container img {
+      max-height: 480px; /* очень вытянутая картинка не растягивает карточку на весь экран */
     }
     .cover-preview img {
       display: none;
@@ -340,8 +346,6 @@
   <input type="file" id="file-input" accept="image/*" style="display: none;">
   
   <script src="../libs/jszip.min.js"></script>
-  <script src="../libs/FileSaver.min.js"></script>
-  <script src="../libs/pica.min.js"></script>
   <script src="../core/theme.js"></script>
   <script src="../utils/autosave.js"></script>
   <script src="../editors/covers.js"></script>

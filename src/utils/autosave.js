@@ -1,8 +1,6 @@
 // autosave.js - автосохранение вместо кнопки «Сохранить»: правка поля (input/change) или событие libsaver:changed -> пауза -> save().
 // Подключается на страницах настроек и редакторов перед их скриптом.
 
-const AUTOSAVE_TOAST_GAP = 5000; // «Сохранено!» не на каждую правку
-
 // Для правок, после которых поле не меняется само (перетаскивание, загрузка файла, кнопки сброса)
 function notifyChanged(root = document) {
   root.dispatchEvent(new CustomEvent('libsaver:changed'));
@@ -11,7 +9,6 @@ function notifyChanged(root = document) {
 function enableAutosave({ save, root = document, delay = 400 }) {
   let timer = null;
   let queue = Promise.resolve(); // сохранения идут по очереди: save() читает старое значение и пишет новое
-  let lastToast = -Infinity;
 
   const toast = (message, type, duration) => {
     chrome.runtime.sendMessage({ action: 'showToast', message, type, duration }).catch(() => { /* нет окна, которое покажет toast */ });
@@ -21,11 +18,7 @@ function enableAutosave({ save, root = document, delay = 400 }) {
     timer = null;
     queue = queue.then(async () => {
       try {
-        await save();
-        if (Date.now() - lastToast >= AUTOSAVE_TOAST_GAP) {
-          lastToast = Date.now();
-          toast('Сохранено!', 'success');
-        }
+        await save(); // успех без уведомления: сохраняется каждая правка, сообщаем только об ошибке
       } catch (error) {
         console.error('[LibSaver] autosave', error);
         toast(`Не удалось сохранить: ${error?.message ?? error}`, 'error', 4000);

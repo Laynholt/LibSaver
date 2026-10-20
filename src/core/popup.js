@@ -202,26 +202,3 @@ document.getElementById('btn-animelib').addEventListener('click', async () => {
   await chrome.tabs.create({ url: 'https://animelib.org' });
 });
 
-// Секретное переключение логирования storage: 10 нажатий на текст сообщения за 8 секунд
-let secretClicks = [];
-const SECRET_CLICK_THRESHOLD = 10;
-const SECRET_CLICK_WINDOW = 8000; // 8 секунд
-
-document.getElementById('error-text').addEventListener('click', () => {
-  const now = Date.now();
-
-  // Удаляем клики старше 8 секунд
-  secretClicks = secretClicks.filter(click => now - click < SECRET_CLICK_WINDOW);
-  secretClicks.push(now);
-
-  if (secretClicks.length >= SECRET_CLICK_THRESHOLD) {
-    chrome.storage.session.get(['isLoggingEnabled'], (result) => {
-      if (result.isLoggingEnabled) {
-        chrome.runtime.sendMessage({ action: 'disableStorageLogging' });
-      } else {
-        chrome.runtime.sendMessage({ action: 'enableStorageLogging' });
-      }
-    });
-    secretClicks = []; // Сбрасываем
-  }
-});

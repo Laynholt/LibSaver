@@ -1471,7 +1471,7 @@ async function buildIssueUrl() {
     page: sourceUrl || '',
     browser: navigator.userAgent
   });
-  return `https://github.com/${LIBSAVER_REPO}/issues/new?${params}`;
+  return `https://github.com/${ISSUES_REPO}/issues/new?${params}`;
 }
 
 // Подсказка tippy вставляется в body, поэтому клик ловим делегированием

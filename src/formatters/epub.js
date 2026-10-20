@@ -2,7 +2,6 @@ class EpubFormatter extends BaseFormatter {
   constructor(options) {
     super(options);
     this.zip = new JSZip();
-    this.picaInstance = pica({ features: ['js'] });
   }
 
   getExtension() {
@@ -304,7 +303,7 @@ class EpubFormatter extends BaseFormatter {
   async processChapters(chapters, chapterFiles, imagesFolder, oebps) {
     // Определяем тип контента (манга или ранобэ)
     const siteType = this.options.siteType || 'ranobe';
-    const isManga = siteType === 'manga' || siteType === 'hentai' || siteType === 'shlib';
+    const isManga = siteType === 'manga';
 
     if (isManga) {
       return await this.processMangaChapters(chapters, chapterFiles, imagesFolder, oebps);

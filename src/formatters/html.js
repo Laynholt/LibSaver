@@ -140,7 +140,7 @@ class HtmlFormatter extends BaseFormatter {
   async processChapters(chapters) {
     // Определяем тип контента (манга или ранобэ)
     const siteType = this.options.siteType || 'ranobe';
-    const isManga = siteType === 'manga' || siteType === 'hentai' || siteType === 'shlib';
+    const isManga = siteType === 'manga';
 
     if (isManga) {
       return await this.processMangaChapters(chapters);
@@ -383,29 +383,6 @@ class HtmlFormatter extends BaseFormatter {
     const pageNum = String(pageIndex).padStart(3, '0');
 
     return `ch${chapterWhole}_${chapterFraction}_${pageNum}${extension}`;
-  }
-
-  buildAttachmentMap(attachments) {
-    const attachmentMap = {};
-    if (Array.isArray(attachments)) {
-      for (const att of attachments) {
-        // Поддержка нового формата с UUID
-        if (att.id && att.url) {
-          attachmentMap[att.id] = {
-            url: att.url.startsWith('http') ? att.url : `https://ranobelib.me${att.url}`,
-            extension: att.extension || 'jpg'
-          };
-        }
-        // Поддержка старого формата с name
-        if (att.name && att.url) {
-          attachmentMap[att.name] = {
-            url: att.url.startsWith('http') ? att.url : `https://ranobelib.me${att.url}`,
-            extension: att.extension || 'jpg'
-          };
-        }
-      }
-    }
-    return attachmentMap;
   }
 
   extractMangaId(attachments) {

@@ -520,7 +520,7 @@ test('ensureEngine creates one offscreen document even for concurrent calls', as
 test('saveFile is refused to a page context with a tab (content script) and served to the engine', async () => {
   const downloads = [];
   const ctx = vm.createContext({ chrome: { downloads: { download: async options => { downloads.push({ ...options }); return 1; } } }, console });
-  vm.runInContext(functionSource('src/background.js', 'handleEngineMessage'), ctx);
+  vm.runInContext('const downloadNames = new Map();\n' + functionSource('src/background.js', 'handleEngineMessage') + functionSource('src/background.js', 'suggestDownloadName'), ctx);
   const ask = sender => new Promise(resolve => ctx.handleEngineMessage({ action: 'saveFile', url: 'blob:x', filename: 'a.cbz' }, sender, response => resolve(JSON.parse(JSON.stringify(response)))));
   const refused = await ask({ id: 'ext', tab: { id: 3 } });
   assert.equal(refused.ok, false);
@@ -528,11 +528,18 @@ test('saveFile is refused to a page context with a tab (content script) and serv
   assert.deepEqual(downloads, []);
   assert.deepEqual(await ask({ id: 'ext', url: 'chrome-extension://ext/engine/engine.html' }), { ok: true });
   assert.deepEqual(downloads, [{ url: 'blob:x', filename: 'a.cbz', saveAs: false }]);
+  // Chrome drops the name of a blob from the offscreen document (GUID, extension by MIME): the name is suggested again, once
+  const suggested = [];
+  ctx.suggestDownloadName({ url: 'blob:x' }, value => suggested.push({ ...value }));
+  ctx.suggestDownloadName({ url: 'blob:x' }, value => suggested.push({ ...value }));
+  ctx.suggestDownloadName({ url: 'https://other.example/file.zip' }, value => suggested.push({ ...value }));
+  assert.deepEqual(suggested, [{ filename: 'a.cbz', conflictAction: 'uniquify' }]);
+  assert.match(source('src/background.js'), /chrome\.downloads\.onDeterminingFilename\?\.addListener\(suggestDownloadName\)/);
 });
 
 test('scripts of the engine page use neither storage, tabs, downloads nor the window DOM', () => {
   const scripts = [...source('src/engine/engine.html').matchAll(/<script src="\.\.\/([^"]+)"/g)].map(match => match[1]);
-  assert.deepEqual(scripts, ['libs/jszip.min.js', 'libs/pica.min.js', 'core/page-calls.js', 'utils/page-call.js', 'core/api.js', 'utils/protection.js', 'utils/header.js', 'core/statistics.js',
+  assert.deepEqual(scripts, ['libs/jszip.min.js', 'core/page-calls.js', 'utils/page-call.js', 'core/api.js', 'utils/protection.js', 'utils/header.js', 'core/statistics.js',
     'formatters/base.js', 'formatters/epub.js', 'formatters/txt.js', 'formatters/pdf.js', 'formatters/html.js', 'formatters/fb2.js', 'formatters/cbz.js', 'formatters/index.js', 'core/download.js', 'engine/queue.js', 'engine/anime.js', 'engine/engine.js']);
   // code only: template literals (html.js builds the reader page's script in one) and line comments are text
   const code = file => source('src/' + file).replace(/`(?:\\[\s\S]|[^`\\])*`/g, '``').replace(/^\s*\/\/.*$/gm, '');
@@ -733,7 +740,7 @@ test('downloads page is self-contained: theme, port client and view, no download
 function wiringContext({ failures = 0 } = {}) {
   const elements = {};
   const clone = value => JSON.parse(JSON.stringify(value)); // vm objects have another Object.prototype
-  const element = id => elements[id] ||= { id, innerHTML: '', hidden: false, style: {}, checked: false, scrollTop: 0, scrollHeight: 100, clientHeight: 50, listeners: {}, textContent: '', classes: new Set(), classList: { toggle: (name, on) => { on ? elements[id].classes.add(name) : elements[id].classes.delete(name); } }, addEventListener(type, fn) { this.listeners[type] = fn; } };
+  const element = id => elements[id] ||= { id, innerHTML: '', hidden: false, style: {}, checked: false, scrollTop: 0, scrollHeight: 100, clientHeight: 50, listeners: {}, textContent: '', classes: new Set(), classList: { toggle: (name, on) => { on ? elements[id].classes.add(name) : elements[id].classes.delete(name); } }, addEventListener(type, fn) { this.listeners[type] = fn; }, setAttribute(name, value) { this[name] = value; } };
   const ports = [];
   const created = [];
   const stored = [];
@@ -785,13 +792,24 @@ test('view ensures the engine, connects to the port and draws the state it recei
   assert.equal(element('dl-list').innerHTML, '');
 });
 
-test('«Очистить завершённые» shows only with finished items and removes all of them at once, leaving the active ones', async () => {
+test('finished titles go to «История» (issue #23); «Очистить историю» shows there only with finished items and removes all of them at once', async () => {
   const { ctx, element, ports } = wiringContext();
   await ctx.initDownloadsView();
   const port = ports[1];
   port.receive({ type: 'state', state: { items: [queueItem({ id: 'run', status: 'running' }), queueItem({ id: 'q', status: 'queued' })], stats: null, logTail: [] } });
   assert.equal(element('dl-clear-finished').hidden, true);
-  port.receive({ type: 'state', state: { items: [queueItem({ id: 'run', status: 'running' }), queueItem({ id: 'd', status: 'done' }), queueItem({ id: 'e', status: 'error' }), queueItem({ id: 'c', status: 'canceled' })], stats: null, logTail: [] } });
+  const state = { items: [queueItem({ id: 'run', status: 'running' }), queueItem({ id: 'd', status: 'done' }), queueItem({ id: 'e', status: 'error' }), queueItem({ id: 'c', status: 'canceled' })], stats: { errors: 0 }, logTail: [{ line: 'L' }] };
+  port.receive({ type: 'state', state });
+  // queue tab: only the active title, with its log; counters on both tabs
+  assert.equal(element('dl-list').innerHTML.match(/class="dl-item /g).length, 1);
+  assert.equal(element('dl-clear-finished').hidden, true);
+  assert.equal(element('dl-current').hidden, false);
+  assert.deepEqual([element('dl-count-queue').textContent, element('dl-count-history').textContent], [1, 3]);
+  element('dl-tab-history').listeners.click();
+  assert.equal(element('dl-list').innerHTML.match(/class="dl-item /g).length, 3);
+  assert.doesNotMatch(element('dl-list').innerHTML, /dl-running/);
+  assert.equal(element('dl-current').hidden, true);
+  assert.equal(element('dl-tab-history').classes.has('on'), true);
   assert.equal(element('dl-clear-finished').hidden, false);
   element('dl-clear-finished').listeners.click();
   assert.deepEqual(port.posted, [{ cmd: 'remove', id: 'd' }, { cmd: 'remove', id: 'e' }, { cmd: 'remove', id: 'c' }]);
@@ -2789,29 +2807,6 @@ test('the settings tab (no ?group=) lists the sections on the left and shows onl
   assert.deepEqual(jsonCopy(vm.runInContext('TAB_SECTIONS', ctx).flatMap(section => section.groups).sort()), [...groups].sort());
 });
 
-test('storage logging never throws without getContexts (Firefox) and does not switch itself off there', async () => {
-  const session = {};
-  const logs = [];
-  const ctx = vm.createContext({
-    console: { log: message => logs.push(message) },
-    disableLogging: () => logs.push('disabled'),
-    chrome: { runtime: {}, storage: {
-      session: { get: async () => session, set: async values => Object.assign(session, values), remove: async () => {} },
-      local: { getBytesInUse: (_keys, done) => done(1048576) }
-    } }
-  });
-  vm.runInContext(functionSource('src/background.js', 'logStorageSize'), ctx);
-  await ctx.logStorageSize();
-  assert.deepEqual(logs, ['[LibSaver] Storage size: 1.00 MB (1048576 bytes)']);
-  // with getContexts and no windows the timer starts and later switches logging off
-  ctx.chrome.runtime.getContexts = async () => [];
-  await ctx.logStorageSize();
-  assert.equal(typeof session.lastWindowCloseTime, 'number');
-  session.lastWindowCloseTime = Date.now() - 121000;
-  await ctx.logStorageSize();
-  assert.equal(logs.at(-1), 'disabled');
-});
-
 test('the popup keeps no range, preparation or editor-window code', () => {
   const popup = source('src/core/popup.js');
   assert.doesNotMatch(popup, /chapter-from|chapter-to|btn-download|loadTitleData|openPopupWindow|syncOpenWindows|canOpenWindow|windowNames/);
@@ -2983,26 +2978,13 @@ test('enableAutosave: a failed save is a toast with the error text and a console
   assert.deepEqual(jsonCopy(messages), [{ action: 'showToast', message: 'Не удалось сохранить: quota <b>exceeded</b>', type: 'error', duration: 4000 }]);
   assert.equal(errors.length, 1);
   fail = false;
+  let saved = 0;
+  ctx.enableAutosave({ save: () => { saved++; } });
   emit('input');
   clock.advance(400);
   await flush();
-  assert.equal(messages.at(-1).message, 'Сохранено!');
-});
-
-test('enableAutosave: «Сохранено!» is shown at most once in 5 seconds, not after every change', async () => {
-  const { ctx, clock, emit, messages } = autosaveContext();
-  ctx.enableAutosave({ save: () => {} });
-  for (let i = 0; i < 4; i++) {
-    emit('input');
-    clock.advance(1000);
-    await flush();
-  }
-  assert.equal(messages.filter(message => message.message === 'Сохранено!').length, 1);
-  clock.advance(5000);
-  emit('input');
-  clock.advance(400);
-  await flush();
-  assert.equal(messages.filter(message => message.message === 'Сохранено!').length, 2);
+  assert.ok(saved > 0);
+  assert.equal(messages.length, 1); // a successful save shows no toast (issue #20)
 });
 
 test('toasts insert their text with textContent, so an error text cannot inject markup', () => {
@@ -3463,26 +3445,26 @@ function updateCheckContext(release, { status = 200, userAgent = 'Chrome' } = {}
 
 test('update check: the tag of the latest release is compared with the manifest version, assets come only from the repository', async () => {
   const assets = [
-    { name: 'LibSaver-v2.1.0.zip', browser_download_url: 'https://github.com/Laynholt/LibSaver/releases/download/v2.1.0/LibSaver-v2.1.0.zip' },
-    { name: 'LibSaver-v2.1.0-firefox.zip', browser_download_url: 'https://github.com/Laynholt/LibSaver/releases/download/v2.1.0/LibSaver-v2.1.0-firefox.zip' },
+    { name: 'LibSaver-v2.1.0.zip', browser_download_url: 'https://github.com/dfy-dpg/LibSaver/releases/download/v2.1.0/LibSaver-v2.1.0.zip' },
+    { name: 'LibSaver-v2.1.0-firefox.zip', browser_download_url: 'https://github.com/dfy-dpg/LibSaver/releases/download/v2.1.0/LibSaver-v2.1.0-firefox.zip' },
     { name: 'evil.xpi', browser_download_url: 'https://evil.example/evil.xpi' }
   ];
   const { ctx, calls } = updateCheckContext({ tag_name: 'v2.1.0', assets });
   const release = jsonOf(await ctx.fetchLatestRelease());
-  assert.equal(calls.fetched[0], 'https://api.github.com/repos/Laynholt/LibSaver/releases/latest');
-  assert.deepEqual(release, { version: '2.1.0', page: 'https://github.com/Laynholt/LibSaver/releases/latest', zip: assets[0].browser_download_url });
+  assert.equal(calls.fetched[0], 'https://api.github.com/repos/dfy-dpg/LibSaver/releases/latest');
+  assert.deepEqual(release, { version: '2.1.0', page: 'https://github.com/dfy-dpg/LibSaver/releases/latest', zip: assets[0].browser_download_url });
   assert.equal(ctx.compareVersions('2.1.0', '2.0.0'), 1);
   assert.equal(ctx.compareVersions('2.0', '2.0.0'), 0);
   assert.equal(ctx.compareVersions('1.7', '2.0.0'), -1);
   ctx.openUpdate(release);
   assert.deepEqual(calls.downloads, [assets[0].browser_download_url]);
-  assert.deepEqual(calls.tabs, ['https://github.com/Laynholt/LibSaver/releases/latest']);
+  assert.deepEqual(calls.tabs, ['https://github.com/dfy-dpg/LibSaver/releases/latest']);
 });
 
 test('update check: no releases or a tag that is not a version is an error, Firefox opens a signed xpi', async () => {
   await assert.rejects(updateCheckContext({}, { status: 404 }).ctx.fetchLatestRelease(), { message: 'HTTP 404' });
   await assert.rejects(updateCheckContext({ tag_name: 'nightly' }).ctx.fetchLatestRelease(), { message: 'Нет версии в релизе' });
-  const xpi = 'https://github.com/Laynholt/LibSaver/releases/download/v2.1.0/libsaver.xpi';
+  const xpi = 'https://github.com/dfy-dpg/LibSaver/releases/download/v2.1.0/libsaver.xpi';
   const { ctx, calls } = updateCheckContext({ tag_name: 'v2.1.0', assets: [{ name: 'libsaver.xpi', browser_download_url: xpi }] }, { userAgent: 'Mozilla/5.0 Firefox/130.0' });
   ctx.openUpdate(await ctx.fetchLatestRelease());
   assert.deepEqual([calls.tabs, calls.downloads], [[xpi], []]);
@@ -3490,7 +3472,7 @@ test('update check: no releases or a tag that is not a version is an error, Fire
 
 test('«Сообщить о проблеме» opens the issue form of the 2.x repository with version, title page and browser filled in', async () => {
   const ctx = vm.createContext({
-    URLSearchParams, LIBSAVER_REPO: 'Laynholt/LibSaver', navigator: { userAgent: 'UA 1' },
+    URLSearchParams, ISSUES_REPO: 'Laynholt/LibSaver', navigator: { userAgent: 'UA 1' },
     chrome: { storage: { local: { get: async () => ({ sourceUrl: 'https://mangalib.me/ru/manga/1--a' }) } }, runtime: { getManifest: () => ({ version: '2.0.0' }) } }
   });
   vm.runInContext(functionSource('src/core/settings.js', 'buildIssueUrl'), ctx);

@@ -26,6 +26,28 @@ class PdfFormatter extends BaseFormatter {
     return 'application/pdf';
   }
 
+  // pdf-lib встраивает только PNG и JPEG. Тип - по первым байтам (подпись сервера бывает неверной);
+  // WebP/AVIF/GIF и файл, который pdf-lib не принял, перекодируются через canvas в формат из настроек PDF
+  async embedImage(pdfDoc, blob) {
+    const type = await sniffImageType(blob);
+    if (type === 'image/png' || type === 'image/jpeg') {
+      const bytes = await blob.arrayBuffer();
+      try {
+        return type === 'image/png' ? await pdfDoc.embedPng(bytes) : await pdfDoc.embedJpg(bytes);
+      } catch (error) { /* перекодируем ниже */ }
+    }
+    const toJpeg = this.options.pdfImageFormat === 'original-jpeg';
+    const bitmap = await createImageBitmap(blob).catch(error => { throw new Error(`Не удалось декодировать изображение: ${error.message}`); });
+    const canvas = document.createElement('canvas');
+    canvas.width = bitmap.width;
+    canvas.height = bitmap.height;
+    canvas.getContext('2d').drawImage(bitmap, 0, 0);
+    bitmap.close();
+    const converted = await new Promise(resolve => canvas.toBlob(resolve, toJpeg ? 'image/jpeg' : 'image/png', toJpeg ? (this.options.pdfJpegQuality || 1.0) : undefined));
+    const bytes = await converted.arrayBuffer();
+    return toJpeg ? pdfDoc.embedJpg(bytes) : pdfDoc.embedPng(bytes);
+  }
+
   async format(chapters, metadata) {
     await loadPdfLibs();
     const { PDFDocument, rgb } = PDFLib;
@@ -175,7 +197,7 @@ class PdfFormatter extends BaseFormatter {
     }
 
     // Определяем тип контента
-    const isManga = (this.options.siteType || 'ranobe') === 'manga' || (this.options.siteType || 'ranobe') === 'hentai' || (this.options.siteType || 'ranobe') === 'shlib';
+    const isManga = this.options.siteType === 'manga';
 
     // 1. Добавляем обложки
     const coversStats = await this.addCoversToPdf(pdfDoc, metadata, addLog);
@@ -244,64 +266,7 @@ class PdfFormatter extends BaseFormatter {
       try {
         const imageResult = await this.downloadAndResizeImage(actualUrl, coverQuality, this.options.pdfImageFormat, 'обложка');
         const imageBlob = imageResult.blob;
-        const imageBytes = await imageBlob.arrayBuffer();
-
-        // Определяем формат для PDF по настройкам
-        const pdfImageFormat = this.options.pdfImageFormat || 'original-png';
-        const pdfJpegQuality = this.options.pdfJpegQuality || 1.0;
-
-        // Конвертируем в выбранный формат и применяем качество
-        let finalImageBytes = imageBytes;
-        const needsConversion = pdfImageFormat === 'original-jpeg' || pdfImageFormat === 'original-png';
-        const targetFormat = pdfImageFormat === 'original-jpeg' ? 'jpeg' : 'png';
-
-        // Конвертируем только если формат не PNG/JPEG или нужно изменить формат
-        if (needsConversion && (imageBlob.type !== 'image/png' && imageBlob.type !== 'image/jpeg')) {
-          // WebP/AVIF/GIF → конвертируем в выбранный формат
-          const img = new Image();
-          await new Promise((resolve, reject) => {
-            img.onload = resolve;
-            img.onerror = reject;
-            img.src = URL.createObjectURL(imageBlob);
-          });
-
-          const canvas = document.createElement('canvas');
-          canvas.width = img.width;
-          canvas.height = img.height;
-          const ctx = canvas.getContext('2d');
-          ctx.drawImage(img, 0, 0);
-
-          const outputFormat = targetFormat === 'jpeg' ? 'image/jpeg' : 'image/png';
-          const outputQuality = targetFormat === 'jpeg' ? pdfJpegQuality : undefined;
-          const convertedBlob = await new Promise(resolve => canvas.toBlob(resolve, outputFormat, outputQuality));
-          finalImageBytes = await convertedBlob.arrayBuffer();
-          URL.revokeObjectURL(img.src);
-        }
-
-        // Определяем тип изображения по фактическому типу blob
-        const actualType = needsConversion && (imageBlob.type !== 'image/png' && imageBlob.type !== 'image/jpeg')
-          ? (targetFormat === 'jpeg' ? 'image/jpeg' : 'image/png')
-          : imageBlob.type;
-
-        let pdfImage;
-        try {
-          if (actualType === 'image/png') {
-            pdfImage = await pdfDoc.embedPng(finalImageBytes);
-          } else {
-            pdfImage = await pdfDoc.embedJpg(finalImageBytes);
-          }
-        } catch (error) {
-          // Fallback: если JPEG не сработал, попробуем PNG
-          if (actualType !== 'image/png') {
-            try {
-              pdfImage = await pdfDoc.embedPng(finalImageBytes);
-            } catch (fallbackError) {
-              throw new Error(`Не удалось декодировать изображение (ни как JPEG, ни как PNG): ${error.message}`);
-            }
-          } else {
-            throw error;
-          }
-        }
+        const pdfImage = await this.embedImage(pdfDoc, imageBlob);
 
         // Создаём страницу с размером обложки
         const page = pdfDoc.addPage([pdfImage.width, pdfImage.height]);
@@ -464,68 +429,10 @@ class PdfFormatter extends BaseFormatter {
           }
           const imageBlob = imageResult.blob;
 
-          // Декодируем через canvas для надёжности (особенно для img2.imglib.info)
-          const img = new Image();
-          await new Promise((resolve, reject) => {
-            img.onload = resolve;
-            img.onerror = () => reject(new Error('Не удалось загрузить изображение в canvas'));
-            img.src = URL.createObjectURL(imageBlob);
-          });
-
-          const canvas = document.createElement('canvas');
-          canvas.width = img.width;
-          canvas.height = img.height;
-          const ctx = canvas.getContext('2d');
-          ctx.drawImage(img, 0, 0);
-
-          // Используем настройки формата и качества для PDF
-          const pdfImageFormat = this.options.pdfImageFormat || 'original-png';
-          const pdfJpegQuality = this.options.pdfJpegQuality || 1.0;
-
-          const needsConversion = pdfImageFormat === 'original-jpeg' || pdfImageFormat === 'original-png';
-          const targetFormat = pdfImageFormat === 'original-jpeg' ? 'jpeg' : 'png';
-
-          let canvasBlob;
-          let imageBytes;
-          if (needsConversion && (imageBlob.type !== 'image/png' && imageBlob.type !== 'image/jpeg')) {
-            // WebP/AVIF/GIF → конвертируем в выбранный формат
-            const outputFormat = targetFormat === 'jpeg' ? 'image/jpeg' : 'image/png';
-            const outputQuality = targetFormat === 'jpeg' ? pdfJpegQuality : undefined;
-            canvasBlob = await new Promise(resolve => canvas.toBlob(resolve, outputFormat, outputQuality));
-            imageBytes = await canvasBlob.arrayBuffer();
-          } else {
-            // PNG/JPEG → оставляем как есть, но через canvas для consistency
-            canvasBlob = await new Promise(resolve => canvas.toBlob(resolve, imageBlob.type));
-            imageBytes = await canvasBlob.arrayBuffer();
-          }
-
-          URL.revokeObjectURL(img.src);
-
+          const pdfImage = await this.embedImage(pdfDoc, imageBlob);
           this.imagesDownloaded++;
           if (window.incrementTotalImages) {
             window.incrementTotalImages();
-          }
-
-          // Встраиваем в PDF уже конвертированные байты
-          let pdfImage;
-          try {
-            // Определяем тип для встраивания
-            const actualType = needsConversion && (imageBlob.type !== 'image/png' && imageBlob.type !== 'image/jpeg')
-              ? (targetFormat === 'jpeg' ? 'image/jpeg' : 'image/png')
-              : imageBlob.type;
-
-            if (actualType === 'image/png') {
-              pdfImage = await pdfDoc.embedPng(imageBytes);
-            } else {
-              pdfImage = await pdfDoc.embedJpg(imageBytes);
-            }
-          } catch (error) {
-            // Fallback: если JPEG не сработал, попробуем PNG
-            try {
-              pdfImage = await pdfDoc.embedPng(imageBytes);
-            } catch (fallbackError) {
-              throw new Error(`Не удалось декодировать изображение (ни как JPEG, ни как PNG): ${error.message}`);
-            }
           }
 
           // Создаём страницу с размером картинки
@@ -707,48 +614,7 @@ class PdfFormatter extends BaseFormatter {
               const imgSrc = img.src || img.getAttribute('src');
               if (imgSrc && imgSrc.startsWith('data:')) {
                 try {
-                  // Пропускаем префикс data:image/...;base64,
-                  const parts = imgSrc.split(',');
-                  if (parts.length < 2) {
-                    addLog(`Некорректный base64 формат: ${imgSrc.substring(0, 50)}...`, true);
-                    continue;
-                  }
-                  const base64Data = parts[1];
-
-                  // Декодируем base64
-                  let decodedString;
-                  try {
-                    decodedString = atob(base64Data);
-                  } catch (e) {
-                    addLog(`Ошибка atob: ${e.message}`, true);
-                    continue;
-                  }
-
-                  const imageBytes = Uint8Array.from(decodedString, c => c.charCodeAt(0));
-
-                  // Определяем тип изображения по data URI или расширению
-                  const isPng = imgSrc.includes('image/png') ||
-                               imgSrc.toLowerCase().includes('.png');
-
-                  let pdfImage;
-                  try {
-                    if (isPng) {
-                      pdfImage = await pdfDoc.embedPng(imageBytes);
-                    } else {
-                      pdfImage = await pdfDoc.embedJpg(imageBytes);
-                    }
-                  } catch (error) {
-                    // Fallback: если JPEG не сработал, попробуем PNG
-                    if (!isPng) {
-                      try {
-                        pdfImage = await pdfDoc.embedPng(imageBytes);
-                      } catch (fallbackError) {
-                        throw new Error(`Не удалось декодировать изображение (ни как JPEG, ни как PNG): ${error.message}`);
-                      }
-                    } else {
-                      throw error;
-                    }
-                  }
+                  const pdfImage = await this.embedImage(pdfDoc, await (await fetch(imgSrc)).blob());
 
                   // Проверяем, помещается ли картинка на текущей странице
                   const imageHeight = pdfImage.height;

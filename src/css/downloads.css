@@ -17,30 +17,52 @@ body {
 
 .dl-header {
   display: flex;
+  flex-wrap: wrap; /* узкое окно: вкладки и кнопки переносятся, а не растягивают страницу */
   align-items: center;
   justify-content: space-between;
   gap: var(--spacing-md);
 }
 
-.dl-header h2 {
-  margin: 0 auto 0 0;
-  font-size: 14px;
-  font-weight: 650;
+/* Вкладки «Загрузки» и «История» */
+.dl-tabs {
+  display: flex;
+  gap: var(--spacing-xs);
+  margin-right: auto;
+}
+
+.dl-tab {
   display: flex;
   align-items: center;
   gap: var(--spacing-sm);
+  height: 32px;
+  padding: 0 12px;
+  border: 1px solid transparent;
+  border-radius: var(--border-radius);
+  background: none;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 650;
+  cursor: pointer;
 }
 
-.dl-header h2 i {
-  width: 30px;
-  height: 30px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: var(--border-radius);
+.dl-tab:hover {
+  color: var(--text-primary);
+}
+
+.dl-tab.on {
+  color: var(--text-primary);
+  background: var(--background-elevated-2);
+  border-color: var(--border-color);
+}
+
+.dl-tab i {
   color: var(--accent-color);
-  background: color-mix(in srgb, var(--accent-color) 14%, transparent);
-  font-size: 13px;
+}
+
+.dl-tab small {
+  color: var(--accent-color);
+  font-size: 12px;
 }
 
 .speed-mode-toggle {
