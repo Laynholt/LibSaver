@@ -83,6 +83,7 @@ function createOverlayHost(src) {
   const frame = document.createElement('iframe');
   frame.className = 'frame';
   frame.setAttribute('title', 'LibSaver');
+  frame.setAttribute('allow', 'clipboard-write'); // «Скопировать логи» в разделе «Загрузки»
   frame.src = src;
   backdrop.append(frame);
   shadow.append(backdrop);

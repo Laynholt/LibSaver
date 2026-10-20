@@ -700,13 +700,14 @@ class BaseFormatter {
 
 
 
+  // Обложка - строка-адрес или объект редактора обложек; у загруженного пользователем файла есть dataUrl, он важнее url
   extractCoverUrl(coverUrl) {
     if (!coverUrl) return null;
     
-    if (typeof coverUrl === 'object' && coverUrl.url) {
-      return coverUrl.url;
-    } else if (typeof coverUrl === 'object' && coverUrl.dataUrl) {
+    if (typeof coverUrl === 'object' && coverUrl.dataUrl) {
       return coverUrl.dataUrl;
+    } else if (typeof coverUrl === 'object' && coverUrl.url) {
+      return coverUrl.url;
     }
     
     if (typeof coverUrl === 'string' && coverUrl) {

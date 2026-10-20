@@ -176,6 +176,7 @@ function startPanel() {
     if (!frame) {
       frame = document.createElement('iframe');
       frame.setAttribute('title', section.title);
+      frame.setAttribute('allow', 'clipboard-write'); // разрешение доходит до раздела, только если его передал каждый iframe по пути
       // Страницы расширения - того же origin, до их документа можно дотянуться
       frame.addEventListener('load', () => {
         try { frame.contentDocument.addEventListener('keydown', onEscape); } catch (e) { /* чужой документ */ }
@@ -239,7 +240,9 @@ function startPanel() {
       await chrome.runtime.sendMessage({ action: 'ensureEngine' });
       const port = chrome.runtime.connect({ name: 'libsaver-engine' });
       queuePort = port;
+      // state приходит каждые 250 мс; пересборка меню на каждый сбивала наведение и съедала клики - только при смене числа
       const setActive = number => {
+        if (number === active) return;
         active = number;
         renderMenu();
       };

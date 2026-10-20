@@ -251,13 +251,8 @@ class PdfFormatter extends BaseFormatter {
         continue;
       }
 
-      // Если это объект с dataUrl (локальный файл), используем dataUrl
-      const coverUrl = typeof coverItem === 'object' && coverItem.dataUrl
-        ? coverItem.dataUrl
-        : coverItem;
-
       // Извлекаем URL из обложки (может быть объект или строка)
-      const actualUrl = this.extractCoverUrl(coverUrl);
+      const actualUrl = this.extractCoverUrl(coverItem);
       if (!actualUrl) {
         stats.failed++;
         continue;

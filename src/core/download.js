@@ -490,7 +490,6 @@ async function startDownload(snapshot) {
             slug: options.slug,
             siteKey: options.siteKey, // base.js вызывает страницу сайта по siteKey, без chrome.tabs
             imageServer: options.imageServer || 'normal',
-            loadChapterPages: options.loadChapterPages,
             // Передаем обработчик ошибок глав
             onChapterError: handleChapterError,
             // Передаем обработчик ошибок картинок (для манги)

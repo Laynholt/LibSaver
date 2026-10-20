@@ -260,6 +260,61 @@ body {
   margin-right: var(--spacing-sm);
 }
 
+/* Иконка-кнопка: «Скопировать лог», «Закрыть» */
+.dl-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: var(--border-radius);
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.dl-icon-btn:hover {
+  color: var(--text-primary);
+  border-color: var(--border-color);
+  background-color: var(--bg-tertiary);
+}
+
+.dl-icon-btn.copied {
+  color: var(--success-color);
+}
+
+/* В заголовке <details> кнопка справа; flex у summary убрал бы стрелку раскрытия */
+.dl-zone summary .dl-icon-btn {
+  float: right;
+  margin-top: -4px;
+}
+
+.dl-title-log[hidden] {
+  display: none;
+}
+
+.dl-title-log-head {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  padding: var(--spacing-sm) 0;
+}
+
+.dl-title-log-name {
+  flex: 1;
+  min-width: 0;
+  font-size: 14px;
+  font-weight: 650;
+  overflow-wrap: anywhere;
+}
+
+.dl-title-log-name i {
+  color: var(--accent-color);
+  margin-right: var(--spacing-sm);
+}
+
 .dl-current {
   display: flex;
   flex-direction: column;

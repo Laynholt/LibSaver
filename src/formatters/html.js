@@ -85,58 +85,6 @@ class HtmlFormatter extends BaseFormatter {
     return { downloaded, failed, total, coverBase64, coverFiles };
   }
 
-  getImageExtension(blob, imageFormat, url) {
-    if (imageFormat && imageFormat !== 'original') {
-      return '.' + imageFormat.toLowerCase();
-    }
-
-    // Определяем по blob
-    if (blob.type) {
-      const mime = blob.type;
-      if (mime === 'image/jpeg') return '.jpg';
-      if (mime === 'image/png') return '.png';
-      if (mime === 'image/webp') return '.webp';
-      if (mime === 'image/gif') return '.gif';
-    }
-
-    // Определяем по URL
-    if (url) {
-      const urlLower = url.toLowerCase();
-      if (urlLower.includes('.jpg') || urlLower.includes('.jpeg')) return '.jpg';
-      if (urlLower.includes('.png')) return '.png';
-      if (urlLower.includes('.webp')) return '.webp';
-      if (urlLower.includes('.gif')) return '.gif';
-    }
-
-    return '.jpg';
-  }
-
-  extractCoverUrl(coverItem) {
-    if (!coverItem) return null;
-
-    if (typeof coverItem === 'string') {
-      return coverItem;
-    }
-
-    if (coverItem.dataUrl) {
-      return coverItem.dataUrl;
-    }
-
-    if (coverItem.src) {
-      return coverItem.src;
-    }
-
-    if (coverItem.url) {
-      return coverItem.url;
-    }
-
-    if (coverItem.full) {
-      return coverItem.full;
-    }
-
-    return null;
-  }
-
   async processChapters(chapters) {
     // Определяем тип контента (манга или ранобэ)
     const siteType = this.options.siteType || 'ranobe';
@@ -383,11 +331,6 @@ class HtmlFormatter extends BaseFormatter {
     const pageNum = String(pageIndex).padStart(3, '0');
 
     return `ch${chapterWhole}_${chapterFraction}_${pageNum}${extension}`;
-  }
-
-  extractMangaId(attachments) {
-    if (!attachments || !Array.isArray(attachments) || attachments.length === 0) return null;
-    return attachments[0].mangaId || null;
   }
 
   async blobToBase64(blob) {

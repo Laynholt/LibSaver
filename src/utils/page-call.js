@@ -166,6 +166,7 @@ const TAB_GONE = /No tab with id|tab was closed|Frame with ID \d+ was removed|fr
 async function execPageCall(tabId, name, args) {
   if (!hasTabApi()) return viaServiceWorker({ action: 'pageCall:exec', tabId, name, args });
   try {
+    await chrome.scripting.executeScript({ target: { tabId }, files: ['core/page-helpers.js'] }); // общее для PAGE_CALLS
     const results = await chrome.scripting.executeScript({ target: { tabId }, func: PAGE_CALLS[name], args });
     return results[0]?.result;
   } catch (e) {

@@ -539,22 +539,31 @@ for (const status of [403, 404]) {
   }
 }
 
-// page-calls.js keeps a copy of fetchWithRetry inside every function injected into the site tab
-const apiRetryCopies = source('src/core/page-calls.js').match(/async function fetchWithRetry\(url, options = \{\}, maxRetries = 3[\s\S]*?throw lastError \|\| new Error\('Max retries exceeded'\);\s*\}/g);
-test('page-calls has four injected retry loops', () => assert.equal(apiRetryCopies.length, 4));
-apiRetryCopies.forEach((copy, index) => {
-  for (const [status, expectedRequests] of [[404, 1], [403, 1], [503, 4]]) {
-    test(`page-calls retry loop #${index + 1}: HTTP ${status} makes ${expectedRequests} request(s)`, async () => {
-      let requests = 0;
-      const context = vm.createContext({
-        fetch: async () => { requests++; return { ok: false, status }; },
-        setTimeout: fn => fn()
-      });
-      vm.runInContext(copy, context);
-      await assert.rejects(context.fetchWithRetry('https://example.invalid'));
-      assert.equal(requests, expectedRequests);
+// PAGE_CALLS share one retry loop from page-helpers.js instead of a copy each
+test('page-calls keeps no own copy of the retry loop, the config or the JWT scan', () => {
+  assert.doesNotMatch(source('src/core/page-calls.js'), /function (fetchWithRetry|getSiteConfig|findJwt)\b/);
+});
+for (const [status, expectedRequests] of [[404, 1], [403, 1], [503, 4]]) {
+  test(`page-helpers retry loop: HTTP ${status} makes ${expectedRequests} request(s)`, async () => {
+    let requests = 0;
+    const context = vm.createContext({
+      fetch: async () => { requests++; return { ok: false, status }; },
+      setTimeout: fn => fn()
     });
-  }
+    vm.runInContext(source('src/core/page-helpers.js'), context);
+    await assert.rejects(context.libsaverFetchWithRetry('https://example.invalid'));
+    assert.equal(requests, expectedRequests);
+  });
+}
+
+test('HTML uses the base cover, extension and mangaId helpers; a user-uploaded cover file wins over its url', () => {
+  const context = vm.createContext({});
+  vm.runInContext(source('src/formatters/base.js') + source('src/formatters/html.js') + '\nthis.Base = BaseFormatter; this.Html = HtmlFormatter;', context);
+  for (const name of ['getImageExtension', 'extractCoverUrl', 'extractMangaId']) assert.equal(Object.hasOwn(context.Html.prototype, name), false, name);
+  const formatter = new context.Base({});
+  assert.equal(formatter.extractCoverUrl({ type: 'file', url: 'https://x/c.jpg', dataUrl: 'data:image/png;base64,' }), 'data:image/png;base64,');
+  assert.equal(formatter.extractCoverUrl({ url: 'https://x/c.jpg' }), 'https://x/c.jpg');
+  assert.equal(formatter.extractCoverUrl('https://x/c.jpg'), 'https://x/c.jpg');
 });
 
 for (const [file, className] of [['src/formatters/epub.js', 'EpubFormatter'], ['src/formatters/html.js', 'HtmlFormatter']]) {
@@ -819,4 +828,12 @@ test('chapters tab: «от/до» labels are not drag handles and line up, the t
   assert.match(css, /\.range-row span \{\s*min-width: 2em;/);
   assert.doesNotMatch(source('src/html/chapters.html'), /^\s*\.toolbar \{/m);
   assert.match(source('src/editors/chapters.js'), /fitsBelow \? rect\.bottom \+ 2 : Math\.max\(0, rect\.top - 2 - dropdown\.offsetHeight\)/);
+});
+
+test('queue state every 250 ms does not rebuild the panel menu: hover stays and clicks land while a title downloads', () => {
+  const code = between('src/core/panel.js', 'const setActive = number => {', 'port.onMessage.addListener');
+  const context = vm.createContext({ active: 0, renders: 0, renderMenu() { context.renders++; } });
+  vm.runInContext(`${code}\nthis.setActive = setActive;`, context);
+  for (const n of [1, 1, 1, 1, 2, 2, 0]) context.setActive(n);
+  assert.equal(context.renders, 3); // 0 -> 1 -> 2 -> 0
 });

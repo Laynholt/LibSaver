@@ -210,12 +210,7 @@ class TxtFormatter extends BaseFormatter {
       const coverItem = coversToDownload[i];
       if (!coverItem) continue;
 
-      // Если это объект с dataUrl (локальный файл), используем dataUrl
-      const coverUrl = typeof coverItem === 'object' && coverItem.dataUrl
-        ? coverItem.dataUrl
-        : coverItem;
-
-      const actualUrl = this.extractCoverUrl(coverUrl);
+      const actualUrl = this.extractCoverUrl(coverItem);
 
       if (!actualUrl) {
         if (this.options.addLog) {

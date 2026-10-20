@@ -17,6 +17,7 @@ const COMMAND_BUTTONS = {
   skip: ['fa-forward-step', 'Пропустить'],
   cancel: ['fa-xmark', 'Отменить'],
   saveAgain: ['fa-download', 'Сохранить файл ещё раз'],
+  log: ['fa-circle-info', 'Логи'],
   remove: ['fa-trash', 'Убрать из очереди']
 };
 
@@ -26,9 +27,9 @@ const STATUS_COMMANDS = {
   paused: ['resume', 'cancel'],
   'waiting-tab': ['cancel'],
   'waiting-decision': ['retry', 'skip', 'cancel'],
-  done: ['saveAgain', 'remove'],
-  error: ['remove'],
-  canceled: ['remove']
+  done: ['log', 'saveAgain', 'remove'],
+  error: ['log', 'remove'],
+  canceled: ['log', 'remove']
 };
 
 const unitsOf = item => item.siteKey === 'animelib' ? 'серий' : 'глав';
@@ -78,7 +79,8 @@ function renderQueueItem(item, stats) {
   const { current, total, part = 0 } = item.progress; // part - доля текущей главы по картинкам
   const percent = total ? Math.min(100, Math.round(((current + part) / total) * 100)) : 0;
   // Файл готового тайтла движок держит только у последнего (canSaveAgain): у остальных пересохранять нечего
-  const commands = (STATUS_COMMANDS[item.status] || []).filter(command => command !== 'saveAgain' || item.canSaveAgain);
+  // Лог есть у тайтла, который начинал качаться (hasLog): отменённый в очереди его не имеет
+  const commands = (STATUS_COMMANDS[item.status] || []).filter(command => (command !== 'saveAgain' || item.canSaveAgain) && (command !== 'log' || item.hasLog));
   const buttons = commands.map(command => renderCommandButton(command, item.id)).join('');
   return `<div class="dl-item dl-${escapeHtml(item.status)}">` +
     `<div class="dl-item-head"><span class="dl-item-title">${escapeHtml(item.title)}</span><span class="dl-format">${escapeHtml(String(item.format ?? '').toUpperCase())}</span></div>` +
@@ -123,6 +125,40 @@ function renderLog(logTail) {
   }).join('');
 }
 
+// Текст для буфера обмена: версия и тайтл сверху - чтобы лог можно было сразу приложить к issue
+function logText(item, lines) {
+  const version = globalThis.chrome?.runtime?.getManifest?.().version;
+  const head = [`LibSaver ${version || ''}`.trim(), item && `${item.title} (${String(item.format ?? '').toUpperCase()})`].filter(Boolean);
+  return [...head, '', ...lines.map(entry => entry.line)].join('\n');
+}
+
+// navigator.clipboard в iframe работает, только если сайт не запретил clipboard-write; иначе - старый execCommand
+async function copyText(text) {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch (e) {
+    const area = document.createElement('textarea');
+    area.value = text;
+    area.style.cssText = 'position:fixed;opacity:0';
+    document.body.append(area);
+    area.select();
+    const ok = document.execCommand('copy');
+    area.remove();
+    return ok;
+  }
+}
+
+function flashCopied(button, ok) {
+  const icon = button.querySelector('i');
+  button.classList.toggle('copied', ok);
+  icon.className = ok ? 'fa-solid fa-check' : 'fa-solid fa-triangle-exclamation';
+  setTimeout(() => {
+    button.classList.remove('copied');
+    icon.className = 'fa-solid fa-copy';
+  }, 1500);
+}
+
 // --- Порт к движку ---
 
 let enginePort = null;
@@ -132,6 +168,7 @@ let finishedIds = []; // для «Очистить историю»: готов�
 let view = 'queue'; // вкладка: 'queue' - очередь и идущая загрузка, 'history' - завершённые
 let lastState = null; // для перерисовки при смене вкладки; до первого состояния от движка рисовать нечего
 let sourceUrl = ''; // сайт, над которым открыто окно
+let titleLog = null; // { id, lines }: лог тайтла, открытый из «Истории»
 const rendered = {}; // последняя разметка по id: state приходит часто, без изменений DOM не трогаем
 
 function setHtml(id, html) {
@@ -187,6 +224,8 @@ function renderState(state) {
   byId('speed-mode').hidden = history || (/animelib\./.test(sourceUrl) && !active.some(item => item.siteKey !== 'animelib'));
   // Лог и статистика текущего или последнего тайтла - на вкладке очереди
   byId('dl-current').hidden = history || (!logTail.length && !stats);
+  // Открытый лог тайтла живёт на вкладке «История», пока тайтл в ней есть
+  if (titleLog && (!history || !finished.some(item => item.id === titleLog.id))) closeTitleLog();
   setHtml('dl-stats', renderStats(stats));
   if (setHtml('dl-log', renderLog(logTail)) && autoScrollLog) {
     const panel = byId('dl-log-panel');
@@ -194,10 +233,32 @@ function renderState(state) {
   }
 }
 
+function closeTitleLog() {
+  titleLog = null;
+  document.getElementById('dl-title-log').hidden = true;
+  document.getElementById('dl-title-log-body').innerHTML = '';
+}
+
+// Ответ движка на { cmd: 'log' }: copy - сразу в буфер (кнопка у «Логов»), иначе - показать под списком истории
+function handleTitleLog({ id, lines = [], copy }) {
+  const byId = name => document.getElementById(name);
+  const item = lastState?.items?.find(entry => entry.id === id);
+  if (copy) {
+    copyText(logText(item, lines)).then(ok => flashCopied(byId('dl-log-copy'), ok));
+    return;
+  }
+  if (view !== 'history' || !item) return; // пока ответ шёл, вкладку сменили или тайтл убрали
+  titleLog = { id, lines };
+  byId('dl-title-log-name').textContent = `${item.title} · ${String(item.format ?? '').toUpperCase()}`;
+  byId('dl-title-log-body').innerHTML = renderLog(lines) || '<div class="log-entry">Лог пуст</div>';
+  byId('dl-title-log').hidden = false;
+  byId('dl-title-log').scrollIntoView({ block: 'nearest' });
+}
+
 function sendCommand(command, id) {
   let message = { cmd: command };
   if (command === 'retry' || command === 'skip') message = { cmd: 'decision', choice: command };
-  else if (command === 'cancel' || command === 'remove' || command === 'saveAgain') message = { cmd: command, id };
+  else if (command === 'cancel' || command === 'remove' || command === 'saveAgain' || command === 'log') message = { cmd: command, id };
   enginePort?.postMessage(message);
 }
 
@@ -234,6 +295,7 @@ async function connectEngine() {
       enginePort = port;
       setConnection('connecting');
       port.onMessage.addListener(message => {
+        if (message.type === 'titleLog') handleTitleLog(message);
         if (message.type !== 'state') return;
         setConnection('ok');
         renderState(message.state);
@@ -285,6 +347,18 @@ async function initDownloadsView() {
   byId('dl-clear-finished').addEventListener('click', () => {
     finishedIds.forEach(id => sendCommand('remove', id));
   });
+
+  // Кнопка в заголовке <details>: без preventDefault клик ещё и сворачивал бы логи
+  byId('dl-log-copy').addEventListener('click', event => {
+    event.preventDefault();
+    enginePort?.postMessage({ cmd: 'log', copy: true });
+  });
+  byId('dl-title-log-copy').addEventListener('click', () => {
+    if (!titleLog) return;
+    const item = lastState?.items?.find(entry => entry.id === titleLog.id);
+    copyText(logText(item, titleLog.lines)).then(ok => flashCopied(byId('dl-title-log-copy'), ok));
+  });
+  byId('dl-title-log-close').addEventListener('click', closeTitleLog);
 
   const panel = byId('dl-log-panel');
   panel.addEventListener('scroll', () => {

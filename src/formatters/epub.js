@@ -130,12 +130,7 @@ class EpubFormatter extends BaseFormatter {
       const coverItem = allCovers[i];
       if (!coverItem) continue;
 
-      // Если это объект с dataUrl (локальный файл), используем dataUrl
-      const coverUrl = typeof coverItem === 'object' && coverItem.dataUrl
-        ? coverItem.dataUrl
-        : coverItem;
-
-      const actualUrl = this.extractCoverUrl(coverUrl);
+      const actualUrl = this.extractCoverUrl(coverItem);
       
       if (!actualUrl) {
         if (this.options.addLog) {
@@ -150,7 +145,7 @@ class EpubFormatter extends BaseFormatter {
 
         if (coverBlob) {
           const imageFormat = this.options.imageFormat || 'original';
-          const coverExtension = this.getImageExtension(coverBlob, imageFormat, coverUrl);
+          const coverExtension = this.getImageExtension(coverBlob, imageFormat, actualUrl);
           const coverFileName = allCovers.length > 1 ? `cover-${i + 1}${coverExtension}` : `cover${coverExtension}`;
           imagesFolder.file(coverFileName, coverBlob);
 

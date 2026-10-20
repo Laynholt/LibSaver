@@ -12,7 +12,7 @@ const toRegExp = pattern => new RegExp('^' + pattern.replace(/[.+?^${}()|[\]\\]/
 // page-call.js in a vm with a fake chrome over the `tabs` array.
 // onNoTab(tabs) runs when pageCall asks the user to open the site; onExec(tabId, tabs, n) may throw or change tabs.
 function pageCallContext(tabs, { onNoTab = () => {}, onExec = () => {}, noTabApi = false, sendMessage } = {}) {
-  const ctx = { tabs, handlerCalls: [], execTabs: [], delays: [] };
+  const ctx = { tabs, handlerCalls: [], execTabs: [], injected: [], delays: [] };
   const chrome = { runtime: { sendMessage } };
   if (!noTabApi) {
     chrome.tabs = {
@@ -20,7 +20,8 @@ function pageCallContext(tabs, { onNoTab = () => {}, onExec = () => {}, noTabApi
       query: async ({ url }) => tabs.filter(tab => url.some(pattern => toRegExp(pattern).test(tab.url)))
     };
     chrome.scripting = {
-      executeScript: async ({ target, func, args }) => {
+      executeScript: async ({ target, func, args, files }) => {
+        if (files) { ctx.injected.push(...files); return []; }
         ctx.execTabs.push(target.tabId);
         const custom = onExec(target.tabId, tabs, ctx.execTabs.length);
         return [{ result: custom === undefined ? 'ok' : custom }];
@@ -70,9 +71,10 @@ test('pageCall waits through the no-tab handler and retries when the tab disappe
       }
     }
   });
-  assert.equal(await ctx.pageCall('mangalib', 'chapterPages', [1, 's', 'normal']), 'ok');
+  assert.equal(await ctx.pageCall('mangalib', 'mangaChapterPages', [1, 1, 1, 's', 'normal', null]), 'ok');
   assert.deepEqual(ctx.handlerCalls, ['mangalib']);
   assert.deepEqual(ctx.execTabs, [3, 4]);
+  assert.deepEqual(ctx.injected, ['core/page-helpers.js', 'core/page-helpers.js']); // the shared helpers go in before every call
   assert.deepEqual(ctx.delays, [1000]); // pause before retrying a gone tab, no hot loop
 });
 
@@ -119,7 +121,43 @@ test('every former executeScript func now lives in PAGE_CALLS and api/base use p
   assert.doesNotMatch(source('src/core/api.js') + source('src/formatters/base.js'), /chrome\.scripting\.executeScript/);
   const ctx = vm.createContext({});
   vm.runInContext(source('src/core/page-calls.js'), ctx);
-  assert.deepEqual(Object.keys(vm.runInContext('PAGE_CALLS', ctx)).sort(), ['animeApi', 'chapterPages', 'chapters', 'covers', 'mangaChapterPages', 'metadata', 'metadataExtra']);
+  assert.deepEqual(Object.keys(vm.runInContext('PAGE_CALLS', ctx)).sort(), ['animeApi', 'chapters', 'covers', 'mangaChapterPages', 'metadata', 'metadataExtra']);
+});
+
+test('the site config injected into the tab is the same as getSiteConfig in page-call.js', () => {
+  const body = (file, name) => functionSource(file, name).replace(name, 'F').replace(/\r/g, '');
+  assert.equal(body('src/core/page-helpers.js', 'libsaverSiteConfig'), body('src/utils/page-call.js', 'getSiteConfig'));
+});
+
+test('PAGE_CALLS run on the injected helpers: SlashLIB chapters use Site-Id 4, chapter pages carry the JWT and no Content-Type', async () => {
+  const jwt = 'eyJa.eyJb.c';
+  const requests = [];
+  const storage = items => ({ getItem: key => items[key] ?? null, key: i => Object.keys(items)[i], get length() { return Object.keys(items).length; } });
+  const ctx = vm.createContext({
+    URL, console, setTimeout,
+    window: { location: { href: 'https://shlib.life/ru/manga/123--title' } },
+    document: { querySelector: () => ({ innerText: ' Тайтл ' }) },
+    navigator: { userAgent: 'UA' },
+    localStorage: storage({}),
+    sessionStorage: storage({ auth: JSON.stringify({ token: `Bearer ${jwt}` }) }),
+    fetch: async (url, { headers }) => {
+      requests.push({ url, headers });
+      return { ok: true, json: async () => ({ data: url.includes('/chapters') ? [{ id: 1 }] : { pages: [{ url: '//manga/p.jpg' }], teams: [] } }) };
+    }
+  });
+  vm.runInContext(source('src/core/page-helpers.js') + source('src/core/page-calls.js'), ctx);
+  const chapters = await vm.runInContext('PAGE_CALLS.chapters()', ctx);
+  assert.equal(chapters.success, true);
+  assert.equal(chapters.slug, '123--title');
+  assert.equal(requests[0].url, 'https://hapi.hentaicdn.org/api/manga/123--title/chapters');
+  assert.equal(requests[0].headers['Site-Id'], '4');
+  assert.equal(requests[0].headers['X-DL-Service'], 'shlib');
+  const pages = await vm.runInContext("PAGE_CALLS.mangaChapterPages('1-2', 1, 2, '123--title', 'normal', 'null')", ctx);
+  assert.equal(pages.pages[0].url, 'https://img2.hentaicdn.org/manga/p.jpg');
+  assert.equal(requests[1].url, 'https://hapi.hentaicdn.org/api/manga/123--title/chapter?volume=1&number=2');
+  assert.equal(requests[1].headers['Site-Id'], '2');
+  assert.equal(requests[1].headers.Authorization, `Bearer ${jwt}`);
+  assert.equal('Content-Type' in requests[1].headers, false);
 });
 
 function functionSource(file, name) {
@@ -369,7 +407,7 @@ function engineContext({ findSiteTab = async () => 1, startDownload, downloads }
   const chrome = { runtime: { onConnect: { addListener: fn => { onConnect = fn; } }, sendMessage: async message => { ctx.sent.push(JSON.parse(JSON.stringify(message))); return { ok: true }; } } };
   if (downloads) chrome.downloads = downloads;
   Object.assign(ctx, {
-    chrome, console, structuredClone, Date,
+    chrome, console, structuredClone, Date, Blob,
     URL: { createObjectURL: () => { ctx.urls.push('blob:' + ctx.urls.length); return ctx.urls.at(-1); }, revokeObjectURL: url => ctx.revoked.push(url) },
     setTimeout: (fn, ms) => { ctx.delays.push(ms); setImmediate(fn); return ctx.delays.length; }, // a macrotask, so a polling loop cannot starve the test
     clearTimeout() {},
@@ -476,7 +514,7 @@ test('engine turns download events into state, forwards commands and saves the f
   const states = port.posted.filter(m => m.type === 'state');
   assert.equal(states.length, 2); // the burst of changes goes out as one throttled state
   assert.deepEqual(states[1].state, {
-    items: [{ id: 'a', slug: 'a', siteKey: 'mangalib', title: 'T a', format: 'cbz', status: 'waiting-decision', progress: { current: 1, total: 2, part: 0 }, decision: { kind: 'chapter', chapterTitle: 'Г1', message: 'boom' } }],
+    items: [{ id: 'a', slug: 'a', siteKey: 'mangalib', title: 'T a', format: 'cbz', status: 'waiting-decision', progress: { current: 1, total: 2, part: 0 }, decision: { kind: 'chapter', chapterTitle: 'Г1', message: 'boom' }, hasLog: true }],
     stats: { elapsed: '00:01' },
     logTail: [{ line: 'L1', isError: false, color: null }]
   });
@@ -492,8 +530,18 @@ test('engine turns download events into state, forwards commands and saves the f
   port.send({ cmd: 'saveAgain', id: 'a' });
   await settle();
   assert.equal(ctx.sent.length, 2);
+  // the whole log of one title: by id for «Логи» in history, without id - the current or last title, for «Скопировать»
+  port.send({ cmd: 'log', id: 'a' });
+  port.send({ cmd: 'log', copy: true });
+  const logs = port.posted.filter(m => m.type === 'titleLog');
+  assert.deepEqual(logs, [
+    { type: 'titleLog', id: 'a', lines: [{ line: 'L1', isError: false, color: null }], copy: false },
+    { type: 'titleLog', id: 'a', lines: [{ line: 'L1', isError: false, color: null }], copy: true }
+  ]);
   port.send({ cmd: 'remove', id: 'a' });
   assert.deepEqual(ctx.revoked, ['blob:0']);
+  port.send({ cmd: 'log', id: 'a' });
+  assert.deepEqual(port.posted.at(-1).lines, []); // the log leaves with the title
 });
 
 test('engine saves through chrome.downloads where it exists', async () => {
@@ -590,7 +638,7 @@ test('in the Firefox background page the engine calls the page, saves and fetche
     // the page does not receive its own message: nobody answers
     runtime: { sendMessage: (message, reply) => { sent.push(message.action); reply?.(undefined); return Promise.resolve(undefined); } },
     tabs: { get: async () => tab, query: async () => [tab] },
-    scripting: { executeScript: async ({ target }) => { executed.push(target.tabId); return [{ result: 'ok' }]; } },
+    scripting: { executeScript: async ({ target, files }) => { if (files) return []; executed.push(target.tabId); return [{ result: 'ok' }]; } },
     downloads: { download: async options => { downloads.push({ ...options }); return 1; } }
   };
   const ctx = vm.createContext({
@@ -662,16 +710,23 @@ test('each status offers exactly its commands, all addressed to the item', () =>
     paused: ['resume', 'cancel'],
     'waiting-tab': ['cancel'],
     'waiting-decision': ['retry', 'skip', 'cancel'],
-    done: ['saveAgain', 'remove'],
-    error: ['remove'],
-    canceled: ['remove']
+    done: ['log', 'saveAgain', 'remove'],
+    error: ['log', 'remove'],
+    canceled: ['log', 'remove']
   };
   for (const [status, commands] of Object.entries(expected)) {
-    const html = view.renderQueueItem(queueItem({ status, decision: { kind: 'chapter', chapterTitle: '', message: '' }, canSaveAgain: true }));
+    const html = view.renderQueueItem(queueItem({ status, decision: { kind: 'chapter', chapterTitle: '', message: '' }, canSaveAgain: true, hasLog: true }));
     assert.deepEqual(cmds(html), commands, status);
     assert.equal((html.match(/data-id="a"/g) || []).length, commands.length, status);
   }
-  assert.deepEqual(cmds(view.renderQueueItem(queueItem({ status: 'done' }))), ['remove']); // the engine released its file (R32)
+  assert.deepEqual(cmds(view.renderQueueItem(queueItem({ status: 'done' }))), ['remove']); // the engine released its file (R32); no log - no «Логи»
+});
+
+test('copied log starts with the LibSaver version and the title, then the lines', () => {
+  const view = viewContext();
+  view.chrome.runtime = { getManifest: () => ({ version: '2.2' }) };
+  const text = view.logText({ title: 'Тайтл', format: 'epub' }, [{ line: '[12:00] a' }, { line: '[12:01] b', isError: true }]);
+  assert.equal(text, 'LibSaver 2.2\nТайтл (EPUB)\n\n[12:00] a\n[12:01] b');
 });
 
 test('progress shows chapters done out of total; a finished title with fewer chapters is reported as partial', () => {
@@ -855,6 +910,19 @@ test('view pings the engine every 20 s while a title is in work, and stops when 
 });
 
 // --- Safe file names for chrome.downloads ---
+
+test('saved file gets a type matching its extension: Edge/Chrome name EPUB and CBZ by type, application/zip gave .zip', async () => {
+  const ctx = vm.createContext({ Blob });
+  vm.runInContext(source('src/engine/engine.js').match(/const FILE_TYPES[\s\S]*?\r?\n}\r?\n/)[0].replace('const FILE_TYPES', 'var FILE_TYPES'), ctx);
+  const zip = new Blob(['PK'], { type: 'application/zip' });
+  assert.equal(ctx.typedBlob(zip, 'Тайтл.epub').type, 'application/epub+zip');
+  assert.equal(ctx.typedBlob(zip, 'Том 1.CBZ').type, 'application/vnd.comicbook+zip');
+  assert.equal(ctx.typedBlob(new Blob(['<x/>'], { type: 'application/fb2+zip' }), 'a.fb2').type, 'application/x-fictionbook+xml');
+  assert.equal(await ctx.typedBlob(zip, 'a.epub').text(), 'PK');
+  assert.equal(ctx.typedBlob(zip, 'Тома.zip'), zip); // архив томов и TXT с картинками - настоящий zip
+  const pdf = new Blob(['%PDF'], { type: 'application/pdf' });
+  assert.equal(ctx.typedBlob(pdf, 'a.pdf'), pdf);
+});
 
 test('safeDownloadFilename replaces reserved characters, strips trailing dots and spaces, keeps the extension', () => {
   const ctx = vm.createContext({});
