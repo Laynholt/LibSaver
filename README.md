@@ -111,7 +111,7 @@
 
 ### Chrome, Edge и другие браузеры на Chromium
 
-1. Скачайте архив `LibSaver-v….zip` из [последнего релиза](https://github.com/dfy-dpg/LibSaver/releases/latest) и распакуйте в любую папку.
+1. Скачайте архив `LibSaver-vA.B.C.zip` из [последнего релиза](https://github.com/dfy-dpg/LibSaver/releases/latest) и распакуйте в любую папку.
 2. Откройте страницу расширений: `chrome://extensions` (Chrome) или `edge://extensions` (Edge).
 3. Включите **«Режим разработчика»**.
 4. Нажмите **«Загрузить распакованное расширение»** и выберите распакованную папку.
