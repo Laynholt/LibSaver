@@ -14,7 +14,8 @@
     "declarativeNetRequestWithHostAccess",
     "downloads",
     "unlimitedStorage",
-    "offscreen"
+    "offscreen",
+    "alarms"
   ],
 
   "declarative_net_request": {

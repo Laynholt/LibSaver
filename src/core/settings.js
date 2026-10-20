@@ -1314,6 +1314,7 @@ async function checkForUpdates() {
 
   try {
     const release = await fetchLatestRelease();
+    await chrome.storage.local.set({ lastUpdateCheck: { at: Date.now(), release } }); // значок на иконке и панель узнают сразу
     if (compareVersions(release.version, currentVersion) > 0) {
       // Обновление есть - надпись остаётся и по клику скачивает релиз
       versionElement.textContent = `v${currentVersion} → v${release.version} · скачать`;

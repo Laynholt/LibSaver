@@ -5,21 +5,11 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   }
 });
 
-// Проверка обновлений в popup. Окно открывают часто, а GitHub API без ключа даёт 60 запросов в час - релиз помним 6 часов
-const UPDATE_CHECK_INTERVAL = 6 * 60 * 60 * 1000;
-
+// Обновление из фоновой проверки (раз в 6 часов, background.js): GitHub отсюда не спрашиваем
 async function checkForUpdatesPopup() {
   try {
-    const { updateNotifications, lastUpdateCheck } = await chrome.storage.local.get(['updateNotifications', 'lastUpdateCheck']);
-    if (updateNotifications === false) return;
-
-    let release = lastUpdateCheck?.release;
-    if (!release || !(Date.now() - lastUpdateCheck.at < UPDATE_CHECK_INTERVAL)) {
-      release = await fetchLatestRelease();
-      await chrome.storage.local.set({ lastUpdateCheck: { at: Date.now(), release } });
-    }
-
-    if (compareVersions(release.version, chrome.runtime.getManifest().version) > 0) {
+    const release = await storedUpdate();
+    if (release) {
       showToast(`Доступно обновление v${release.version}`, 'update', 8000, () => openUpdate(release));
     }
   } catch (error) {

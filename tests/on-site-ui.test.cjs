@@ -623,12 +623,14 @@ test('firefoxManifest: background page instead of the service worker, gecko id, 
 test('Firefox background page loads background.js and every engine.html script once, with no top-level name clash', () => {
   const scripts = file => [...source(file).matchAll(/<script src="\.\.\/([^"]+)"/g)].map(match => match[1]);
   const page = scripts('src/engine/background-firefox.html');
-  assert.deepEqual(page.filter(file => file !== 'background.js'), scripts('src/engine/engine.html'));
+  // background.js and its update check (utils/update-check.js) on top of the engine scripts
+  assert.deepEqual(page.filter(file => file !== 'background.js' && file !== 'utils/update-check.js'), scripts('src/engine/engine.html'));
   assert.equal(page.filter(file => file === 'background.js').length, 1);
+  assert.ok(page.indexOf('utils/update-check.js') < page.indexOf('background.js'));
   // a const declared twice in one page is a SyntaxError for the whole script; a second function silently replaces the first
   const names = file => [...source('src/' + file).matchAll(/^(?:async )?(?:const|let|var|function|class) +([\w$]+)/gm)].map(match => match[1]);
-  const engineNames = new Set(page.filter(file => file !== 'background.js' && !file.startsWith('libs/')).flatMap(names));
-  assert.deepEqual(names('background.js').filter(name => engineNames.has(name)), []);
+  const engineNames = new Set(page.filter(file => file !== 'background.js' && file !== 'utils/update-check.js' && !file.startsWith('libs/')).flatMap(names));
+  assert.deepEqual(['background.js', 'utils/update-check.js'].flatMap(names).filter(name => engineNames.has(name)), []);
 });
 
 test('in the Firefox background page the engine calls the page, saves and fetches images directly, not via runtime.sendMessage', async () => {
@@ -2299,7 +2301,7 @@ test('stopSiteUi takes everything down: observer, resize and storage listeners, 
 
 // ---- Task 10: the settings window (panel.html) ----
 
-const panelScripts = ['src/utils/title-store.js', 'src/utils/page-call.js', 'src/core/chapter-range.js', 'src/utils/formats.js', 'src/core/title-loader.js', 'src/core/site-download.js', 'src/core/panel.js'];
+const panelScripts = ['src/utils/title-store.js', 'src/utils/page-call.js', 'src/core/chapter-range.js', 'src/utils/formats.js', 'src/core/title-loader.js', 'src/core/site-download.js', 'src/utils/update-check.js', 'src/core/panel.js'];
 const jsonCopy = value => JSON.parse(JSON.stringify(value));
 
 function panelLogic() {
@@ -3224,7 +3226,8 @@ test('about: the version is from the manifest and the update check asks the late
   const settings = source('src/core/settings.js');
   assert.match(functionSource('src/core/settings.js', 'displayVersion'), /chrome[.]runtime[.]getManifest[(][)]/);
   assert.match(functionSource('src/core/settings.js', 'checkForUpdates'), /fetchLatestRelease[(][)]/);
-  assert.match(source('src/core/popup.js'), /fetchLatestRelease[(][)]/);
+  assert.match(functionSource('src/background.js', 'checkUpdatesInBackground'), /fetchLatestRelease[(][)]/);
+  assert.match(functionSource('src/core/popup.js', 'checkForUpdatesPopup'), /storedUpdate[(][)]/); // the popup reads the background result, GitHub is asked once
   assert.match(settings, /getElementById[(]'btn-check-updates'[)]/);
 });
 
@@ -3536,6 +3539,91 @@ test('update check: no releases or a tag that is not a version is an error, Fire
   const { ctx, calls } = updateCheckContext({ tag_name: 'v2.1.0', assets: [{ name: 'libsaver.xpi', browser_download_url: xpi }] }, { userAgent: 'Mozilla/5.0 Firefox/130.0' });
   ctx.openUpdate(await ctx.fetchLatestRelease());
   assert.deepEqual([calls.tabs, calls.downloads], [[xpi], []]);
+});
+
+test('storedUpdate offers the stored release only when it is newer than the manifest and notifications are on', async () => {
+  const run = async stored => {
+    const ctx = vm.createContext({ chrome: { storage: { local: { get: async () => stored } }, runtime: { getManifest: () => ({ version: '2.2.0' }) } } });
+    vm.runInContext(source('src/utils/update-check.js'), ctx);
+    return (await ctx.storedUpdate())?.version ?? null;
+  };
+  const check = version => ({ lastUpdateCheck: { at: 1, release: { version, page: 'p' } } });
+  assert.equal(await run(check('2.2.1')), '2.2.1');
+  assert.equal(await run(check('2.2')), null);
+  assert.equal(await run(check('2.1.9')), null);
+  assert.equal(await run({ ...check('3.0.0'), updateNotifications: false }), null);
+  assert.equal(await run({}), null);
+});
+
+test('background checks GitHub every 6 hours, keeps the alarm it has, and shows NEW on the icon while an update waits', async () => {
+  const store = { lastUpdateCheck: { at: 1, release: { version: '2.2.0' } } };
+  const created = [], badge = [], titles = [], listeners = {};
+  let alarm = null;
+  const chrome = {
+    storage: {
+      local: {
+        get: async keys => Object.fromEntries([].concat(keys).filter(key => key in store).map(key => [key, store[key]])),
+        set: async values => {
+          const changes = Object.fromEntries(Object.entries(values).map(([key, value]) => [key, { oldValue: store[key], newValue: value }]));
+          Object.assign(store, values);
+          listeners.storage(changes, 'local');
+        }
+      },
+      onChanged: { addListener: fn => listeners.storage = fn }
+    },
+    runtime: { getManifest: () => ({ version: '2.2.0' }) },
+    alarms: { onAlarm: { addListener: fn => listeners.alarm = fn }, get: async () => alarm, create: (name, info) => created.push({ name, ...info }) },
+    action: { setBadgeText: async ({ text }) => badge.push(text), setTitle: async ({ title }) => titles.push(title), setBadgeBackgroundColor: async () => {} }
+  };
+  const ctx = vm.createContext({ chrome, console: { warn: () => {} }, AbortController, setTimeout, clearTimeout,
+    fetch: async () => ({ ok: true, json: async () => ({ tag_name: 'v2.3.0', assets: [] }) }) });
+  const background = source('src/background.js');
+  const block = background.slice(background.indexOf('const UPDATE_ALARM'), background.indexOf('refreshUpdateBadge(); //') + 'refreshUpdateBadge();'.length);
+  vm.runInContext(source('src/utils/update-check.js') + block, ctx);
+  const settle = () => new Promise(resolve => setImmediate(resolve));
+  await settle();
+  assert.deepEqual(created, [{ name: 'libsaver-update-check', delayInMinutes: 1, periodInMinutes: 360 }]);
+  assert.deepEqual(badge, ['']); // the stored release is the installed version
+  listeners.alarm({ name: 'libsaver-update-check' });
+  await settle(); await settle();
+  assert.equal(store.lastUpdateCheck.release.version, '2.3.0');
+  assert.deepEqual(badge, ['', 'NEW']);
+  assert.equal(titles.at(-1), 'LibSaver - доступно обновление v2.3.0');
+  // notifications off: the badge goes, no request; a service worker waking up again does not move the alarm
+  await chrome.storage.local.set({ updateNotifications: false });
+  await settle();
+  assert.equal(badge.at(-1), '');
+  alarm = { name: 'libsaver-update-check' };
+  vm.runInContext(block, vm.createContext({ ...ctx, chrome }));
+  await settle();
+  assert.equal(created.length, 1);
+});
+
+test('the site panel shows the waiting update in its header and the settings check stores what it found', () => {
+  assert.match(source('src/html/panel.html'), /id="update"/);
+  assert.match(source('src/html/panel.html'), /utils\/update-check\.js/);
+  assert.match(functionSource('src/core/settings.js', 'checkForUpdates'), /lastUpdateCheck: [{] at: Date[.]now[(][)], release [}]/);
+  assert.ok(JSON.parse(source('src/manifest.json')).permissions.includes('alarms'));
+  // the window stays open: a check finishing meanwhile shows the button at once, a click downloads that release
+  const store = {}, opened = [];
+  let onChanged;
+  const els = { update: { listeners: [], title: '', classes: new Set(['hidden']), addEventListener(type, fn) { this.listeners.push(fn); }, classList: { toggle: (name, on) => on ? els.update.classes.add(name) : els.update.classes.delete(name) } }, 'update-version': { textContent: '' } };
+  const ctx = vm.createContext({
+    console, document: { getElementById: id => els[id] }, openUpdate: release => opened.push(release.version),
+    chrome: { storage: { local: { get: async () => store }, onChanged: { addListener: fn => onChanged = fn } }, runtime: { getManifest: () => ({ version: '2.2.0' }) } }
+  });
+  vm.runInContext(['storedUpdate', 'compareVersions'].map(name => functionSource('src/utils/update-check.js', name)).join('\n') + functionSource('src/core/panel.js', 'showPanelUpdate'), ctx);
+  ctx.showPanelUpdate();
+  return new Promise(resolve => setImmediate(resolve)).then(async () => {
+    assert.equal(els.update.classes.has('hidden'), true);
+    store.lastUpdateCheck = { at: 1, release: { version: '2.3.0' } };
+    onChanged({ lastUpdateCheck: { newValue: store.lastUpdateCheck } }, 'local');
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(els.update.classes.has('hidden'), false);
+    assert.equal(els['update-version'].textContent, 'Обновление v2.3.0');
+    els.update.listeners[0]();
+    assert.deepEqual(opened, ['2.3.0']);
+  });
 });
 
 test('«Сообщить о проблеме» opens the issue form of the 2.x repository with version, title page and browser filled in', async () => {

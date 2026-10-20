@@ -1,6 +1,43 @@
 // Вызовы в странице сайта (выбор вкладки, PAGE_CALLS). В Firefox background.js - часть фоновой страницы
 // engine/background-firefox.html: эти скрипты она грузит своими <script>, importScripts там нет
-if (typeof importScripts === 'function') importScripts('core/page-calls.js', 'utils/page-call.js');
+if (typeof importScripts === 'function') importScripts('core/page-calls.js', 'utils/page-call.js', 'utils/update-check.js');
+
+// Обновления: раз в 6 часов фон запоминает последний релиз в lastUpdateCheck (его читают окошко и панель на сайте)
+// и ставит «NEW» на иконку. GitHub API без ключа даёт 60 запросов в час - чаще не спрашиваем
+const UPDATE_ALARM = 'libsaver-update-check';
+
+async function checkUpdatesInBackground() {
+  const { updateNotifications } = await chrome.storage.local.get('updateNotifications');
+  if (updateNotifications === false) return;
+  try {
+    await chrome.storage.local.set({ lastUpdateCheck: { at: Date.now(), release: await fetchLatestRelease() } });
+  } catch (e) {
+    console.warn('[LibSaver] Проверка обновлений:', e.message); // нет сети или GitHub недоступен - следующая через 6 часов
+  }
+}
+
+async function showUpdateBadge() {
+  const release = await storedUpdate();
+  await chrome.action.setBadgeText({ text: release ? 'NEW' : '' });
+  await chrome.action.setTitle({ title: release ? `LibSaver - доступно обновление v${release.version}` : 'LibSaver - Скачивание тайтлов' });
+  if (release) await chrome.action.setBadgeBackgroundColor({ color: '#3cce7b' });
+}
+const refreshUpdateBadge = () => showUpdateBadge().catch(e => console.warn('[LibSaver] Значок обновления:', e.message));
+
+chrome.alarms.onAlarm.addListener(alarm => {
+  if (alarm.name === UPDATE_ALARM) checkUpdatesInBackground();
+});
+// Будильник переживает перезапуск service worker: создаём, только если его нет, иначе каждое пробуждение сдвигало бы срок
+chrome.alarms.get(UPDATE_ALARM).then(alarm => {
+  if (!alarm) chrome.alarms.create(UPDATE_ALARM, { delayInMinutes: 1, periodInMinutes: 6 * 60 });
+});
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area !== 'local') return;
+  const notify = changes.updateNotifications;
+  if (notify && notify.oldValue === false && notify.newValue !== false) checkUpdatesInBackground(); // включили - не ждём 6 часов
+  if (changes.updateNotifications || changes.lastUpdateCheck) refreshUpdateBadge();
+});
+refreshUpdateBadge(); // значок не переживает перезапуск браузера, а после обновления расширения должен пропасть
 
 // Прямой fetch с заголовками (declarativeNetRequest добавит Referer, User-Agent, sec-ch-ua через rules.json)
 async function directFetch(request, sendResponse) {

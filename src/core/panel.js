@@ -353,4 +353,25 @@ function startPanel() {
   })();
 }
 
-if (typeof document !== 'undefined') startPanel();
+// Обновление из фоновой проверки (utils/update-check.js): кнопка в шапке скачивает его, как надпись в настройках
+function showPanelUpdate() {
+  const button = document.getElementById('update');
+  let release = null;
+  button.addEventListener('click', () => { if (release) openUpdate(release); });
+  const render = () => storedUpdate().then(found => {
+    release = found;
+    document.getElementById('update-version').textContent = release ? `Обновление v${release.version}` : '';
+    button.title = release ? `Доступно обновление v${release.version} - скачать` : '';
+    button.classList.toggle('hidden', !release);
+  }).catch(e => console.error('[LibSaver] Обновление:', e.message));
+  // Окно живёт долго (его не закрывают между тайтлами): кнопка следует за проверкой в фоне и в «Настройках» без переоткрытия
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area === 'local' && (changes.lastUpdateCheck || changes.updateNotifications)) render();
+  });
+  render();
+}
+
+if (typeof document !== 'undefined') {
+  startPanel();
+  showPanelUpdate();
+}

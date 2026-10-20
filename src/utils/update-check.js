@@ -44,6 +44,14 @@ async function fetchLatestRelease(timeoutMs = 30000) {
   }
 }
 
+// Обновление из последней проверки (lastUpdateCheck пишет фон раз в 6 часов); null - его нет или уведомления выключены
+async function storedUpdate() {
+  const { updateNotifications, lastUpdateCheck } = await chrome.storage.local.get(['updateNotifications', 'lastUpdateCheck']);
+  const release = lastUpdateCheck?.release;
+  if (updateNotifications === false || !release?.version) return null;
+  return compareVersions(release.version, chrome.runtime.getManifest().version) > 0 ? release : null;
+}
+
 // Окну расширения внутри страницы сайта Firefox не даёт chrome.tabs: там ссылка открывается обычной новой вкладкой
 function openTab(url) {
   if (chrome.tabs?.create) chrome.tabs.create({ url });
