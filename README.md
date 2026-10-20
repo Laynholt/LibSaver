@@ -212,7 +212,7 @@ npx web-ext sign --source-dir dist/firefox --channel unlisted --api-key $AMO_JWT
 <td align="center" width="200">
 <a href="https://github.com/Laynholt"><img src="https://github.com/Laynholt.png?size=200" width="100" height="100" alt="Laynholt"></a><br>
 <a href="https://github.com/Laynholt"><b>Laynholt</b></a><br>
-<sub>автор обновления 2.0<br><a href="https://github.com/Laynholt/LibSaver">Laynholt/LibSaver</a></sub>
+<sub>автор обновления 2.0.0<br><a href="https://github.com/Laynholt/LibSaver">Laynholt/LibSaver</a></sub>
 </td>
 </tr>
 </table>
