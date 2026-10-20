@@ -17,7 +17,7 @@
 ![HentaiLIB](https://img.shields.io/badge/HentaiLIB-b71c1c?style=flat-square)
 ![SlashLIB](https://img.shields.io/badge/SlashLIB-ad1457?style=flat-square)
 ![RanobeLIB](https://img.shields.io/badge/RanobeLIB-1565c0?style=flat-square)
-![AnimeLIB](https://img.shields.io/badge/AnimeLIB-6a1b9a?style=flat-square)
+![AnimeLIB](https://img.shields.io/badge/AnimeLIB-5e35b1?style=flat-square)
 
 <br>
 
