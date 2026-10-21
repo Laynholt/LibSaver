@@ -15,7 +15,6 @@ let currentSlug = null;
 let translatorPriority = [];
 
 // Переменные пагинации
-let currentPage = 0;
 let pageSize = 100;
 let initialChapterCount = 100;
 let loadMoreChapterCount = 100;
@@ -464,7 +463,6 @@ function renderChaptersList(chapters, originalChapters, startIndex = 0, append =
   if (!append) {
     container.innerHTML = '';
     volumeCards = new Map();
-    currentPage = 0;
     totalChaptersRendered = 0;
     // Для первой загрузки используем initialChapterCount
     if (startIndex === 0) {
@@ -845,31 +843,23 @@ async function saveChapters() {
     }
   });
 
-  const result = await getTitleStore(['titleData', 'currentSlug']);
-  const titleData = result.titleData || {};
-  const currentSlug = result.currentSlug;
+  const { currentSlug } = await getTitleStore(['currentSlug']);
   if (!currentSlug) return; // иначе запись уйдёт в titleData:undefined
 
-  if (!titleData[currentSlug]) {
-    titleData[currentSlug] = { chapters: null, metadata: {}, covers: [] };
-  }
-
-  titleData[currentSlug].chapters = allChapters;
   // Выбор уходит и в selectedChapterIds, и в filteredChapters (из него снимок берёт главы, в том числе вне прежнего диапазона popup)
   // Только если выбор правили здесь: иначе устаревший выбор перебил бы новый диапазон из быстрого окошка при любом другом автосохранении
   const selectionSaved = selectionDirty;
-  if (selectionSaved) {
-    selectionDirty = false; // правка во время записи снова поднимет флаг
-    applySelectionToTitle(titleData[currentSlug], allChapters, uniqueAllChapters.filter(ch => chosenIds.has(ch.id)).map(ch => ch.id));
-  }
-  titleData[currentSlug].chapterBranchOverrides = chapterBranchOverrides;
-  titleData[currentSlug].translatorPriority = translatorPriority;
-
-  // Обновляем timestamp кэша (продлеваем срок действия на 10 минут)
-  titleData[currentSlug].cacheTimestamp = Date.now();
-
+  selectionDirty = false; // правка во время записи снова поднимет флаг
   try {
-    await setTitleStore({ titleData });
+    await updateTitleStore(['titleData'], currentSlug, ({ titleData }) => {
+      const title = titleData[currentSlug] ??= { chapters: null, metadata: {}, covers: [] };
+      title.chapters = allChapters;
+      if (selectionSaved) applySelectionToTitle(title, allChapters, uniqueAllChapters.filter(ch => chosenIds.has(ch.id)).map(ch => ch.id));
+      title.chapterBranchOverrides = chapterBranchOverrides;
+      title.translatorPriority = translatorPriority;
+      // Обновляем timestamp кэша (продлеваем срок действия на 10 минут)
+      title.cacheTimestamp = Date.now();
+    });
   } catch (error) {
     if (selectionSaved) selectionDirty = true; // не записали: выбор остаётся несохранённым
     throw error;

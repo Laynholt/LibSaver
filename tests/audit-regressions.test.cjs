@@ -837,3 +837,79 @@ test('queue state every 250 ms does not rebuild the panel menu: hover stays and 
   for (const n of [1, 1, 1, 1, 2, 2, 0]) context.setActive(n);
   assert.equal(context.renders, 3); // 0 -> 1 -> 2 -> 0
 });
+
+// ---- Аудит 2026-10-21 ----
+
+test('metadata and cover autosaves from two windows at once both land; the metadata editor keeps fields it does not manage (audit #1, #5)', async () => {
+  const run = async locks => {
+    const data = { 'titleData:s': { metadata: { titleRu: 'Старое', duration: '24 мин', rating: '8.1', shikimori: 'https://shikimori.one/1' }, covers: [] } };
+    const store = storageApi(data);
+    // ответ на чтение приходит не сразу: без общей блокировки оба окна получают старое состояние
+    const chrome = { storage: { local: { ...store, get: async keys => { const result = await store.get(keys); await new Promise(resolve => setTimeout(resolve, 5)); return result; } } } };
+    const page = (globals, code) => {
+      const ctx = vm.createContext({ chrome, navigator: locks, ...globals });
+      vm.runInContext(titleStore + code, ctx);
+      return ctx;
+    };
+    const metadata = page({
+      currentSlug: 's', metadataFields: { tags: false }, fieldLabelsLoaded: false, tempFieldLabels: {},
+      document: { getElementById: id => ({ value: id === 'title-ru' ? 'Новое' : '' }) }
+    }, between('src/editors/metadata.js', 'const METADATA_FIELD_KEYS', '// Сохранение метаданных') + functionSource('src/editors/metadata.js', 'saveMetadata') + '\nthis.save = saveMetadata;');
+    const covers = page({ currentSlug: 's', userCovers: [{ url: 'https://x/new.jpg', type: 'url' }] }, functionSource('src/editors/covers.js', 'saveCovers') + '\nthis.save = saveCovers;');
+    await Promise.all([metadata.save(), covers.save()]);
+    return data['titleData:s'];
+  };
+  const title = await run(navigator);
+  assert.equal(title.metadata.titleRu, 'Новое');
+  assert.equal(title.covers[0].url, 'https://x/new.jpg');
+  assert.equal(title.metadata.cover, 'https://x/new.jpg');
+  assert.deepEqual([title.metadata.duration, title.metadata.rating, title.metadata.shikimori], ['24 мин', '8.1', 'https://shikimori.one/1']);
+  assert.equal('tags' in title.metadata, false); // поле, отключённое в настройках, в книгу не попадает
+  // проверка самой проверки: без блокировки одна из правок теряется
+  const unlocked = await run(undefined);
+  assert.ok(unlocked.metadata.titleRu !== 'Новое' || unlocked.covers.length === 0);
+});
+
+test('a chapter renamed in the chapters editor keeps its name in the download (audit #2)', async () => {
+  const data = { 'titleData:s': {
+    metadata: {}, chapters: [{ id: 1, displayTitle: 'Пролог' }, { id: 2, displayTitle: 'Глава 2' }, { id: 3 }],
+    filteredChapters: [{ id: 1, displayTitle: 'Том 1. Глава 1' }, { id: 3 }] // копии диапазона из popup - до переименования
+  } };
+  const ctx = vm.createContext({ chrome: { storage: { local: storageApi(data) } }, URL, console });
+  vm.runInContext(titleStore + source('src/utils/page-call.js') + source('src/core/snapshot.js'), ctx);
+  const snap = await ctx.buildDownloadSnapshot({ slug: 's', tabId: 1, sourceUrl: 'https://ranobelib.me/ru/book/s', selectedChapterIds: [1, 3], format: 'epub' });
+  assert.deepEqual(snap.downloadData.chapters.map(ch => ch.displayTitle), ['Пролог', undefined]);
+  // загрузчик форматирует название только главам без сохранённого
+  assert.match(source('src/core/download.js'), /ch\.displayTitle \|\|= formatChapterTitle\(/);
+});
+
+test('reopening a title keeps a translator picked for one chapter by hand (audit #3)', () => {
+  const ctx = vm.createContext({});
+  vm.runInContext(source('src/core/chapter-range.js'), ctx);
+  const branch = (id, team) => ({ branch_id: id, teams: [{ id: team, name: 'T' + team }] });
+  const chapters = [1, 2].map(id => ({ id, branches: [branch(10, 1), branch(20, 2)] }));
+  const overrides = { 1: '20_2', 2: 'gone_9' }; // у главы 2 сохранённого перевода больше нет
+  ctx.applyTranslatorPriority(chapters, ['10_1', '20_2'], overrides);
+  assert.deepEqual({ ...overrides }, { 1: '20_2', 2: '10_1' });
+  assert.deepEqual(chapters.map(ch => ch.branchId), ['20', '10']);
+});
+
+test('the HTML book is whole offline: libraries inlined from the extension, icons as inline SVG, nothing from the network (audit #8)', async () => {
+  const context = vm.createContext({
+    JSZip: require(path.join(root, 'src/libs/jszip.min.js')), console, Blob, TextEncoder, URL,
+    chrome: { runtime: { getURL: file => file } },
+    fetch: async file => ({ text: async () => source(`src/${file}`) })
+  });
+  vm.runInContext(source('src/formatters/base.js') + source('src/formatters/html.js') + '\nthis.Html = HtmlFormatter;', context);
+  const book = async withImages => {
+    const formatter = new context.Html({ siteType: 'ranobe', fieldLabels: {} });
+    if (withImages) formatter.zip.file('covers/cover1.png', 'PNG');
+    return formatter.generateHTML([{ id: 1, volume: '1', number: '1', displayTitle: 'Глава 1', htmlContent: '<p>Текст</p>' }], { titleRu: 'Книга' }, { downloaded: 0 }, '');
+  };
+  const html = await book(true);
+  assert.doesNotMatch(html, /(src|href)=["']?(https?:)?\/\//); // ни скриптов, ни стилей, ни шрифтов из сети
+  assert.ok(html.includes('JSZip v3.10.1') && html.includes('@popperjs/core v2.11.8') && /tippy/.test(html));
+  assert.doesNotMatch(html, /class="fa/);
+  assert.equal((html.match(/<svg class="icon"/g) || []).length, 10);
+  assert.ok(!(await book(false)).includes('JSZip v3.10.1')); // без картинок архиватор не нужен
+});

@@ -8,7 +8,6 @@ var nextPauseAfterChapters = 0;
 var imagesSinceLastPause = 0;
 
 // Параметры случайных пауз
-var RANDOM_PAUSE_CHANCE = 0.25;  // 25% шанс паузы между главами
 var RANDOM_PAUSE_MIN = 400;  // 0.4 сек
 var RANDOM_PAUSE_MAX = 1600;  // 1.6 сек
 var RANDOM_PAUSE_CHAPTERS_MIN = 1;  // Минимум глав между паузами

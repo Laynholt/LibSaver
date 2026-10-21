@@ -177,8 +177,11 @@ test('fetchVideo: the size from the first byte, then 4 MB parts in parallel, ret
   assert.deepEqual(parts.at(-1), [file.length, file.length], 'в конце скачан весь файл');
   assert.ok(parts.some(([done]) => done % (4 << 20) !== 0 && done < file.length), 'ход виден и посреди части');
 
-  const whole = animeContext({ fetch: async () => ({ ok: true, status: 200, headers: { get: () => null }, blob: async () => new Blob(['all']) }) });
+  const whole = animeContext({ fetch: async () => new Response('all') });
   assert.equal(await (await whole.fetchVideo('https://cdn.example/x.mp4', () => {}, () => {})).text(), 'all');
+  // сервер без Range: файл целиком, но с той же отменой (audit #7)
+  const canceled = animeContext({ fetch: async () => new Response('all') });
+  await assert.rejects(canceled.fetchVideo('https://cdn.example/x.mp4', () => {}, () => { throw canceled.canceledError(); }), error => error.canceled);
   const broken = animeContext({ fetch: async () => ({ ok: false, status: 404 }) });
   await assert.rejects(broken.fetchVideo('https://cdn.example/x.mp4', () => {}, () => {}), /HTTP 404/);
 });
@@ -195,7 +198,8 @@ test('downloadAnime resolves each selected episode through Kodik, tags the MP4 a
       posts.push([url, Object.fromEntries(options.body)]);
       return { ok: true, json: async () => ({ links: { 360: [{ src: encodeKodik('//cdn.example/360.mp4:hls:manifest.m3u8') }], 720: [{ src: encodeKodik('//cdn.example/720.mp4:hls:manifest.m3u8') }] } }) };
     }
-    if (url.startsWith('https://cdn.example/')) return { ok: true, status: 200, headers: { get: () => null }, blob: async () => mp4 };
+    if (url.startsWith('https://cdn.example/')) return new Response(mp4);
+    if (url.startsWith('data:')) return new Response(new Blob(['PNG']));
     return { ok: true, text: async () => html };
   };
   const players = { 11: [{ player: 'Kodik', src: '//kodikplayer.com/seria/42/h1/720p', team: { id: 7, name: 'SHIZA' } }], 12: [] };
@@ -238,6 +242,17 @@ test('downloadAnime resolves each selected episode through Kodik, tags the MP4 a
     log: () => {}, progress: () => {}, isCanceled: () => false, save: async (url, name, folder) => saved.push([url, name, folder])
   });
   assert.deepEqual(saved.map(([, name]) => name), ['Пони - S01E01.mp4']);
+
+  // озвучка, выбранная в редакторе глав, важнее выбранной при загрузке; обложка с компьютера - из dataUrl (audit #4, #6)
+  players[11].push({ player: 'Kodik', src: '//kodikplayer.com/seria/43/h2/720p', team: { id: 20, name: 'AniDUB' } });
+  saved.length = 0;
+  logs.length = 0;
+  await ctx.downloadAnime({
+    ...snapshot, stored: { animeSaveText: false }, titleExtras: { chapterBranchOverrides: { 11: '20_20' } },
+    downloadData: { ...snapshot.downloadData, selectedChapterIds: [11], allCovers: [{ url: 'my.png', dataUrl: 'data:image/png;base64,UE5H', type: 'file' }] }
+  }, { log: line => logs.push(line), progress: () => {}, isCanceled: () => false, save: async (url, name) => saved.push([url, name]) });
+  assert.ok(logs.some(line => line.includes('AniDUB')));
+  assert.deepEqual(saved[0], ['blob:video', 'poster.png']);
 });
 
 test('only https Kodik hosts are requested: a foreign player, a //host endpoint and a non-https video link are refused', async () => {

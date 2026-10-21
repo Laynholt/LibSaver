@@ -958,8 +958,8 @@ async function saveSettings() {
     if (signature === appliedToc) return;
     appliedToc = signature;
     // Удаляем сохранённые displayTitle из titleData
-    const titleData = await getAllTitleData();
-    if (titleData) {
+    await withTitleStoreLock(async () => {
+      const titleData = await getAllTitleData();
       for (const slug in titleData) {
         if (titleData[slug].chapters) {
           titleData[slug].chapters.forEach(ch => {
@@ -968,7 +968,7 @@ async function saveSettings() {
         }
       }
       await setTitleStore({ titleData });
-    }
+    });
     // Отправляем сообщение для переформатирования в открытых окнах
     chrome.runtime.sendMessage({ action: 'reformatChapters' });
   }

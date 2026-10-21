@@ -12,6 +12,9 @@ async function buildDownloadSnapshot({ slug, tabId, sourceUrl, selectedChapterId
   const siteKey = siteKeyOf(sourceUrl);
   const siteType = siteTypeOf(siteKey);
   const disableToc = settings.disableToc !== undefined ? settings.disableToc : false;
+  // Главы диапазона берём из title.chapters: в копиях filteredChapters нет поздних правок названий из редактора глав
+  const picked = title.filteredChapters && new Set(title.filteredChapters.map(chapter => chapter.id));
+  const rangeChapters = picked && title.chapters ? title.chapters.filter(chapter => picked.has(chapter.id)) : title.filteredChapters || title.chapters || [];
 
   const stored = Object.fromEntries(SNAPSHOT_STORED_KEYS.filter(key => key in settings).map(key => [key, settings[key]]));
   if (speedMode !== undefined) stored.speedMode = speedMode;
@@ -33,7 +36,7 @@ async function buildDownloadSnapshot({ slug, tabId, sourceUrl, selectedChapterId
     pdfJpegQuality: settings.pdfJpegQuality !== undefined ? settings.pdfJpegQuality : 1.0,
     mangaId: slug,
     // Диапазон, выбранный в popup; без него — все главы
-    chapters: title.filteredChapters || title.chapters || [],
+    chapters: rangeChapters,
     disableToc,
     epubTocPage: !disableToc,
     tabId,

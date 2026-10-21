@@ -599,28 +599,18 @@ document.getElementById('btn-add').addEventListener('click', () => {
 // Сохранение обложек (автосохранение, enableAutosave)
 async function saveCovers() {
   if (!currentSlug) return;
-  
-  const titleDataResult = await getTitleStore(['titleData']);
-  const titleData = titleDataResult.titleData || {};
-  
-  // Инициализируем структуру если нет
-  if (!titleData[currentSlug]) {
-    titleData[currentSlug] = { chapters: null, metadata: {}, covers: [] };
-  }
-  
+
   // Пустая обложка из «Новая обложка» не сохраняется, пока не введён URL или не выбран файл
   const covers = userCovers.filter(cover => cover.url || cover.dataUrl);
-  titleData[currentSlug].covers = covers;
-  // Обновляем cover в metadata для совместимости
-  if (!titleData[currentSlug].metadata) {
-    titleData[currentSlug].metadata = {};
-  }
-  titleData[currentSlug].metadata.cover = covers.length > 0 ? (covers[0].url || covers[0].dataUrl) : '';
-
-  // Обновляем timestamp кэша (продлеваем срок действия на 10 минут)
-  titleData[currentSlug].cacheTimestamp = Date.now();
-
-  await setTitleStore({ titleData });
+  await updateTitleStore(['titleData'], currentSlug, ({ titleData }) => {
+    const title = titleData[currentSlug] ??= { chapters: null, metadata: {}, covers: [] };
+    title.covers = covers;
+    // Обновляем cover в metadata для совместимости
+    title.metadata ??= {};
+    title.metadata.cover = covers.length > 0 ? (covers[0].url || covers[0].dataUrl) : '';
+    // Обновляем timestamp кэша (продлеваем срок действия на 10 минут)
+    title.cacheTimestamp = Date.now();
+  });
 }
 
 // Сброс к значениям с сайта

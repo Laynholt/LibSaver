@@ -3323,7 +3323,7 @@ function chaptersSaveContext({ slug = 's', allChapters = [{ id: 1 }], titleData 
     getTitleStore: async () => ({ titleData, currentSlug: slug }),
     setTitleStore: async items => { writes.push(items); }
   });
-  vm.runInContext(source('src/core/chapter-range.js') + functionSource('src/editors/chapters.js', 'saveChapters') +'\nthis.saveChapters = saveChapters;', ctx);
+  vm.runInContext(functionSource('src/utils/title-store.js', 'withTitleStoreLock') + functionSource('src/utils/title-store.js', 'updateTitleStore') + source('src/core/chapter-range.js') + functionSource('src/editors/chapters.js', 'saveChapters') +'\nthis.saveChapters = saveChapters;', ctx);
   return { ctx, writes };
 }
 
@@ -3483,7 +3483,7 @@ test('saveCovers leaves out empty covers from «Новая обложка» unti
     getTitleStore: async () => ({ titleData: structuredClone(stored) }),
     setTitleStore: async items => { writes.push(items); }
   });
-  vm.runInContext(functionSource('src/editors/covers.js', 'saveCovers') + '\nthis.saveCovers = saveCovers;', ctx);
+  vm.runInContext(functionSource('src/utils/title-store.js', 'withTitleStoreLock') + functionSource('src/utils/title-store.js', 'updateTitleStore') + functionSource('src/editors/covers.js', 'saveCovers') + '\nthis.saveCovers = saveCovers;', ctx);
   await ctx.saveCovers();
   assert.deepEqual(jsonCopy(writes[0].titleData.s.covers.map(cover => cover.url)), ['https://x/a.jpg', 'b.png']);
   assert.equal(writes[0].titleData.s.metadata.cover, 'https://x/a.jpg');
@@ -3501,7 +3501,7 @@ test('saveMetadata does not write fieldLabels until they have been loaded, so a 
     getTitleStore: async () => ({ titleData: { s: { metadata: { cover: 'c' }, covers: [] } } }),
     setTitleStore: async items => { writes.push(items); }
   });
-  vm.runInContext(functionSource('src/editors/metadata.js', 'saveMetadata') + '\nthis.saveMetadata = saveMetadata;', ctx);
+  vm.runInContext(functionSource('src/utils/title-store.js', 'withTitleStoreLock') + functionSource('src/utils/title-store.js', 'updateTitleStore') + between('src/editors/metadata.js', 'const METADATA_FIELD_KEYS', '// Сохранение метаданных') + functionSource('src/editors/metadata.js', 'saveMetadata') + '\nthis.saveMetadata = saveMetadata;', ctx);
   await ctx.saveMetadata();
   assert.equal(writes[0].titleData.s.metadata.titleRu, 'v'); // the typed value is still saved
   assert.equal(writes[0].titleData.s.metadata.cover, 'c');

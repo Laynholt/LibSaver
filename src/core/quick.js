@@ -12,11 +12,10 @@ async function startQuickDownload({ info, fromIdx, toIdx, tabId, url, format }) 
   const selectedChapterIds = rangeChapterIds(info.chapters, fromIdx, toIdx);
 
   // Снимок берёт главы из titleData.filteredChapters, панель считает по selectedChapterIds: оба поля обновляем вместе
-  const { titleData } = await getTitleStore(['titleData'], info.slug);
-  if (titleData[info.slug]) {
+  await updateTitleStore(['titleData'], info.slug, ({ titleData }) => {
+    if (!titleData[info.slug]) return false;
     applySelectionToTitle(titleData[info.slug], info.allChapters, selectedChapterIds);
-    await setTitleStore({ titleData });
-  }
+  });
 
   return enqueueSelection({ slug: info.slug, tabId, url, selectedChapterIds, format });
 }
