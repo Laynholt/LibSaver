@@ -90,10 +90,6 @@ button:focus-visible {
   white-space: nowrap;
 }
 
-.format {
-  display: none; /* Формат не показывается на кнопке */
-}
-
 /* Ход загрузки этого тайтла: полоска слева, «45%» справа */
 .fill {
   position: absolute;

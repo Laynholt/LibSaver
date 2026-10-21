@@ -317,11 +317,9 @@ function createButtonsHost(doc, siteKey) {
   fill.className = 'fill';
   const label = doc.createElement('span');
   label.textContent = 'Скачать';
-  const format = doc.createElement('small');
-  format.className = 'format';
   const percent = doc.createElement('span');
   percent.className = 'percent';
-  download.append(fill, label, format, percent);
+  download.append(fill, label, percent);
   const settings = createButton(doc, 'settings', 'Настройки LibSaver', ''); // fa-gear
   settings.setAttribute('title', 'Настройки LibSaver');
   download.addEventListener('click', event => { if (event.isTrusted) openQuickPopover(host); });
@@ -332,7 +330,7 @@ function createButtonsHost(doc, siteKey) {
   row.append(download, settings);
   shadow.append(row);
 
-  // Ход загрузки этого тайтла: полоска и «45%» (на месте формата) или «В очереди»; адрес читаем в момент вызова - SPA меняет тайтл под тем же хостом
+  // Ход загрузки этого тайтла: полоска и «45%» или «В очереди»; адрес читаем в момент вызова - SPA меняет тайтл под тем же хостом
   const paint = () => {
     if (host.isConnected === false) { // SPA убрала кнопки
       buttonPainters.delete(paint);
@@ -347,23 +345,20 @@ function createButtonsHost(doc, siteKey) {
   buttonPainters.add(paint);
   paint();
 
-  const siteType = siteTypeOf(siteKey);
-  const formatKey = formatKeyFor(siteType);
-  const refresh = () => chrome.storage.local.get(['accentColor', 'theme', formatKey]).then(stored => {
+  const refresh = () => chrome.storage.local.get(['accentColor', 'theme']).then(stored => {
     const isDark = stored.theme === 'light' ? false : stored.theme === 'system' ? doc.defaultView.matchMedia('(prefers-color-scheme: dark)').matches : true;
     const accent = accentFor(siteKey, stored.accentColor, isDark);
     host.style.setProperty('--ls-accent', accent.color);
     host.style.setProperty('--ls-accent-hover', accent.hover);
-    format.textContent = (stored[formatKey] || defaultFormatFor(siteType)).toUpperCase();
   }).catch(() => {});
   refresh();
-  // Формат выбирают в быстром окошке и в окне поверх сайта, акцент и тему - в настройках: подпись и цвет подхватывают сразу
+  // Цвет подхватывает изменения акцента и темы из настроек.
   const onChanged = (changes, area) => {
     if (host.isConnected === false) { // SPA убрала кнопки
       chrome.storage.onChanged.removeListener(onChanged);
       return;
     }
-    if (area === 'local' && ['accentColor', 'theme', formatKey].some(key => key in changes)) refresh();
+    if (area === 'local' && ['accentColor', 'theme'].some(key => key in changes)) refresh();
   };
   chrome.storage.onChanged.addListener(onChanged);
   return host;

@@ -293,19 +293,6 @@
       background-color: var(--danger-color);
       border-color: var(--danger-color);
     }
-    /* Угловые метки и бейдж «Основная» скрыты (номер отображается в строке параметров) */
-    .cover-item::after,
-    .img-container:has(> img.loaded)::before {
-      display: none !important;
-    }
-    .cover-item:has(img.loaded)::after {
-      display: none;
-    }
-    .cover-item:first-child::after,
-    .cover-item:first-child .img-container:has(> img.loaded)::before {
-      content: 'Основная';
-      display: none !important;
-    }
     .btn-group {
       display: flex;
       gap: 8px;
