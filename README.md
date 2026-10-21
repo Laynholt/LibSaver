@@ -16,6 +16,8 @@
 
 **[Последний релиз](https://github.com/dfy-dpg/LibSaver/releases/latest)** · **[Документация](SETTINGS.md)** · **[Сообщить о проблеме](https://github.com/dfy-dpg/LibSaver/issues/new?template=bug_report.yml)**
 
+<br>
+
 [<img src="screenshots/v2/dark_iframe.gif" alt="LibSaver, вкладка Главы/Серии">](https://github.com/dfy-dpg/LibSaver/releases/latest)
 
 </div>
