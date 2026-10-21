@@ -74,8 +74,23 @@ test('pageCall waits through the no-tab handler and retries when the tab disappe
   assert.equal(await ctx.pageCall('mangalib', 'mangaChapterPages', [1, 1, 1, 's', 'normal', null]), 'ok');
   assert.deepEqual(ctx.handlerCalls, ['mangalib']);
   assert.deepEqual(ctx.execTabs, [3, 4]);
-  assert.deepEqual(ctx.injected, ['core/page-helpers.js', 'core/page-helpers.js']); // the shared helpers go in before every call
+  assert.deepEqual(ctx.injected, ['/core/page-helpers.js', '/core/page-helpers.js']); // the shared helpers go in before every call
   assert.deepEqual(ctx.delays, [1000]); // pause before retrying a gone tab, no hot loop
+});
+
+test('page helpers resolve from the extension root even in the Firefox background page (issue #24)', async () => {
+  const ctx = pageCallContext([{ id: 7, url: 'https://mangalib.me/ru/manga/x' }]);
+  await ctx.execPageCall(7, 'mangaChapterPages', []);
+  for (const page of ['engine/background-firefox.html', 'engine/engine.html', 'html/panel.html', 'background.js']) {
+    const resolved = new URL(ctx.injected[0], `moz-extension://test/${page}`);
+    assert.equal(resolved.pathname, '/core/page-helpers.js');
+    const script = source(`src${resolved.pathname}`);
+    const sandbox = vm.createContext({ URL, console });
+    for (let i = 0; i < 2; i++) {
+      assert.doesNotThrow(() => structuredClone(vm.runInContext(script, sandbox)));
+      assert.equal(typeof sandbox.libsaverFetchWithRetry, 'function');
+    }
+  }
 });
 
 test('findSiteTab treats a discarded or unloaded preferred tab as absent', async () => {
@@ -1597,7 +1612,7 @@ test('popover frame messages: close and resize (numbers only); the popover has n
   assert.deepEqual(log, ['close', ['resize', 180]]);
 });
 
-test('the «Скачать» label and accent follow the format and accent saved in storage', async () => {
+test('the download button omits the format and follows the saved accent', async () => {
   const stored = { selectedFormat_manga: 'pdf', accentColor: 'green', theme: 'dark' };
   const ctx = siteUiContext({ stored });
   const doc = fakeTitleDoc('mangalib');
@@ -1606,10 +1621,9 @@ test('the «Скачать» label and accent follow the format and accent saved
   doc.createElement = tag => { const el = createElement(tag); created.push(el); return el; };
   ctx.ensureButtons(doc, 'https://mangalib.me/ru/manga/x');
   const host = doc.grid.children[1];
-  const label = created.find(el => el.tag === 'small');
   const settle = () => new Promise(resolve => setImmediate(resolve));
   await settle();
-  assert.equal(label.textContent, 'PDF');
+  assert.ok(!created.some(el => el.className === 'format'));
   assert.equal(host.style['--ls-accent'], '#4caf50');
   assert.equal(ctx.listeners.size, 1);
 
@@ -1619,14 +1633,11 @@ test('the «Скачать» label and accent follow the format and accent saved
     await settle();
   };
   await change('selectedFormat_manga', 'zip');
-  assert.equal(label.textContent, 'ZIP');
+  assert.equal(host.style['--ls-accent'], '#4caf50');
   await change('accentColor', 'pink');
   assert.equal(host.style['--ls-accent'], '#e91e63');
-  await change('selectedFormat_ranobe', 'fb2'); // another site's format: nothing to redraw
-  assert.equal(label.textContent, 'ZIP');
-  stored.selectedFormat_manga = 'cbz';
-  await change('selectedFormat_manga', 'cbz', 'sync'); // not the local area
-  assert.equal(label.textContent, 'ZIP');
+  await change('accentColor', 'green', 'sync'); // not the local area
+  assert.equal(host.style['--ls-accent'], '#e91e63');
 });
 
 test('a button row that left the page stops listening to storage', () => {

@@ -761,15 +761,15 @@ test('chapters: a single volume is shown in parts of 100 with "show more" / "sho
   assert.doesNotMatch(source('src/core/settings.js'), /enablePagination|enable-pagination/);
 });
 
-test('cover previews: no inline background over the CSS one, badges sit on the loaded image, a click on it opens the cover', () => {
+test('cover previews: CSS background, numbers below the image, a click opens the cover', () => {
   const js = source('src/editors/covers.js');
   assert.doesNotMatch(js, /setPreviewBackground|preview\.style\.backgroundColor/);
   assert.match(js, /img\.onclick = /);
   const html = source('src/html/covers.html');
   assert.match(html, /\.cover-preview\.has-image \{\s*background-color: var\(--bg-secondary\);/);
-  assert.match(html, /img\.loaded \{[^}]*cursor: zoom-in;/);
-  assert.match(html, /\.cover-item:has\(img\.loaded\)::after \{\s*display: none;/);
-  assert.match(html, /\.cover-item:first-child \.img-container:has\(> img\.loaded\)::before \{\s*content: 'Основная';/);
+  assert.match(html, /img\.loaded \{[^}]*cursor: zoom-in(?: !important)?;/);
+  assert.match(html, /\.cover-number \{/);
+  assert.doesNotMatch(html, /content: 'Основная'/);
 });
 
 test('editors fit a phone: no fixed minimum page width, the toolbar and «show more» buttons wrap, anime voiceovers count series', () => {

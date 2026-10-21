@@ -415,8 +415,7 @@ function addCoverItem(cover) {
     emptyState.remove();
   }
   
-  // Обновляем видимость ручек
-  updateDragHandles();
+  initSortable(disableDragAnimations);
 }
 
 // Удаление одного элемента обложки
@@ -441,14 +440,8 @@ function removeCoverItem(index) {
     
     updateCoverCount();
     
-    // Обновляем видимость ручек
-    updateDragHandles();
+    initSortable(disableDragAnimations);
   }
-}
-
-// Обновление состояния перетаскивания
-function updateDragHandles() {
-  initSortable(disableDragAnimations);
 }
 
 // Рендер списка обложек
@@ -593,7 +586,6 @@ document.getElementById('btn-add').addEventListener('click', () => {
   // Всегда добавляем пустышку, чтобы пользователь сам решает что добавить
   userCovers.push({ url: '', type: 'url' });
   addCoverItem(userCovers[userCovers.length - 1]);
-  initSortable(disableDragAnimations);
   updateCoverCount();
   
   // Прокручиваем к новому элементу
