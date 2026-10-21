@@ -24,7 +24,7 @@
 
 <br>
 
-<img src="screenshots/v2/dark_iframe.gif" width="820" alt="LibSaver, вкладка Главы/Серии">
+<img src="screenshots/v2/dark_iframe.gif" alt="LibSaver, вкладка Главы/Серии">
 
 </div>
 
