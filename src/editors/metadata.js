@@ -253,78 +253,32 @@ function applyFieldOrder(fieldOrder) {
   });
 }
 
+// Поле редактора -> ключ metadata. Остальные ключи (cover, duration, rating, shikimori...) редактор не трогает
+const METADATA_FIELD_KEYS = {
+  'title-ru': 'titleRu', 'title-en': 'titleEn', 'title-original': 'titleOriginal', 'title-alt': 'titleAlt',
+  'author': 'author', 'artist': 'artist', 'year': 'year', 'status': 'status', 'country': 'country',
+  'release-format': 'releaseFormat', 'publisher': 'publisher', 'age-restriction': 'ageRestriction',
+  'description': 'description', 'genres': 'genres', 'tags': 'tags'
+};
+
 // Сохранение метаданных (автосохранение, enableAutosave)
 async function saveMetadata() {
   if (!currentSlug) return; // тайтл ещё не загружен
-  const metadata = {};
-  
-  // Добавляем только включенные поля из настроек
-  if (metadataFields['title-ru'] !== false) {
-    metadata.titleRu = document.getElementById('title-ru').value;
-  }
-  if (metadataFields['title-en'] !== false) {
-    metadata.titleEn = document.getElementById('title-en').value;
-  }
-  if (metadataFields['title-original'] !== false) {
-    metadata.titleOriginal = document.getElementById('title-original').value;
-  }
-  if (metadataFields['title-alt'] !== false) {
-    metadata.titleAlt = document.getElementById('title-alt').value;
-  }
-  if (metadataFields['author'] !== false) {
-    metadata.author = document.getElementById('author').value;
-  }
-  if (metadataFields['artist'] !== false) {
-    metadata.artist = document.getElementById('artist').value;
-  }
-  if (metadataFields['year'] !== false) {
-    metadata.year = document.getElementById('year').value;
-  }
-  if (metadataFields['status'] !== false) {
-    metadata.status = document.getElementById('status').value;
-  }
-  if (metadataFields['country'] !== false) {
-    metadata.country = document.getElementById('country').value;
-  }
-  if (metadataFields['release-format'] !== false) {
-    metadata.releaseFormat = document.getElementById('release-format').value;
-  }
-  if (metadataFields['publisher'] !== false) {
-    metadata.publisher = document.getElementById('publisher').value;
-  }
-  if (metadataFields['age-restriction'] !== false) {
-    metadata.ageRestriction = document.getElementById('age-restriction').value;
-  }
-  if (metadataFields['description'] !== false) {
-    metadata.description = document.getElementById('description').value;
-  }
-  if (metadataFields['genres'] !== false) {
-    metadata.genres = document.getElementById('genres').value;
-  }
-  if (metadataFields['tags'] !== false) {
-    metadata.tags = document.getElementById('tags').value;
-  }
-
-  const result = await getTitleStore(['titleData']);
-  const titleData = result.titleData || {};
-  // Инициализируем структуру если нет
-  if (!titleData[currentSlug]) {
-    titleData[currentSlug] = { chapters: null, metadata: {}, covers: [] };
-  }
-
-  // Сохраняем существующие covers, чтобы не потерять обложки
-  const existingData = titleData[currentSlug] || {};
-  metadata.covers = existingData.covers || [];
-  // metadata.cover приходит с сайта или из редактора обложек, у поля метаданных его нет
-  if (existingData.metadata?.cover !== undefined) metadata.cover = existingData.metadata.cover;
-
-  titleData[currentSlug].metadata = metadata;
-
-  // Обновляем timestamp кэша (продлеваем срок действия на 10 минут)
-  titleData[currentSlug].cacheTimestamp = Date.now();
-
-  // Сохраняем названия полей в storage (когда они уже загружены)
-  await setTitleStore(fieldLabelsLoaded ? { titleData, fieldLabels: tempFieldLabels } : { titleData });
+  await updateTitleStore(['titleData'], currentSlug, stored => {
+    const title = stored.titleData[currentSlug] ??= { chapters: null, metadata: {}, covers: [] };
+    const metadata = { ...title.metadata };
+    for (const [field, key] of Object.entries(METADATA_FIELD_KEYS)) {
+      // Поле, отключённое в настройках, в книгу не попадает
+      if (metadataFields[field] === false) delete metadata[key];
+      else metadata[key] = document.getElementById(field).value;
+    }
+    metadata.covers = title.covers || [];
+    title.metadata = metadata;
+    // Обновляем timestamp кэша (продлеваем срок действия на 10 минут)
+    title.cacheTimestamp = Date.now();
+    // Названия полей пишем, только когда они уже загружены
+    if (fieldLabelsLoaded) stored.fieldLabels = tempFieldLabels;
+  });
 }
 
 // Сброс к данным с сайта

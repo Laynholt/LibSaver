@@ -120,25 +120,30 @@ async function fetchVideo(url, onPart, stop) {
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     return response;
   };
-  // Тело части - по кускам сети: поток на ~0.3 МБ/с качает часть секунд 15, а ход и скорость видны сразу.
-  // Перед каждым куском - «Пауза» и отмена (download.js), они срабатывают тут же. Оборвалась часть - её байты из хода вычитаются
+  // Тело ответа - по кускам сети: поток на ~0.3 МБ/с качает часть секунд 15, а ход и скорость видны сразу.
+  // Перед каждым куском - «Пауза» и отмена (download.js), они срабатывают тут же
+  const read = async (response, onChunk) => {
+    const pieces = [];
+    for (const reader = response.body.getReader(); ;) {
+      await checkPause();
+      stop();
+      const { done, value } = await reader.read();
+      if (done) return pieces;
+      pieces.push(value);
+      onChunk(value.length);
+    }
+  };
+  // Оборвалась часть - её байты из хода вычитаются
   const part = (from, to) => retry(async () => {
     let got = 0;
     try {
       const response = await get(from, to);
       if (response.status !== 206) throw new Error('сервер прислал не ту часть файла');
-      const pieces = [];
-      for (const reader = response.body.getReader(); ;) {
-        await checkPause();
-        stop();
-        const { done, value } = await reader.read();
-        if (done) break;
-        pieces.push(value);
-        got += value.length;
-        doneBytes += value.length;
+      const blob = new Blob(await read(response, size => {
+        got += size;
+        doneBytes += size;
         onPart(doneBytes, total);
-      }
-      const blob = new Blob(pieces);
+      }));
       if (blob.size !== to - from + 1) throw new Error('сервер прислал не ту часть файла');
       return blob;
     } catch (e) {
@@ -148,7 +153,17 @@ async function fetchVideo(url, onPart, stop) {
   });
   const probe = await retry(() => get(0, 0));
   const total = probe.status === 206 ? Number(probe.headers.get('content-range')?.match(/\/(\d+)$/)?.[1]) : 0;
-  if (!total) return probe.blob();
+  if (!total) {
+    // Сервер без Range прислал файл целиком: читаем его с теми же «Паузой», отменой и ходом
+    const size = Number(probe.headers.get('content-length')) || 0;
+    let got = 0;
+    try {
+      return new Blob(await read(probe, chunk => onPart(got += chunk, size)), { type: 'video/mp4' });
+    } catch (e) {
+      abort.abort();
+      throw e;
+    }
+  }
   probe.body?.cancel();
   const count = Math.ceil(total / VIDEO_CHUNK);
   const parts = [];
@@ -308,8 +323,9 @@ function buildAnimeInfoText(metadata) {
 async function saveTitleExtras(snapshot, folder, hooks) {
   const data = snapshot.downloadData;
   const metadata = data.metadata || {};
+  // Первая обложка из редактора; у загруженной с компьютера url - имя файла, картинка - в dataUrl (как BaseFormatter.extractCoverUrl)
   const firstCover = data.allCovers?.[0];
-  const cover = metadata.cover || (firstCover?.url ?? firstCover) || '';
+  const cover = firstCover?.dataUrl || firstCover?.url || (typeof firstCover === 'string' && firstCover) || metadata.cover || '';
   if (snapshot.stored?.animeSaveText !== false) {
     const text = URL.createObjectURL(new Blob([buildAnimeInfoText(metadata)], { type: 'text/plain;charset=utf-8' }));
     try {
@@ -321,10 +337,16 @@ async function saveTitleExtras(snapshot, folder, hooks) {
     }
   }
   if (snapshot.stored?.animeSavePoster !== false && cover) {
+    const type = cover.match(/^data:image\/(jpe?g|png|webp)|\.(jpe?g|png|webp)(?=$|\?)/i);
+    let url = cover;
     try {
-      await hooks.save(cover, `poster.${cover.match(/\.(jpe?g|png|webp)(?=$|\?)/i)?.[1] || 'jpg'}`, folder);
+      // data: URL загрузчик браузера принимает не везде - отдаём blob:, как Описание.txt
+      if (cover.startsWith('data:')) url = URL.createObjectURL(await (await fetch(cover)).blob());
+      await hooks.save(url, `poster.${type?.[1] || type?.[2] || 'jpg'}`, folder);
     } catch (e) {
       hooks.log(`Не удалось сохранить обложку: ${e.message}`, true);
+    } finally {
+      if (url !== cover) setTimeout(() => URL.revokeObjectURL(url), 60000);
     }
   }
 }
@@ -381,7 +403,9 @@ async function downloadAnime(snapshot, hooks) {
       const details = await pageCall('animelib', 'animeApi', [`/api/episodes/${encodeURIComponent(episode.id)}`], data.tabId);
       if (!details?.success) throw new Error(details?.error || 'нет ответа API');
       stop();
-      const player = pickAnimePlayer(details.data.players, episode.branchId);
+      // Озвучка, выбранная для серии в редакторе глав (ключ «branch_team», у аниме branch - id команды), важнее выбранной при загрузке тайтла
+      const override = snapshot.titleExtras?.chapterBranchOverrides?.[episode.id];
+      const player = pickAnimePlayer(details.data.players, override ? override.split('_')[0] : episode.branchId);
       if (!player) throw new Error('нет плеера Kodik');
       const video = await resolveKodik(player.src, quality);
       stop();

@@ -82,7 +82,8 @@ function applyTranslatorPriority(chapters, translatorPriority, chapterBranchOver
 
   uniqueChapters.forEach(ch => {
     const variants = getChapterVariants(chapters, ch.id);
-    if (variants.size > 1) {
+    // Выбор, сделанный для главы вручную, приоритет не перебивает (как applyTranslatorPriorityToChapter без allowOverride)
+    if (variants.size > 1 && !variants.has(chapterBranchOverrides[ch.id])) {
       for (const translatorKey of translatorPriority) {
         if (variants.has(translatorKey)) {
           chapterBranchOverrides[ch.id] = translatorKey;

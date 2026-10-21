@@ -66,6 +66,22 @@ function setTitleStore(items) {
   return chrome.storage.local.set(splitTitleStore(items));
 }
 
+// Блокировка navigator.locks общая для всех окон расширения: два редактора не затрут правки тайтла друг друга
+function withTitleStoreLock(task) {
+  return globalThis.navigator?.locks ? navigator.locks.request('libsaver-title-store', task) : task();
+}
+
+// Чтение–изменение–запись тайтла под блокировкой: mutate(stored) правит { titleData, originalTitleData } на месте, false - не записывать
+async function updateTitleStore(kinds, slug, mutate) {
+  const run = async () => {
+    const stored = await getTitleStore(kinds, slug);
+    if (await mutate(stored) === false) return stored;
+    await setTitleStore(stored);
+    return stored;
+  };
+  return withTitleStoreLock(run);
+}
+
 // Все сохранённые тайтлы (нужно только для массовых правок, например сброса displayTitle)
 async function getAllTitleData() {
   const all = await chrome.storage.local.get(null);

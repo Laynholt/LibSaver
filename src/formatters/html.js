@@ -1,3 +1,20 @@
+// Значки кнопок книги - контуры из локального Font Awesome (libs/fontawesome, solid): книга оформлена и без сети.
+// [ширина, путь SVG] в сетке шрифта 512; пересобрать - fontkit, glyph.path.transform(1, 0, 0, -1, 0, 448).toSVG()
+const HTML_BOOK_ICONS = {
+  'bars': [448, 'M0 96Q0 82 9 73L9 73Q18 64 32 64L416 64Q430 64 439 73Q448 82 448 96Q448 110 439 119Q430 128 416 128L32 128Q18 128 9 119Q0 110 0 96ZM0 256Q0 242 9 233L9 233Q18 224 32 224L416 224Q430 224 439 233Q448 242 448 256Q448 270 439 279Q430 288 416 288L32 288Q18 288 9 279Q0 270 0 256ZM448 416Q448 430 439 439L439 439Q430 448 416 448L32 448Q18 448 9 439Q0 430 0 416Q0 402 9 393Q18 384 32 384L416 384Q430 384 439 393Q448 402 448 416Z'],
+  'chevron-left': [320, 'M9 233Q0 243 0 256L0 256Q0 269 9 279L201 471Q211 480 224 480Q237 480 247 471Q256 461 256 448Q256 435 247 425L77 256L247 87Q256 77 256 64Q256 51 247 41Q237 32 224 32Q211 32 201 41L9 233Z'],
+  'chevron-right': [320, 'M311 233Q320 243 320 256L320 256Q320 269 311 279L119 471Q109 480 96 480Q83 480 73 471Q64 461 64 448Q64 435 73 425L243 256L73 87Q64 77 64 64Q64 51 73 41Q83 32 96 32Q109 32 119 41L311 233Z'],
+  'cog': [512, 'M496 167Q500 181 490 191L446 231Q448 243 448 256Q448 269 446 281L490 321Q500 331 496 345Q489 363 480 380L475 388Q465 404 453 419Q443 430 429 426L373 408Q353 424 329 433L317 491Q313 505 298 508Q278 512 256 512Q234 512 213 508Q199 505 195 491L183 433Q159 424 139 408L83 426Q69 430 59 419Q46 404 37 388L32 380Q23 363 16 346Q12 331 22 321L66 282Q64 269 64 256Q64 243 66 231L22 191Q12 181 16 167Q23 149 32 132L37 124Q46 108 59 93Q69 82 83 86L139 104Q159 88 183 78L195 21Q199 7 214 4Q234 0 256 0Q278 0 299 4Q313 7 317 21L329 78Q353 88 373 104L429 86Q443 82 453 93Q466 108 476 124L480 132Q489 149 496 167ZM256 336Q301 335 325 296Q347 256 325 216Q301 177 256 176Q211 177 187 216Q165 256 187 296Q211 335 256 336Z'],
+  'images': [576, 'M160 32Q133 33 115 51L115 51Q97 69 96 96L96 320Q97 347 115 365Q133 383 160 384L512 384Q539 383 557 365Q575 347 576 320L576 96Q575 69 557 51Q539 33 512 32L160 32ZM396 139L492 283Q499 295 493 307Q486 320 472 320L328 320L280 320L200 320Q185 319 178 306Q172 293 181 281L245 201Q253 192 264 192Q275 192 283 201L300 223L356 139Q363 128 376 128Q389 128 396 139ZM192 128Q192 114 201 105L201 105Q210 96 224 96Q238 96 247 105Q256 114 256 128Q256 142 247 151Q238 160 224 160Q210 160 201 151Q192 142 192 128ZM48 120Q46 98 24 96Q2 98 0 120L0 344Q1 402 40 440Q78 479 136 480L456 480Q478 478 480 456Q478 434 456 432L136 432Q99 431 74 406Q49 381 48 344L48 120Z'],
+  'info-circle': [512, 'M256 512Q326 511 384 478L384 478Q442 444 478 384Q512 323 512 256Q512 189 478 128Q442 68 384 34Q326 1 256 0Q186 1 128 34Q70 68 34 128Q0 189 0 256Q0 323 34 384Q70 444 128 478Q186 511 256 512ZM216 336L240 336L240 272L216 272Q194 270 192 248Q194 226 216 224L264 224Q286 226 288 248L288 336L296 336Q318 338 320 360Q318 382 296 384L216 384Q194 382 192 360Q194 338 216 336ZM256 128Q270 128 279 137L279 137Q288 146 288 160Q288 174 279 183Q270 192 256 192Q242 192 233 183Q224 174 224 160Q224 146 233 137Q242 128 256 128Z'],
+  'times': [384, 'M343 151Q352 141 352 128L352 128Q352 115 343 105Q333 96 320 96Q307 96 297 105L192 211L87 105Q77 96 64 96Q51 96 41 105Q32 115 32 128Q32 141 41 151L147 256L41 361Q32 371 32 384Q32 397 41 407Q51 416 64 416Q77 416 87 407L192 301L297 407Q307 416 320 416Q333 416 343 407Q352 397 352 384Q352 371 343 361L237 256L343 151Z']
+};
+
+function htmlBookIcon(name) {
+  const [width, path] = HTML_BOOK_ICONS[name];
+  return `<svg class="icon" viewBox="0 0 ${width} 512" width="${(width / 512).toFixed(3)}em" height="1em" aria-hidden="true"><path d="${path}"/></svg>`;
+}
+
 class HtmlFormatter extends BaseFormatter {
   constructor(options) {
     super(options);
@@ -747,8 +764,12 @@ class HtmlFormatter extends BaseFormatter {
     const content = await this.generateContent(chapters, metadata, coversStats);
     const jsCode = this.generateJavaScript(chapters, imagesZipBase64, metadata, this.options.siteType);
     const cssCode = this.generateCSS();
+    // Библиотеки - внутри файла, из libs расширения: книга работает и оформлена без сети. JSZip нужен только картинкам
+    const inlineScript = async file => '<script>\n' + (await (await fetch(chrome.runtime.getURL(file))).text()).replace(/<\/script/gi, '<\\/script') + '\n</script>\n  ';
+    const libs = [...(Object.keys(this.zip.files).length > 0 ? ['libs/jszip.min.js'] : []), 'libs/popper.min.js', 'libs/tippy-bundle.umd.min.js'];
+    const libScripts = (await Promise.all(libs.map(inlineScript))).join('');
 
-    return '<!DOCTYPE html>\n<html lang="ru">\n<head>\n  <meta charset="UTF-8">\n  <meta name="viewport" content="width=device-width, initial-scale=1.0">\n  <title>' + this.escapeXml(metadata.titleRu || 'Книга') + '</title>\n  <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>\n  <script src="https://cdn.jsdelivr.net/npm/@popperjs/core@2.11.8/dist/umd/popper.min.js"></script>\n  <script src="https://cdn.jsdelivr.net/npm/tippy.js@6.3.7/dist/tippy-bundle.umd.min.js"></script>\n  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">\n  <style>\n' + cssCode + '\n  </style>\n</head>\n<body>\n' + content + '\n  <script>\n' + jsCode + '\n  </script>\n</body>\n</html>';
+    return '<!DOCTYPE html>\n<html lang="ru">\n<head>\n  <meta charset="UTF-8">\n  <meta name="viewport" content="width=device-width, initial-scale=1.0">\n  <title>' + this.escapeXml(metadata.titleRu || 'Книга') + '</title>\n  ' + libScripts + '<style>\n' + cssCode + '\n  </style>\n</head>\n<body>\n' + content + '\n  <script>\n' + jsCode + '\n  </script>\n</body>\n</html>';
   }
 
   generateToc(chapters) {
@@ -781,16 +802,16 @@ class HtmlFormatter extends BaseFormatter {
     // Плавающая панель управления в левом верхнем углу
     content += '<div class="floating-controls" id="floating-controls" data-position="top-left">';
     content += '<div class="panel-group info-group">';
-    content += '<button class="btn-float" id="btn-settings" title="Настройки"><i class="fas fa-cog"></i></button>';
-    content += '<button class="btn-float" id="btn-toc" title="Оглавление"><i class="fas fa-bars"></i></button>';
-    content += '<button class="btn-float" id="btn-covers" title="Галерея обложек"><i class="fas fa-images"></i></button>';
-    content += '<button class="btn-float" id="btn-info" title="Информация о произведении"><i class="fas fa-info-circle"></i></button>';
+    content += '<button class="btn-float" id="btn-settings" title="Настройки">' + htmlBookIcon('cog') + '</button>';
+    content += '<button class="btn-float" id="btn-toc" title="Оглавление">' + htmlBookIcon('bars') + '</button>';
+    content += '<button class="btn-float" id="btn-covers" title="Галерея обложек">' + htmlBookIcon('images') + '</button>';
+    content += '<button class="btn-float" id="btn-info" title="Информация о произведении">' + htmlBookIcon('info-circle') + '</button>';
     content += '</div>';
     content += '<div class="divider"></div>';
     content += '<div class="panel-group nav-group">';
-    content += '<button class="btn-float" id="btn-prev" title="Предыдущая глава"><i class="fas fa-chevron-left"></i></button>';
+    content += '<button class="btn-float" id="btn-prev" title="Предыдущая глава">' + htmlBookIcon('chevron-left') + '</button>';
     content += '<span class="chapter-progress" id="chapter-progress">1/' + chapters.length + '</span>';
-    content += '<button class="btn-float" id="btn-next" title="Следующая глава"><i class="fas fa-chevron-right"></i></button>';
+    content += '<button class="btn-float" id="btn-next" title="Следующая глава">' + htmlBookIcon('chevron-right') + '</button>';
     content += '</div>';
     content += '</div>';
 
@@ -798,7 +819,7 @@ class HtmlFormatter extends BaseFormatter {
     content += '<div class="modal" id="toc-modal">';
     content += '<div class="modal-overlay" id="toc-modal-overlay"></div>';
     content += '<div class="modal-content">';
-    content += '<div class="modal-header"><h3>Оглавление</h3><button class="btn-close-modal" id="btn-close-toc"><i class="fas fa-times"></i></button></div>';
+    content += '<div class="modal-header"><h3>Оглавление</h3><button class="btn-close-modal" id="btn-close-toc">' + htmlBookIcon('times') + '</button></div>';
     content += '<div class="modal-body" id="toc-content">' + this.generateToc(chapters) + '</div>';
     content += '</div></div>';
 
@@ -806,7 +827,7 @@ class HtmlFormatter extends BaseFormatter {
     content += '<div class="modal" id="settings-modal">';
     content += '<div class="modal-overlay" id="settings-modal-overlay"></div>';
     content += '<div class="modal-content">';
-    content += '<div class="modal-header"><h3>Настройки</h3><button class="btn-close-modal" id="btn-close-settings"><i class="fas fa-times"></i></button></div>';
+    content += '<div class="modal-header"><h3>Настройки</h3><button class="btn-close-modal" id="btn-close-settings">' + htmlBookIcon('times') + '</button></div>';
     content += '<div class="modal-body">';
     content += '<div class="setting-group"><label>Тема:</label><select id="theme">';
     content += '<option value="dark">Тёмная</option>';
@@ -842,7 +863,7 @@ class HtmlFormatter extends BaseFormatter {
     content += '<div class="modal" id="covers-modal">';
     content += '<div class="modal-overlay" id="covers-modal-overlay"></div>';
     content += '<div class="modal-content">';
-    content += '<div class="modal-header"><h3>Галерея обложек</h3><button class="btn-close-modal" id="btn-close-covers"><i class="fas fa-times"></i></button></div>';
+    content += '<div class="modal-header"><h3>Галерея обложек</h3><button class="btn-close-modal" id="btn-close-covers">' + htmlBookIcon('times') + '</button></div>';
     content += '<div class="modal-body" id="covers-gallery">' + this.generateCoversGalleryHTML(coversStats) + '</div>';
     content += '</div></div>';
 
@@ -850,7 +871,7 @@ class HtmlFormatter extends BaseFormatter {
     content += '<div class="modal" id="info-modal">';
     content += '<div class="modal-overlay" id="info-modal-overlay"></div>';
     content += '<div class="modal-content">';
-    content += '<div class="modal-header"><h3>Информация о произведении</h3><button class="btn-close-modal" id="btn-close-info"><i class="fas fa-times"></i></button></div>';
+    content += '<div class="modal-header"><h3>Информация о произведении</h3><button class="btn-close-modal" id="btn-close-info">' + htmlBookIcon('times') + '</button></div>';
     content += '<div class="modal-body" id="info-content">' + this.generateMetadataHTML(metadata, coversStats) + '</div>';
     content += '</div></div>';
 
@@ -973,6 +994,7 @@ class HtmlFormatter extends BaseFormatter {
   generateCSS() {
     return `
       * { box-sizing: border-box; margin: 0; padding: 0; }
+      .icon { fill: currentColor; vertical-align: -0.125em; overflow: visible; }
 
       :root {
         --bg-primary: #1a1a1a;
@@ -1738,7 +1760,7 @@ class HtmlFormatter extends BaseFormatter {
 
           // Инициализируем tippy для каждой обложки
           gallery.querySelectorAll('img').forEach(function(img) {
-            tippy(img, {
+            if (typeof tippy === 'function') tippy(img, {
               content: img.alt || 'Обложка',
               theme: document.body.classList.contains('light-theme') ? 'light' : 'dark',
               placement: 'bottom'

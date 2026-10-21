@@ -147,14 +147,12 @@ async function prepareChapters(slug, rawChapters, saved) {
   const chapterBranchOverrides = saved?.chapterBranchOverrides || {};
   const translatorPriority = applyTranslatorPriority(chapters, saved?.translatorPriority || [], chapterBranchOverrides);
 
-  const { titleData = {} } = await getTitleStore(['titleData'], slug);
-  if (!titleData[slug]) {
-    titleData[slug] = { chapters: null, metadata: {} };
-  }
-  titleData[slug].translatorPriority = translatorPriority;
-  titleData[slug].chapterBranchOverrides = chapterBranchOverrides;
-  titleData[slug].chapters = chapters;
-  await setTitleStore({ titleData });
+  await updateTitleStore(['titleData'], slug, ({ titleData }) => {
+    const title = titleData[slug] ??= { chapters: null, metadata: {} };
+    title.translatorPriority = translatorPriority;
+    title.chapterBranchOverrides = chapterBranchOverrides;
+    title.chapters = chapters;
+  });
 
   return { chapters, translatorPriority, chapterBranchOverrides };
 }
@@ -242,34 +240,32 @@ async function loadTitleData({ tabId, url, force = false, onProgress }) {
     const metadataSlug = metadataResult.slug;
     originalCover = apiMetadata.cover || '';
 
-    const { titleData, originalTitleData } = await getTitleStore(['titleData', 'originalTitleData'], metadataSlug);
+    await updateTitleStore(['titleData', 'originalTitleData'], metadataSlug, ({ titleData, originalTitleData }) => {
+      // Инициализируем структуру если нет
+      if (!titleData[metadataSlug]) {
+        titleData[metadataSlug] = { chapters: null, metadata: {} };
+      }
+      if (!originalTitleData[metadataSlug]) {
+        originalTitleData[metadataSlug] = { chapters: null, metadata: {} };
+      }
 
-    // Инициализируем структуру если нет
-    if (!titleData[metadataSlug]) {
-      titleData[metadataSlug] = { chapters: null, metadata: {} };
-    }
-    if (!originalTitleData[metadataSlug]) {
-      originalTitleData[metadataSlug] = { chapters: null, metadata: {} };
-    }
+      // Заголовок: правка пользователя, затем цепочка fallback по данным API
+      title = (titleData[metadataSlug].metadata.titleRu || apiMetadata.titleRu || apiMetadata.titleEn || apiMetadata.titleOriginal) || 'Без названия';
+      titleData[metadataSlug].itemsCount = apiMetadata.totalChapters;
 
-    // Заголовок: правка пользователя, затем цепочка fallback по данным API
-    title = (titleData[metadataSlug].metadata.titleRu || apiMetadata.titleRu || apiMetadata.titleEn || apiMetadata.titleOriginal) || 'Без названия';
-    titleData[metadataSlug].itemsCount = apiMetadata.totalChapters;
+      // Сохраняем оригинальные данные из API (всегда обновляем)
+      originalTitleData[metadataSlug].metadata = { ...apiMetadata };
 
-    // Сохраняем оригинальные данные из API (всегда обновляем)
-    originalTitleData[metadataSlug].metadata = { ...apiMetadata };
+      // Сохраняем пользовательские данные только если их нет (не перезаписываем правки)
+      // Проверяем по наличию хотя бы одного ключа в metadata
+      if (Object.keys(titleData[metadataSlug].metadata).length === 0) {
+        titleData[metadataSlug].metadata = { ...apiMetadata };
+      }
+      metadata = titleData[metadataSlug].metadata;
 
-    // Сохраняем пользовательские данные только если их нет (не перезаписываем правки)
-    // Проверяем по наличию хотя бы одного ключа в metadata
-    if (Object.keys(titleData[metadataSlug].metadata).length === 0) {
-      titleData[metadataSlug].metadata = { ...apiMetadata };
-    }
-    metadata = titleData[metadataSlug].metadata;
-
-    // Сохраняем timestamp кэша (для устаревания через 10 минут)
-    titleData[metadataSlug].cacheTimestamp = Date.now();
-
-    await setTitleStore({ titleData, originalTitleData });
+      // Сохраняем timestamp кэша (для устаревания через 10 минут)
+      titleData[metadataSlug].cacheTimestamp = Date.now();
+    });
   } else {
     console.error('Не удалось загрузить метаданные:', metadataResult?.error);
   }
@@ -285,29 +281,27 @@ async function loadTitleData({ tabId, url, force = false, onProgress }) {
     }
 
     // Обновляем данные с обложками
-    const { titleData, originalTitleData } = await getTitleStore(['titleData', 'originalTitleData'], slug);
+    await updateTitleStore(['titleData', 'originalTitleData'], slug, ({ titleData, originalTitleData }) => {
+      // Инициализируем структуру если нет
+      if (!titleData[slug]) {
+        titleData[slug] = { chapters: null, metadata: {} };
+      }
+      if (!originalTitleData[slug]) {
+        originalTitleData[slug] = { chapters: null, metadata: {} };
+      }
 
-    // Инициализируем структуру если нет
-    if (!titleData[slug]) {
-      titleData[slug] = { chapters: null, metadata: {} };
-    }
-    if (!originalTitleData[slug]) {
-      originalTitleData[slug] = { chapters: null, metadata: {} };
-    }
+      // Сохраняем оригинальные обложки (всегда обновляем)
+      originalTitleData[slug].covers = covers.map(url => ({ url, type: 'url' }));
 
-    // Сохраняем оригинальные обложки (всегда обновляем)
-    originalTitleData[slug].covers = covers.map(url => ({ url, type: 'url' }));
+      // Сохраняем пользовательские обложки только если их нет (не перезаписываем правки)
+      // Перезаписываем только если массив вообще не существует, а не если он пустой
+      if (!titleData[slug].covers) {
+        titleData[slug].covers = covers.map(url => ({ url, type: 'url' }));
+      }
 
-    // Сохраняем пользовательские обложки только если их нет (не перезаписываем правки)
-    // Перезаписываем только если массив вообще не существует, а не если он пустой
-    if (!titleData[slug].covers) {
-      titleData[slug].covers = covers.map(url => ({ url, type: 'url' }));
-    }
-
-    // Обновляем timestamp кэша (чтобы устаревал через 10 минут)
-    titleData[slug].cacheTimestamp = Date.now();
-
-    await setTitleStore({ titleData, originalTitleData });
+      // Обновляем timestamp кэша (чтобы устаревал через 10 минут)
+      titleData[slug].cacheTimestamp = Date.now();
+    });
   } else {
     covers = [originalCover];
   }

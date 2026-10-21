@@ -10,7 +10,6 @@ let speedSamples = [];
 
 // Состояние обработки ошибок
 let currentErrorChapter = null; // Текущая глава с ошибкой
-let currentError = null; // Текущая ошибка
 let skippedChapters = []; // Список пропущенных глав
 let isWaitingForUser = false; // Ожидание решения пользователя
 let shouldRetryChapter = false; // Флаг для повтора текущей главы
@@ -44,7 +43,6 @@ let isPaused = false;
 
 // RateLimiter - окно 20 сек для синхронизации с лимитами
 let TIME_WINDOW = 20000;  // 20 секунд
-let REQUESTS_PER_WINDOW = 20;  // Синхронизация с лимитами
 
 // Базовая скорость (меняется только адаптивной скоростью, джиттер работает от неё)
 let baseSpeed = 0;  // Дефолтное значение 0, устанавливается в calculateInitialSpeed
@@ -54,7 +52,6 @@ let lastErrorTime = 0;
 let lastSpeedIncreaseTime = Date.now();
 let lastSpeedResetTime = 0;  // Для сброса 90 → 80 через 8 сек
 let wasSpeedModeActive = false;  // Флаг: был ли активен режим ускорения
-const MIN_REQUESTS_PER_MINUTE = 30;
 let MAX_REQUESTS_PER_MINUTE = 90;  // Максимум 90 везде
 const SPEED_INCREASE_INTERVAL = 20000;  // Повышение каждые 20 сек
 const SPEED_DECREASE_FACTOR = 0.67;  // В 1.5 раза вместо 4
@@ -329,7 +326,6 @@ function resetDownloadState() {
     
     currentErrorChapter = null;
     currentErrorImage = null;
-    currentError = null;
     isWaitingForUser = false;
     shouldRetryChapter = false;
     shouldRetryImage = false;
@@ -436,14 +432,14 @@ async function startDownload(snapshot) {
         if (chaptersToDownload.length === 0) throw new Error('Выберите хотя бы одну главу');
         chaptersToDownload.forEach(ch => ch.selected = true);
 
-        // Переформатируем заголовки глав согласно настройкам перед скачиванием
+        // Заголовок по настройкам - только главам без сохранённого (правка в редакторе глав; смена формата сама сбрасывает сохранённые)
         const tocFormat = options.settings.tocFormat || 'default';
         const customTocFormat = options.settings.customTocFormat || '';
         const hideChapterName = options.settings.hideChapterName || false;
         const hideVolumeNumber = options.settings.hideVolumeNumber || false;
 
         chaptersToDownload.forEach(ch => {
-            ch.displayTitle = formatChapterTitle(ch.volume, ch.number, ch.name, tocFormat, customTocFormat, hideChapterName, hideVolumeNumber);
+            ch.displayTitle ||= formatChapterTitle(ch.volume, ch.number, ch.name, tocFormat, customTocFormat, hideChapterName, hideVolumeNumber);
         });
 
         updateProgress(0, chaptersToDownload.length);
@@ -699,7 +695,6 @@ async function handleChapterError(chapter, error, chapterIndex) {
     throwIfCanceled();
     currentErrorImage = null;
     currentErrorChapter = chapter;
-    currentError = error;
     isWaitingForUser = true;
     shouldRetryChapter = false;
 
@@ -723,7 +718,6 @@ async function handleChapterError(chapter, error, chapterIndex) {
     isWaitingForUser = false;
 
     currentErrorChapter = null;
-    currentError = null;
     return {
         shouldRetry: shouldRetryChapter,
         shouldSkip: !shouldRetryChapter
@@ -737,7 +731,6 @@ let shouldRetryImage = false;
 async function handleImageError(chapter, error, chapterIndex, imageUrl) {
     throwIfCanceled();
     currentErrorChapter = null;
-    currentError = null;
     currentErrorImage = { chapter, error, imageUrl };
     isWaitingForUser = true;
     shouldRetryImage = false;
