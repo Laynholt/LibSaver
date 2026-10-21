@@ -1,6 +1,15 @@
 let userCovers = [];
 let currentSlug = null;
 let originalCovers = [];
+const activeBlobUrls = new Set();
+
+// Очистка созданных Blob URL при закрытии вкладки редактора
+window.addEventListener('beforeunload', () => {
+  for (const url of activeBlobUrls) {
+    URL.revokeObjectURL(url);
+  }
+  activeBlobUrls.clear();
+});
 
 setupThemeMessageListener();
 
@@ -352,7 +361,13 @@ function setupImage(img, dataUrl, preview, imgWrapper, imageInfo) {
   img.onclick = () => {
     const blob = dataUrlToBlob(dataUrl);
     const blobUrl = URL.createObjectURL(blob);
+    activeBlobUrls.add(blobUrl);
     window.open(blobUrl, '_blank');
+    // Автоочистка через 2 минуты, когда вкладка уже загрузила картинку
+    setTimeout(() => {
+      URL.revokeObjectURL(blobUrl);
+      activeBlobUrls.delete(blobUrl);
+    }, 120000);
   };
   preventDrag(img);
   if (imageInfo) {
@@ -556,6 +571,7 @@ function updateCoversOrder() {
 // Обработка загрузки файла
 function handleFileUpload(index) {
   const fileInput = document.getElementById('file-input');
+  fileInput.value = ''; // Сбрасываем значение, чтобы можно было повторно выбрать тот же файл
   fileInput.onchange = (e) => {
     const file = e.target.files[0];
     if (file) {

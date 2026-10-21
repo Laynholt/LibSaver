@@ -101,6 +101,21 @@
     .cover-preview.loading {
       aspect-ratio: 2 / 3 !important;
     }
+    /* Карточка с ошибкой загрузки обложки */
+    .cover-item:has(.cover-preview.error) {
+      border-color: rgba(239, 68, 68, 0.5);
+    }
+    .cover-item:has(.cover-preview.error):hover {
+      border-color: var(--danger-color);
+    }
+    .cover-preview.error,
+    .cover-preview.error .error-icon {
+      background-color: rgba(239, 68, 68, 0.08) !important;
+    }
+    .cover-preview.error i {
+      color: var(--danger-color) !important;
+      opacity: 0.85;
+    }
     /* Загруженная картинка задаёт высоту превью: обложка другого соотношения сторон - без пустых полей вокруг */
     .cover-preview.has-image {
       background-color: var(--bg-secondary);
