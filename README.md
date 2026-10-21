@@ -1,30 +1,22 @@
 <div align="center">
 
-<img src="branding/icon.png" width="128" height="128" alt="LibSaver">
+[<img src="branding/icon.png" width="128" height="128" alt="LibSaver">](https://github.com/dfy-dpg/LibSaver/releases/latest)
 
 # ~ LibSaver ~
 
-**Скачивайте мангу, ранобэ и аниме с LIB-сайтов в один клик**<br>
-<sub>Браузерное расширение: кнопка «Скачать» прямо на странице тайтла, файл - в папке загрузок</sub>
-
-<br>
+**Скачивание любимых тайтлов с LIB-сайтов!**
 
 [![Release](https://img.shields.io/github/v/release/dfy-dpg/LibSaver?sort=date&display_name=tag&style=for-the-badge&label=Релиз&color=ef6c00)](https://github.com/dfy-dpg/LibSaver/releases/latest)
-[![License](https://img.shields.io/github/license/dfy-dpg/LibSaver?style=for-the-badge&label=Лицензия&color=bd0000)](LICENSE)
-
+[![License](https://img.shields.io/github/license/dfy-dpg/LibSaver?style=for-the-badge&label=Лицензия&color=bd0000)](LICENSE)<br>
 ![MangaLIB](https://img.shields.io/badge/MangaLIB-ef6c00?style=flat-square)
 ![HentaiLIB](https://img.shields.io/badge/HentaiLIB-b71c1c?style=flat-square)
 ![SlashLIB](https://img.shields.io/badge/SlashLIB-ad1457?style=flat-square)
 ![RanobeLIB](https://img.shields.io/badge/RanobeLIB-1565c0?style=flat-square)
 ![AnimeLIB](https://img.shields.io/badge/AnimeLIB-5e35b1?style=flat-square)
 
-<br>
+**[Последний релиз](https://github.com/dfy-dpg/LibSaver/releases/latest)** · **[Документация](SETTINGS.md)** · **[Сообщить о проблеме](https://github.com/dfy-dpg/LibSaver/issues/new?template=bug_report.yml)**
 
-**[⬇️ Скачать последнюю версию](https://github.com/dfy-dpg/LibSaver/releases/latest)** · **[⚙️ Все настройки](SETTINGS.md)** · **[🐞 Сообщить о проблеме](https://github.com/dfy-dpg/LibSaver/issues/new?template=bug_report.yml)**
-
-<br>
-
-<img src="screenshots/v2/dark_iframe.gif" alt="LibSaver, вкладка Главы/Серии">
+[<img src="screenshots/v2/dark_iframe.gif" alt="LibSaver, вкладка Главы/Серии">](https://github.com/dfy-dpg/LibSaver/releases/latest)
 
 </div>
 
