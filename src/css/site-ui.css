@@ -61,9 +61,12 @@ button:focus-visible {
   flex: 1;
   min-width: 0;
   justify-content: flex-start;
-  padding-left: 10px;
-  padding-right: 42px;
+  padding: 0 10px;
   overflow: hidden;
+}
+
+.download[data-state="running"] {
+  padding-right: 42px;
 }
 
 .settings {
@@ -87,17 +90,11 @@ button:focus-visible {
   white-space: nowrap;
 }
 
-.format,
-.percent {
-  position: absolute;
-  right: 10px;
-  font-size: 10px;
-  font-weight: 400;
-  opacity: 0.7;
-  line-height: 1;
+.format {
+  display: none; /* Формат не показывается на кнопке */
 }
 
-/* Ход загрузки этого тайтла: полоска слева, «45%» на месте формата */
+/* Ход загрузки этого тайтла: полоска слева, «45%» справа */
 .fill {
   position: absolute;
   top: 0;
@@ -109,17 +106,17 @@ button:focus-visible {
 }
 
 .percent {
+  position: absolute;
+  right: 10px;
   display: none;
+  font-size: 10px;
   font-weight: 600;
   opacity: 1;
+  line-height: 1;
 }
 
 .download[data-state="running"] .percent {
   display: inline;
-}
-
-.download[data-state="running"] .format {
-  display: none;
 }
 
 /* Окно поверх сайта */
