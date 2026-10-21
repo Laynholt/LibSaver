@@ -46,10 +46,38 @@
       display: flex;
       position: relative;
       transition: border-color 0.15s ease, transform 0.15s ease;
+      user-select: none;
     }
     .cover-item:hover {
       border-color: var(--border-hover);
       transform: translateY(-2px);
+    }
+    /* Перетаскивание доступно только когда обложек 2 и более */
+    .cover-item:not(:only-child) {
+      cursor: grab;
+    }
+    .cover-item:not(:only-child):active {
+      cursor: grabbing;
+    }
+    .cover-item:not(:only-child) .cover-preview {
+      cursor: grab;
+    }
+    .cover-item:not(:only-child):active .cover-preview,
+    .cover-item:not(:only-child):active .cover-preview * {
+      cursor: grabbing;
+    }
+    .sortable-drag,
+    .sortable-drag * {
+      cursor: grabbing !important;
+    }
+    /* Если обложка всего одна - никакого перетаскивания и курсоров grab/grabbing */
+    .cover-item:only-child,
+    .cover-item:only-child * {
+      cursor: default;
+    }
+    .cover-item:only-child:active,
+    .cover-item:only-child:active * {
+      cursor: default;
     }
     .cover-item-inner {
       display: flex;
@@ -69,6 +97,9 @@
       overflow: hidden;
       flex-shrink: 0;
       position: relative;
+    }
+    .cover-preview.loading {
+      aspect-ratio: 2 / 3 !important;
     }
     /* Загруженная картинка задаёт высоту превью: обложка другого соотношения сторон - без пустых полей вокруг */
     .cover-preview.has-image {
@@ -110,7 +141,15 @@
     }
     .cover-preview .img-wrapper .img-container img.loaded {
       display: block;
-      cursor: zoom-in; /* клик открывает обложку целиком в новой вкладке */
+      cursor: zoom-in !important; /* клик открывает обложку целиком в новой вкладке */
+    }
+    .cover-item input[type="text"] {
+      cursor: text !important;
+      user-select: text;
+    }
+    .cover-item .btn-file,
+    .cover-item .btn-delete {
+      cursor: pointer !important;
     }
     /* Рамка места вставки: без :hover-цвета и transition карточки, той же толщины - иначе мигает и прыгает (как в редакторе метаданных) */
     .sortable-ghost,
@@ -130,41 +169,32 @@
       opacity: 0;
       overflow: hidden;
     }
-    .drag-handle {
-      position: absolute;
-      top: 3px;
-      left: 50%;
-      transform: translateX(-50%);
-      width: 30px;
-      height: 3px;
-      background-color: var(--border-color);
-      border-radius: 2px;
-      cursor: grab;
-      user-select: none;
-    }
-    .drag-handle::before {
-      content: '';
-      position: absolute;
-      top: -8px;
-      left: -10px;
-      right: -10px;
-      bottom: -8px;
-    }
-    .drag-handle:hover {
-      background-color: var(--text-primary);
-    }
-    .drag-handle:active {
-      cursor: grabbing;
-      background-color: var(--text-primary);
-    }
     .cover-inputs {
       display: flex;
       flex-direction: column;
     }
     .image-info {
-      font-size: 10px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 11px;
       color: var(--text-secondary);
-      min-height: 14px;
+      min-height: 16px;
+      line-height: 16px;
+      padding: 0 2px;
+      box-sizing: border-box;
+      user-select: none;
+    }
+    .image-meta {
+      color: var(--text-secondary);
+      text-align: left;
+      font-size: 11px;
+    }
+    .cover-number {
+      font-weight: 600;
+      color: var(--text-secondary);
+      font-size: 11px;
+      margin-left: auto;
     }
     .input-group {
       display: flex;
@@ -245,40 +275,10 @@
       background-color: var(--danger-color);
       border-color: var(--danger-color);
     }
-    /* Номер обложки: первая попадает в файл как основная */
-    .covers-list {
-      counter-reset: cover;
-    }
-    .cover-item {
-      counter-increment: cover;
-    }
-    /* Метка на самой обложке: у картинки другого соотношения сторон угол карточки попадал на её край. Без картинки - в углу карточки */
+    /* Угловые метки и бейдж «Основная» скрыты (номер отображается в строке параметров) */
     .cover-item::after,
     .img-container:has(> img.loaded)::before {
-      content: counter(cover);
-      position: absolute;
-      top: 14px;
-      left: 14px;
-      z-index: 1;
-      min-width: 22px;
-      height: 22px;
-      padding: 0 6px;
-      box-sizing: border-box;
-      border-radius: 11px;
-      background: rgba(10, 11, 14, 0.75);
-      backdrop-filter: blur(6px);
-      border: 1px solid rgba(255, 255, 255, 0.3);
-      box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
-      color: #fff;
-      font-size: 11px;
-      font-weight: 600;
-      line-height: 20px;
-      text-align: center;
-      pointer-events: none;
-    }
-    .img-container:has(> img.loaded)::before {
-      top: 8px;
-      left: 8px;
+      display: none !important;
     }
     .cover-item:has(img.loaded)::after {
       display: none;
@@ -286,8 +286,7 @@
     .cover-item:first-child::after,
     .cover-item:first-child .img-container:has(> img.loaded)::before {
       content: 'Основная';
-      background: var(--accent-color);
-      border-color: transparent;
+      display: none !important;
     }
     .btn-group {
       display: flex;

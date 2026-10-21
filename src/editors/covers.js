@@ -164,12 +164,6 @@ function createCoverItem(cover, index) {
   item.className = 'cover-item';
   item.dataset.index = index;
   
-  // Создаем handle для перетаскивания только если элементов больше 1
-  if (userCovers.length > 1) {
-    const dragHandle = document.createElement('div');
-    dragHandle.className = 'drag-handle';
-    item.appendChild(dragHandle);
-  }
   
   // Внутренний контейнер для отступов
   const innerContainer = document.createElement('div');
@@ -180,7 +174,17 @@ function createCoverItem(cover, index) {
   
   const imageInfo = document.createElement('div');
   imageInfo.className = 'image-info';
-  imageInfo.textContent = '';
+  
+  const coverNumber = document.createElement('span');
+  coverNumber.className = 'cover-number';
+  coverNumber.textContent = '#' + (index + 1);
+  
+  const imageMeta = document.createElement('span');
+  imageMeta.className = 'image-meta';
+  imageMeta.textContent = '';
+  
+  imageInfo.appendChild(imageMeta);
+  imageInfo.appendChild(coverNumber);
   
   if (cover.type === 'url' && cover.url) {
     preview.classList.add('loading');
@@ -194,9 +198,6 @@ function createCoverItem(cover, index) {
     
     fetchImageWithBypass(cover.url).then(dataUrl => {
       if (dataUrl) {
-        preview.classList.remove('loading');
-        preview.classList.add('has-image');
-        imgWrapper.classList.add('has-image');
         const imgContainer = createImgContainer(img);
         imgWrapper.appendChild(imgContainer);
         setupImage(img, dataUrl, preview, imgWrapper, imageInfo);
@@ -299,6 +300,10 @@ function createCoverItem(cover, index) {
 
 // Функция для обновления обработчиков событий элемента
 function updateCoverItemHandlers(item, index) {
+  const coverNumber = item.querySelector('.cover-number');
+  if (coverNumber) {
+    coverNumber.textContent = '#' + (index + 1);
+  }
   const urlInput = item.querySelector('input[type="text"]');
   const fileBtn = item.querySelector('.btn-file');
   const deleteBtn = item.querySelector('.btn-delete');
@@ -353,7 +358,12 @@ function setupImage(img, dataUrl, preview, imgWrapper, imageInfo) {
   preventDrag(img);
   if (imageInfo) {
     getImageInfo(dataUrl).then(info => {
-      imageInfo.textContent = info;
+      const metaSpan = imageInfo.querySelector('.image-meta');
+      if (metaSpan) {
+        metaSpan.textContent = info;
+      } else {
+        imageInfo.textContent = info;
+      }
     });
   }
 }
@@ -421,25 +431,9 @@ function removeCoverItem(index) {
   }
 }
 
-// Обновление видимости ручек перетаскивания
+// Обновление состояния перетаскивания
 function updateDragHandles() {
-  const container = document.getElementById('covers-list');
-  const items = container.querySelectorAll('.cover-item');
-  
-  items.forEach((item, index) => {
-    let dragHandle = item.querySelector('.drag-handle');
-    
-    // Если элементов больше 1 и ручки нет, добавляем
-    if (userCovers.length > 1 && !dragHandle) {
-      dragHandle = document.createElement('div');
-      dragHandle.className = 'drag-handle';
-      item.insertBefore(dragHandle, item.firstChild);
-    }
-    // Если элементов 1 или меньше и ручка есть, удаляем
-    else if (userCovers.length <= 1 && dragHandle) {
-      dragHandle.remove();
-    }
-  });
+  initSortable(disableDragAnimations);
 }
 
 // Рендер списка обложек
@@ -480,7 +474,13 @@ function initSortable(disableDragAnimations = false) {
   
   // Если элементов меньше 2, не инициализируем drag-and-drop
   const items = container.querySelectorAll('.cover-item');
-  if (items.length < 2) return;
+  if (items.length < 2) {
+    if (container.sortableInstance) {
+      container.sortableInstance.destroy();
+      container.sortableInstance = null;
+    }
+    return;
+  }
   
   // Удаляем существующий Sortable если есть
   if (container.sortableInstance) {
@@ -493,7 +493,8 @@ function initSortable(disableDragAnimations = false) {
     ghostClass: 'sortable-ghost',
     chosenClass: 'sortable-chosen',
     dragClass: 'sortable-drag',
-    handle: '.drag-handle',
+    filter: 'input, button, .btn-file, .btn-delete',
+    preventOnFilter: false,
     onEnd: function(evt) {
       // Обновляем массив userCovers в соответствии с новым порядком
       updateCoversOrder();
