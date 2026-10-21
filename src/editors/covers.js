@@ -177,7 +177,7 @@ function createCoverItem(cover, index) {
   
   const coverNumber = document.createElement('span');
   coverNumber.className = 'cover-number';
-  coverNumber.textContent = '#' + (index + 1);
+  coverNumber.textContent = '';
   
   const imageMeta = document.createElement('span');
   imageMeta.className = 'image-meta';
@@ -208,6 +208,7 @@ function createCoverItem(cover, index) {
         imgWrapper.appendChild(errorIcon);
         preview.classList.remove('loading');
         preview.classList.add('error');
+        updateCoverCount();
       }
     }).catch(() => {
       const loadingIcon = imgWrapper.querySelector('.loading-icon');
@@ -216,6 +217,7 @@ function createCoverItem(cover, index) {
       imgWrapper.appendChild(errorIcon);
       preview.classList.remove('loading');
       preview.classList.add('error');
+      updateCoverCount();
     });
     
     preview.appendChild(imgWrapper);
@@ -300,10 +302,6 @@ function createCoverItem(cover, index) {
 
 // Функция для обновления обработчиков событий элемента
 function updateCoverItemHandlers(item, index) {
-  const coverNumber = item.querySelector('.cover-number');
-  if (coverNumber) {
-    coverNumber.textContent = '#' + (index + 1);
-  }
   const urlInput = item.querySelector('input[type="text"]');
   const fileBtn = item.querySelector('.btn-file');
   const deleteBtn = item.querySelector('.btn-delete');
@@ -342,6 +340,7 @@ function setupImage(img, dataUrl, preview, imgWrapper, imageInfo) {
     preview.classList.remove('loading');
     preview.classList.add('has-image');
     imgWrapper.classList.add('has-image');
+    updateCoverCount();
   };
   
   if (img.complete) {
@@ -384,6 +383,7 @@ function updateCoverItem(index) {
   if (oldItem) {
     const newItem = createCoverItem(userCovers[index], index);
     container.replaceChild(newItem, oldItem);
+    updateCoverCount();
   }
 }
 
@@ -459,11 +459,41 @@ function renderCovers() {
   updateCoverCount();
 }
 
-// Обновление счётчика обложек
+// Обновление счётчика и номеров действующих обложек
 function updateCoverCount() {
+  const container = document.getElementById('covers-list');
+  if (!container) return;
+  
+  const items = container.querySelectorAll('.cover-item');
+  let loadedCount = 0;
+  
+  items.forEach(item => {
+    const preview = item.querySelector('.cover-preview');
+    const isLoaded = preview && preview.classList.contains('has-image');
+    const coverNumber = item.querySelector('.cover-number');
+    const imageInfo = item.querySelector('.image-info');
+    
+    if (isLoaded) {
+      loadedCount++;
+      if (coverNumber) {
+        coverNumber.textContent = `#${loadedCount}`;
+      }
+      if (imageInfo) {
+        imageInfo.style.display = 'flex';
+      }
+    } else {
+      if (coverNumber) {
+        coverNumber.textContent = '';
+      }
+      if (imageInfo) {
+        imageInfo.style.display = 'none';
+      }
+    }
+  });
+  
   const countElement = document.getElementById('cover-count');
   if (countElement) {
-    countElement.textContent = userCovers.length;
+    countElement.textContent = loadedCount;
   }
 }
 
@@ -520,6 +550,7 @@ function updateCoversOrder() {
     item.dataset.index = i;
     updateCoverItemHandlers(item, i);
   });
+  updateCoverCount();
 }
 
 // Обработка загрузки файла
