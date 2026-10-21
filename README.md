@@ -24,7 +24,7 @@
 
 <br>
 
-<img src="screenshots/v2/window-chapters.png" width="820" alt="Окно LibSaver поверх страницы тайтла на RanobeLIB">
+<img src="screenshots/v2/dark_iframe.gif" width="820" alt="LibSaver, вкладка Главы/Серии">
 
 </div>
 
