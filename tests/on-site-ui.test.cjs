@@ -626,8 +626,8 @@ test('firefoxManifest: background page instead of the service worker, gecko id, 
   assert.equal(manifest.background.service_worker, undefined);
   assert.deepEqual(manifest.background, { page: 'engine/background-firefox.html' });
   assert.ok(fs.existsSync(path.join(root, 'src', manifest.background.page)));
-  assert.equal(manifest.browser_specific_settings.gecko.id, 'libsaver@laynholt');
-  assert.deepEqual(manifest.browser_specific_settings, { gecko: { id: 'libsaver@laynholt', strict_min_version: '128.0', data_collection_permissions: { required: ['none'] } }, gecko_android: { strict_min_version: '128.0' } });
+  assert.equal(manifest.browser_specific_settings.gecko.id, 'libsaver@libsaver');
+  assert.deepEqual(manifest.browser_specific_settings, { gecko: { id: 'libsaver@libsaver', strict_min_version: '128.0', data_collection_permissions: { required: ['none'] } }, gecko_android: { strict_min_version: '128.0' } });
   assert.equal(manifest.permissions.includes('offscreen'), false);
   assert.equal(manifest.permissions.includes('system.display'), false);
   assert.deepEqual(manifest.permissions, chromeManifest.permissions.filter(permission => permission !== 'offscreen' && permission !== 'system.display'));

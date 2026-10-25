@@ -1,7 +1,9 @@
 let userCovers = [];
 let currentSlug = null;
 let originalCovers = [];
+let currentZoomLevel = 3;
 const activeBlobUrls = new Set();
+
 
 // Очистка созданных Blob URL при закрытии вкладки редактора
 window.addEventListener('beforeunload', () => {
@@ -56,6 +58,17 @@ document.addEventListener('DOMContentLoaded', async () => {
     window.applySiteAccent(sourceUrl);
   }
   
+  // Загружаем сохранённый масштаб обложек (по умолчанию 3: 4 в строку)
+  const storedZoom = await chrome.storage.local.get(['coversZoomLevel']);
+  if (storedZoom.coversZoomLevel !== undefined) {
+    currentZoomLevel = parseInt(storedZoom.coversZoomLevel, 10) || 3;
+    if (currentZoomLevel < 1 || currentZoomLevel > 5) currentZoomLevel = 3;
+  } else {
+    currentZoomLevel = 3;
+  }
+  applyZoomLevel(currentZoomLevel);
+  setupZoomControls();
+
   const dataResult = await getTitleStore(['currentSlug', 'titleData', 'originalTitleData', 'disableDragAnimations']);
   currentSlug = dataResult.currentSlug;
   disableDragAnimations = dataResult.disableDragAnimations || false;
@@ -203,7 +216,6 @@ function createCoverItem(cover, index) {
     imgWrapper.appendChild(loadingIcon);
     
     const img = document.createElement('img');
-    img.style.borderRadius = '8px';
     
     fetchImageWithBypass(cover.url).then(dataUrl => {
       if (dataUrl) {
@@ -217,6 +229,7 @@ function createCoverItem(cover, index) {
         imgWrapper.appendChild(errorIcon);
         preview.classList.remove('loading');
         preview.classList.add('error');
+        if (preview._tippy) preview._tippy.destroy();
         updateCoverCount();
       }
     }).catch(() => {
@@ -226,6 +239,7 @@ function createCoverItem(cover, index) {
       imgWrapper.appendChild(errorIcon);
       preview.classList.remove('loading');
       preview.classList.add('error');
+      if (preview._tippy) preview._tippy.destroy();
       updateCoverCount();
     });
     
@@ -337,9 +351,119 @@ function updateCoverItemHandlers(item, index) {
   }
 }
 
+// Применение масштаба обложек (1: Список, 2: 5 в строку, 3: 4 в строку, 4: 3 в строку, 5: 2 в строку)
+function applyZoomLevel(level) {
+  currentZoomLevel = level;
+  const container = document.getElementById('covers-list');
+  const slider = document.getElementById('zoom-slider');
+  const btnList = document.getElementById('zoom-btn-list');
+  const btnGrid = document.getElementById('zoom-btn-grid');
+  
+  if (slider && parseInt(slider.value, 10) !== level) {
+    slider.value = level;
+  }
+  
+  if (btnList) btnList.classList.toggle('active', level === 1);
+  if (btnGrid) btnGrid.classList.toggle('active', level === 5);
+  
+  if (!container) return;
+  
+  container.classList.remove('view-list', 'view-grid', 'view-grid-5', 'view-grid-4', 'view-grid-3', 'view-grid-2', 'view-grid-sm', 'view-grid-md', 'view-grid-lg');
+  
+  const pageContainer = container.closest('.container');
+  if (level === 1) {
+    container.classList.add('view-list');
+    if (pageContainer) pageContainer.classList.add('mode-list');
+  } else {
+    container.classList.add('view-grid');
+    if (pageContainer) pageContainer.classList.remove('mode-list');
+    if (level === 2) {
+      container.classList.add('view-grid-5', 'view-grid-sm');
+    } else if (level === 3) {
+      container.classList.add('view-grid-4', 'view-grid-md');
+    } else if (level === 4) {
+      container.classList.add('view-grid-3');
+    } else if (level === 5) {
+      container.classList.add('view-grid-2', 'view-grid-lg');
+    }
+  }
+  
+  initSortable(disableDragAnimations);
+}
+
+// Настройка элементов управления масштабом
+function setupZoomControls() {
+  const slider = document.getElementById('zoom-slider');
+  const btnList = document.getElementById('zoom-btn-list');
+  const btnGrid = document.getElementById('zoom-btn-grid');
+  
+  if (slider) {
+    slider.value = currentZoomLevel;
+    slider.addEventListener('input', (e) => {
+      const level = parseInt(e.target.value, 10);
+      applyZoomLevel(level);
+      chrome.storage.local.set({ coversZoomLevel: level });
+    });
+  }
+  
+  if (btnList) {
+    btnList.addEventListener('click', () => {
+      const nextLevel = Math.max(1, currentZoomLevel - 1);
+      applyZoomLevel(nextLevel);
+      chrome.storage.local.set({ coversZoomLevel: nextLevel });
+    });
+  }
+  
+  if (btnGrid) {
+    btnGrid.addEventListener('click', () => {
+      const nextLevel = Math.min(5, currentZoomLevel + 1);
+      applyZoomLevel(nextLevel);
+      chrome.storage.local.set({ coversZoomLevel: nextLevel });
+    });
+  }
+}
+
+// Прикрепление Tippy к превью для всплывающего увеличенного изображения в режиме списка
+function attachTippyPreview(preview, dataUrl) {
+  if (!window.tippy || !dataUrl) return;
+  if (preview._tippy) {
+    preview._tippy.destroy();
+  }
+  
+  const content = document.createElement('div');
+  content.className = 'tippy-cover-preview';
+  content.style.borderRadius = '8px';
+  content.style.overflow = 'hidden';
+
+  const img = document.createElement('img');
+  img.src = dataUrl;
+  img.alt = 'Превью обложки';
+  img.style.display = 'block';
+  content.appendChild(img);
+  
+  window.tippy(preview, {
+    content,
+    placement: 'right',
+    trigger: 'mouseenter',
+    interactive: false,
+    theme: 'libsaver',
+    animation: 'scale-subtle',
+    duration: [150, 150],
+    offset: [0, 14],
+    hideOnClick: true,
+    maxWidth: 'none',
+    arrow: false,
+    onShow() {
+      // Показывать Tippy только в режиме списка (Zoom level 1)
+      if (currentZoomLevel !== 1) {
+        return false;
+      }
+    }
+  });
+}
+
 // Вспомогательная функция для настройки изображения
 function setupImage(img, dataUrl, preview, imgWrapper, imageInfo) {
-  img.style.borderRadius = '8px';
   img.src = dataUrl;
   
   const handleLoad = () => {
@@ -350,6 +474,7 @@ function setupImage(img, dataUrl, preview, imgWrapper, imageInfo) {
     preview.classList.add('has-image');
     imgWrapper.classList.add('has-image');
     updateCoverCount();
+    attachTippyPreview(preview, dataUrl);
   };
   
   if (img.complete) {
@@ -396,6 +521,10 @@ function updateCoverItem(index) {
   const oldItem = container.querySelector(`[data-index="${index}"]`);
   
   if (oldItem) {
+    const preview = oldItem.querySelector('.cover-preview');
+    if (preview && preview._tippy) {
+      preview._tippy.destroy();
+    }
     const newItem = createCoverItem(userCovers[index], index);
     container.replaceChild(newItem, oldItem);
     updateCoverCount();
@@ -424,6 +553,10 @@ function removeCoverItem(index) {
   const item = container.querySelector(`[data-index="${index}"]`);
   
   if (item) {
+    const preview = item.querySelector('.cover-preview');
+    if (preview && preview._tippy) {
+      preview._tippy.destroy();
+    }
     item.remove();
     
     // Обновляем индексы для всех оставшихся элементов
@@ -449,6 +582,11 @@ function renderCovers() {
   const container = document.getElementById('covers-list');
   
   
+  const previews = container.querySelectorAll('.cover-preview');
+  previews.forEach(p => {
+    if (p._tippy) p._tippy.destroy();
+  });
+
   if (userCovers.length === 0) {
     container.innerHTML = '<div class="empty-state">Нет обложек</div>';
     updateCoverCount();

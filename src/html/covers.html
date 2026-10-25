@@ -19,24 +19,288 @@
     }
     .container {
       height: 100%;
+      width: 100%;
+      max-width: 100%;
+      margin: 0 auto;
+      padding: var(--spacing-md);
+      box-sizing: border-box;
+      transition: none;
     }
-    .container {
-      max-width: 960px;
+    /* В режиме список контейнер ВСЕГДА точно как в редакторе метаданных: 600px по центру */
+    .container.mode-list,
+    .container:has(.view-list) {
+      max-width: 600px !important;
     }
-    /* Обложки сеткой карточек с крупным превью */
+    /* При 2 обложках в строку делаем аккуратный отступ по бокам, чтобы карточки не становились квадратными */
+    .container:has(.view-grid-2) {
+      max-width: 820px;
+    }
+    /* Обложки: сетка на всё доступное пространство и масштабы */
     .covers-list {
       flex: 1;
+      width: 100%;
       overflow-y: hidden;
       overflow-x: hidden;
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(200px, 230px));
-      justify-content: center;
-      align-items: start; /* карточка высотой по своей обложке, а не по самой высокой в ряду */
+      align-items: start;
       gap: var(--spacing-sm);
-      padding-top: 2px; /* место под подъём карточки при наведении: список обрезает всё, что выше него */
+      padding-top: 2px;
+      box-sizing: border-box;
     }
     .covers-list > .empty-state {
       grid-column: 1 / -1;
+    }
+
+    /* 5 обложек в строку (Мелкая сетка) */
+    .covers-list.view-grid-5 {
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+    }
+    .covers-list.view-grid-5 input[type="text"] {
+      height: 28px;
+      padding: 0 6px;
+      font-size: 11px;
+    }
+    .covers-list.view-grid-5 .image-info {
+      font-size: 10px;
+    }
+    .covers-list.view-grid-5 .btn-file {
+      width: 28px;
+      min-width: 28px;
+      height: 28px;
+      font-size: 11px;
+    }
+    @media (max-width: 680px) {
+      .covers-list.view-grid-5 {
+        grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+      }
+    }
+
+    /* 4 обложки в строку (Стандартная сетка - по умолчанию) */
+    .covers-list.view-grid-4 {
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+    }
+    @media (max-width: 580px) {
+      .covers-list.view-grid-4 {
+        grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+      }
+    }
+
+    /* 3 обложки в строку (Средняя сетка) */
+    .covers-list.view-grid-3 {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+    @media (max-width: 480px) {
+      .covers-list.view-grid-3 {
+        grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+      }
+    }
+
+    /* 2 обложки в строку (Крупная сетка) */
+    .covers-list.view-grid-2 {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+    @media (max-width: 380px) {
+      .covers-list.view-grid-2 {
+        grid-template-columns: repeat(1, minmax(0, 1fr));
+      }
+    }
+
+    /* Режим «Список» (Классический / стиль редактора метаданных) */
+    .covers-list.view-list {
+      display: flex;
+      flex-direction: column;
+      align-items: stretch;
+      gap: var(--spacing-xs);
+      width: 100%;
+      max-width: 100%;
+      margin: 0 auto;
+      padding: 0;
+      padding-top: 2px;
+      box-sizing: border-box;
+    }
+    .covers-list.view-list > .empty-state {
+      grid-column: auto;
+    }
+    .covers-list.view-list .cover-item {
+      width: 100% !important;
+      max-width: 100% !important;
+      box-sizing: border-box;
+      display: flex;
+      flex-direction: row;
+      align-items: flex-end;
+      padding: 10px var(--spacing-md);
+      min-height: 60px;
+      gap: 6px;
+      border-radius: var(--radius-lg);
+      background: var(--bg-secondary);
+      border: 1px solid var(--border-color);
+      transition: border-color 0.15s ease;
+    }
+    .covers-list.view-list .cover-item:hover {
+      border-color: var(--border-hover);
+      transform: none;
+    }
+    .covers-list.view-list .cover-item-inner {
+      display: flex;
+      flex-direction: row;
+      align-items: flex-end;
+      gap: 10px;
+      width: 100% !important;
+      max-width: 100% !important;
+      flex: 1;
+      min-width: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    .covers-list.view-list .cover-preview {
+      width: 40px;
+      height: 60px;
+      min-width: 40px;
+      max-width: 40px;
+      aspect-ratio: auto !important;
+      background-color: transparent !important;
+      border-radius: 4px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+      flex-shrink: 0;
+      cursor: pointer;
+      align-self: flex-end;
+      margin: 0;
+      position: relative;
+    }
+    .covers-list.view-list .cover-preview.loading,
+    .covers-list.view-list .cover-preview.empty,
+    .covers-list.view-list .cover-preview.error {
+      background-color: var(--bg-tertiary) !important;
+      border-radius: 4px;
+    }
+    .covers-list.view-list .cover-preview.has-image {
+      background-color: transparent !important;
+    }
+    .covers-list.view-list .cover-preview .img-wrapper {
+      width: 100%;
+      height: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: transparent !important;
+      position: relative;
+    }
+    .covers-list.view-list .cover-preview .img-wrapper .img-container {
+      position: relative;
+      display: inline-flex !important;
+      align-items: center;
+      justify-content: center;
+      width: auto !important;
+      height: auto !important;
+      max-width: 40px;
+      max-height: 60px;
+      border-radius: 4px !important;
+      overflow: hidden !important;
+      background: transparent !important;
+    }
+    .covers-list.view-list .cover-preview .img-wrapper .img-container img {
+      max-width: 40px;
+      max-height: 60px;
+      width: auto !important;
+      height: auto !important;
+      object-fit: contain;
+      border-radius: 4px !important;
+      cursor: pointer !important;
+      display: block;
+    }
+    /* Эффект при наведении на миниатюру: затемняется ТОЛЬКО само изображение с закруглением 4px */
+    .covers-list.view-list .cover-preview .img-wrapper.has-image .img-container::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      border-radius: 4px !important;
+      background-color: rgba(0, 0, 0, 0.4);
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.15s ease;
+    }
+    .covers-list.view-list .cover-preview:hover .img-wrapper.has-image .img-container::after {
+      opacity: 1;
+    }
+    .covers-list.view-list .cover-inputs {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      justify-content: flex-end;
+      gap: 4px;
+      min-width: 0;
+      height: 60px;
+    }
+    .covers-list.view-list .input-group {
+      display: flex;
+      flex-direction: column;
+      justify-content: flex-end;
+      gap: 4px;
+      width: 100%;
+    }
+    .covers-list.view-list .image-info {
+      font-size: 11px;
+      color: var(--text-secondary);
+      line-height: 14px;
+      min-height: 14px;
+      padding: 0 1px;
+      margin-bottom: 0;
+    }
+    /* В режиме список скрываем номер обложки, как просил пользователь */
+    .covers-list.view-list .cover-number {
+      display: none !important;
+    }
+    .covers-list.view-list .url-group {
+      display: flex;
+      gap: 6px;
+      align-items: center;
+      width: 100%;
+    }
+    .covers-list.view-list input[type="text"] {
+      flex: 1;
+      height: 32px;
+      min-width: 0;
+      border-radius: 8px;
+    }
+    .covers-list.view-list .btn-file {
+      height: 32px;
+      width: 32px;
+      min-width: 32px;
+      flex-shrink: 0;
+      border-radius: 8px;
+    }
+    .covers-list.view-list .btn-delete {
+      position: static;
+      height: 32px;
+      width: 32px;
+      min-width: 32px;
+      max-width: 32px;
+      align-self: flex-end;
+      margin: 0;
+      flex-shrink: 0;
+      border-radius: 8px;
+      background-color: var(--danger-color);
+      border: none;
+      color: #fff;
+      opacity: 0.9;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 12px;
+      backdrop-filter: none;
+      transition: background-color 0.15s ease, opacity 0.15s ease;
+    }
+    .covers-list.view-list .cover-item:hover .btn-delete {
+      opacity: 1;
+    }
+    .covers-list.view-list .btn-delete:hover {
+      background-color: var(--danger-hover);
+      border-color: var(--danger-hover);
+      color: #fff;
     }
     .cover-item {
       background: var(--bg-secondary);
@@ -120,13 +384,23 @@
     .cover-preview.has-image {
       background-color: var(--bg-secondary);
       aspect-ratio: auto;
+      border-radius: 8px;
+      overflow: hidden;
     }
-    .cover-preview.has-image .img-wrapper .img-container,
-    .cover-preview.has-image .img-wrapper .img-container img {
+    .covers-list:not(.view-list) .cover-preview.has-image .img-wrapper .img-container {
       width: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 8px;
+      overflow: hidden;
     }
-    .cover-preview.has-image .img-wrapper .img-container img {
-      max-height: 480px; /* очень вытянутая картинка не растягивает карточку на весь экран */
+    .covers-list:not(.view-list) .cover-preview.has-image .img-wrapper .img-container img {
+      width: 100%;
+      height: auto;
+      max-height: 540px;
+      object-fit: cover;
+      border-radius: 8px !important;
     }
     .cover-preview img {
       display: none;
@@ -175,6 +449,12 @@
       transform: none;
       transition: none;
       overflow: hidden;
+    }
+    .covers-list.view-list .cover-item.sortable-ghost,
+    .covers-list.view-list .cover-item.sortable-ghost:hover {
+      border: 1px dashed var(--accent-color) !important;
+      opacity: 0.4 !important;
+      transform: none !important;
     }
     .sortable-chosen {
       opacity: 1;
@@ -250,13 +530,19 @@
       height: 32px;
       width: 32px;
       flex-shrink: 0;
+      display: flex;
       align-items: center;
       justify-content: center;
       box-sizing: border-box;
+      transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease, transform 0.15s ease;
     }
     .btn-file:hover {
-      color: var(--text-primary);
-      border-color: var(--border-hover);
+      background-color: var(--background-elevated-2) !important;
+      border-color: var(--border-hover) !important;
+      color: var(--text-primary) !important;
+    }
+    .btn-file:active {
+      transform: translateY(1px);
     }
     .btn-delete {
       background-color: rgba(10, 11, 14, 0.6);
@@ -312,6 +598,143 @@
       color: var(--text-primary);
       font-weight: 600;
     }
+    /* Панель масштаба обложек (без лишней рамки и фона, нативно в тулбаре) */
+    .zoom-control {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: none;
+      border: none;
+      padding: 0;
+      height: 32px;
+      box-sizing: border-box;
+    }
+    .zoom-btn {
+      background: none !important;
+      border: none !important;
+      color: var(--text-secondary);
+      padding: 0 !important;
+      margin: 0 !important;
+      width: 20px;
+      height: 20px;
+      min-width: 20px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 13px;
+      opacity: 0.65;
+      transition: color 0.15s ease, opacity 0.15s ease;
+    }
+    .zoom-btn:hover {
+      color: var(--text-primary);
+      opacity: 1;
+    }
+    .zoom-btn.active {
+      color: var(--accent-color);
+      opacity: 0.9;
+    }
+    .zoom-btn.active:hover {
+      color: var(--accent-hover);
+      opacity: 1;
+    }
+    .zoom-control input[type="range"] {
+      width: 84px;
+      height: 4px;
+      -webkit-appearance: none;
+      appearance: none;
+      background: var(--border-color);
+      border-radius: 2px;
+      outline: none;
+      cursor: pointer;
+      accent-color: var(--accent-color);
+      margin: 0;
+      padding: 0;
+      border: none;
+    }
+    .zoom-control input[type="range"]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 14px;
+      height: 14px;
+      background: var(--accent-color);
+      border-radius: 50%;
+      cursor: pointer;
+      border: 2px solid var(--bg-secondary);
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+      transition: transform 0.1s ease, background-color 0.15s ease;
+    }
+    .zoom-control input[type="range"]::-webkit-slider-thumb:hover {
+      transform: scale(1.2);
+      background: var(--accent-hover);
+    }
+    .zoom-control input[type="range"]::-moz-range-thumb {
+      width: 14px;
+      height: 14px;
+      background: var(--accent-color);
+      border-radius: 50%;
+      cursor: pointer;
+      border: 2px solid var(--bg-secondary);
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+      transition: transform 0.1s ease, background-color 0.15s ease;
+    }
+    .zoom-control input[type="range"]::-moz-range-thumb:hover {
+      transform: scale(1.2);
+      background: var(--accent-hover);
+    }
+    .toolbar-divider {
+      width: 1px;
+      height: 18px;
+      background-color: var(--border-color);
+      margin: 0 6px;
+    }
+
+    /* Tippy всплывающее превью в режиме списка */
+    .tippy-box[data-theme='libsaver'] {
+      background-color: var(--bg-primary);
+      border: 1px solid var(--border-color);
+      border-radius: 12px !important;
+      box-shadow: 0 16px 40px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.06);
+      padding: 4px !important;
+      overflow: hidden;
+    }
+    [data-theme="light"] .tippy-box[data-theme='libsaver'] {
+      background-color: var(--bg-secondary);
+      border-color: var(--border-color);
+      box-shadow: 0 16px 40px rgba(0, 0, 0, 0.15), 0 0 0 1px rgba(0, 0, 0, 0.05);
+    }
+    .tippy-box[data-theme='libsaver'] .tippy-content {
+      padding: 0 !important;
+      border-radius: 8px !important;
+      overflow: hidden;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .tippy-cover-preview {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      max-width: 360px;
+      max-height: 480px;
+      overflow: hidden;
+      border-radius: 8px !important;
+      background-color: var(--bg-tertiary);
+    }
+    .tippy-cover-preview img {
+      max-width: 360px;
+      max-height: 480px;
+      width: auto;
+      height: auto;
+      object-fit: contain;
+      border-radius: 8px !important;
+      display: block;
+    }
+    .tippy-box[data-animation=scale-subtle][data-placement^=top]{transform-origin:bottom}
+    .tippy-box[data-animation=scale-subtle][data-placement^=bottom]{transform-origin:top}
+    .tippy-box[data-animation=scale-subtle][data-placement^=left]{transform-origin:right}
+    .tippy-box[data-animation=scale-subtle][data-placement^=right]{transform-origin:left}
+    .tippy-box[data-animation=scale-subtle][data-state=hidden]{transform:scale(.88);opacity:0}
   </style>
 </head>
 <body>
@@ -331,6 +754,16 @@
       </button>
     </div>
     <div class="toolbar-right">
+      <div class="zoom-control" id="zoom-control">
+        <button type="button" class="zoom-btn" id="zoom-btn-list" aria-label="Уменьшить масштаб">
+          <i class="fa-solid fa-bars"></i>
+        </button>
+        <input type="range" id="zoom-slider" min="1" max="5" step="1" value="3" aria-label="Масштаб обложек">
+        <button type="button" class="zoom-btn" id="zoom-btn-grid" aria-label="Увеличить масштаб">
+          <i class="fa-solid fa-table-cells-large"></i>
+        </button>
+      </div>
+      <div class="toolbar-divider"></div>
       <span class="counter">Обложек: <span id="cover-count">0</span></span>
     </div>
   </div>
@@ -350,6 +783,8 @@
   <input type="file" id="file-input" accept="image/*" style="display: none;">
   
   <script src="../libs/jszip.min.js"></script>
+  <script src="../libs/popper.min.js"></script>
+  <script src="../libs/tippy-bundle.umd.min.js"></script>
   <script src="../core/theme.js"></script>
   <script src="../utils/autosave.js"></script>
   <script src="../editors/covers.js"></script>
