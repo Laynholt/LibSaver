@@ -305,6 +305,106 @@ function createButton(doc, className, label, icon) {
   return button;
 }
 
+// Определение темы оформления страницы сайта (mangalib, ranobelib, animelib и т.д.)
+function isSiteDark(doc, storedTheme) {
+  try {
+    const html = doc?.documentElement;
+    const body = doc?.body;
+    const view = doc?.defaultView;
+
+    // 1. Проверка CSS-переменной сайта: на всех сайтах Mangalib/Ranobelib/Animelib
+    // в :root[data-theme=dark] задан --btn-primary-filled
+    if (view?.getComputedStyle && html) {
+      let computed = null;
+      try { computed = view.getComputedStyle(html); } catch (e) {}
+      const getVal = (prop) => (typeof computed?.getPropertyValue === 'function' ? computed.getPropertyValue(prop) : computed?.[prop])?.trim();
+      const btnColor = getVal('--btn-primary-filled');
+      if (btnColor) {
+        const lower = btnColor.toLowerCase();
+        // Светлые оттенки кнопок сайтов Lib-семейства: mangalib: #ff9100, ranobe: #2196f3, hentai: #f44336, slash: #d81b60
+        if (['#ff9100', '#2196f3', '#f44336', '#d81b60'].includes(lower)) return false;
+        // Тёмные оттенки кнопок сайтов Lib-семейства: mangalib: #ef6c00, ranobe: #1565c0, hentai: #b71c1c, slash: #ad1457
+        if (['#ef6c00', '#1565c0', '#b71c1c', '#ad1457'].includes(lower)) return true;
+      }
+      const bgVar = getVal('--bg-primary') || getVal('--background');
+      if (bgVar) {
+        const rgb = bgVar.match(/\d+/g);
+        if (rgb && rgb.length >= 3) {
+          const lum = 0.299 * Number(rgb[0]) + 0.587 * Number(rgb[1]) + 0.114 * Number(rgb[2]);
+          return lum < 128;
+        }
+      }
+    }
+
+    const getAttr = (el, attr) => {
+      if (!el) return null;
+      if (typeof el.getAttribute === 'function') return el.getAttribute(attr);
+      return el.attrs?.[attr] || null;
+    };
+
+    const hasClass = (el, cls) => {
+      if (!el) return false;
+      if (el.classList?.contains) return el.classList.contains(cls);
+      if (typeof el.className === 'string') return el.className.split(/\s+/).includes(cls);
+      return false;
+    };
+
+    const parseTheme = (val) => {
+      if (!val || typeof val !== 'string') return null;
+      const lower = val.trim().toLowerCase();
+      if (lower === 'dark' || lower.includes('dark') || lower === 'night') return true;
+      if (lower === 'light' || lower.includes('light') || lower === 'day') return false;
+      if (lower === 'auto' || lower === 'system') {
+        return view?.matchMedia?.('(prefers-color-scheme: dark)')?.matches ?? true;
+      }
+      return null;
+    };
+
+    // 2. Атрибут data-theme / theme на <html> или <body> (MangaLIB, RanobeLIB, AnimeLIB)
+    const htmlTheme = parseTheme(getAttr(html, 'data-theme') || getAttr(html, 'theme') || getAttr(html, 'data-color-mode'));
+    if (htmlTheme !== null) return htmlTheme;
+
+    const bodyTheme = parseTheme(getAttr(body, 'data-theme') || getAttr(body, 'theme') || getAttr(body, 'data-color-mode'));
+    if (bodyTheme !== null) return bodyTheme;
+
+    // 3. Классы dark/light на <html> или <body>
+    if (hasClass(html, 'dark') || hasClass(body, 'dark') || hasClass(html, 'theme-dark') || hasClass(body, 'theme-dark')) {
+      return true;
+    }
+    if (hasClass(html, 'light') || hasClass(body, 'light') || hasClass(html, 'theme-light') || hasClass(body, 'theme-light')) {
+      return false;
+    }
+
+    // 4. Проверка реального цвета фона body / html / #app если доступен getComputedStyle
+    if (view?.getComputedStyle) {
+      const getBg = (el) => {
+        try {
+          return el ? view.getComputedStyle(el)?.backgroundColor : '';
+        } catch (e) {
+          return '';
+        }
+      };
+      const appEl = doc.getElementById?.('app') || doc.querySelector?.('#app, .layout, main');
+      const bg = [getBg(body), getBg(html), getBg(appEl)].find(b => b && b !== 'transparent' && b !== 'rgba(0, 0, 0, 0)');
+      if (bg) {
+        const rgb = bg.match(/\d+/g);
+        if (rgb && rgb.length >= 3) {
+          const a = rgb.length >= 4 ? Number(rgb[3]) : 1;
+          if (a !== 0) {
+            const lum = 0.299 * Number(rgb[0]) + 0.587 * Number(rgb[1]) + 0.114 * Number(rgb[2]);
+            return lum < 128;
+          }
+        }
+      }
+    }
+  } catch (e) {}
+
+  // 5. Если на сайте тема явно не задана в DOM, ориентируемся на настройку расширения или систему
+  if (storedTheme === 'light') return false;
+  if (storedTheme === 'dark') return true;
+  return doc?.defaultView?.matchMedia?.('(prefers-color-scheme: dark)')?.matches ?? true;
+}
+
 function createButtonsHost(doc, siteKey) {
   ensureIconFont(doc);
   const host = doc.createElement('div');
@@ -330,12 +430,44 @@ function createButtonsHost(doc, siteKey) {
   row.append(download, settings);
   shadow.append(row);
 
+  let currentSettings = { accentColor: undefined, theme: undefined };
+  let lastSiteDark = null;
+  let lastAccent = null;
+
+  const applyAccent = () => {
+    // Кнопка на сайте всегда соответствует сайту и теме сайта (не акценту расширения).
+    // Если на сайте задана CSS-переменная --btn-primary-filled (MangaLIB, RanobeLIB, AnimeLIB и др.),
+    // привязываем кнопки напрямую к ней: браузер переключает цвет мгновенно при смене темы на сайте
+    let hasSiteVar = false;
+    try {
+      const computed = doc.defaultView?.getComputedStyle?.(doc.documentElement);
+      const val = typeof computed?.getPropertyValue === 'function' ? computed.getPropertyValue('--btn-primary-filled') : computed?.['--btn-primary-filled'];
+      if (val && val.trim()) hasSiteVar = true;
+    } catch (e) {}
+
+    if (hasSiteVar) {
+      host.style.setProperty('--ls-accent', 'var(--btn-primary-filled)');
+      host.style.setProperty('--ls-accent-hover', 'var(--btn-primary, var(--btn-primary-filled))');
+      return;
+    }
+
+    // Иначе цвет определяется сайтом и темой сайта
+    const isDark = isSiteDark(doc, currentSettings.theme);
+    const accent = accentFor(siteKey, null, isDark);
+    if (isDark === lastSiteDark && accent.color === lastAccent?.color && accent.hover === lastAccent?.hover) return;
+    lastSiteDark = isDark;
+    lastAccent = accent;
+    host.style.setProperty('--ls-accent', accent.color);
+    host.style.setProperty('--ls-accent-hover', accent.hover);
+  };
+
   // Ход загрузки этого тайтла: полоска и «45%» или «В очереди»; адрес читаем в момент вызова - SPA меняет тайтл под тем же хостом
   const paint = () => {
     if (host.isConnected === false) { // SPA убрала кнопки
       buttonPainters.delete(paint);
       return;
     }
+    applyAccent();
     const progress = buttonProgress(engine.state, siteKeyByHost(location.href), titleSlug(location.href));
     download.setAttribute('data-state', progress?.kind || '');
     fill.style.width = `${progress?.percent ?? 0}%`;
@@ -346,19 +478,14 @@ function createButtonsHost(doc, siteKey) {
   paint();
 
   const refresh = () => chrome.storage.local.get(['accentColor', 'theme']).then(stored => {
-    const isDark = stored.theme === 'light' ? false : (stored.theme === 'dark' ? true : (doc.defaultView?.matchMedia?.('(prefers-color-scheme: dark)')?.matches ?? true));
-    const accent = accentFor(siteKey, stored.accentColor, isDark);
-    host.style.setProperty('--ls-accent', accent.color);
-    host.style.setProperty('--ls-accent-hover', accent.hover);
+    currentSettings.accentColor = stored.accentColor;
+    currentSettings.theme = stored.theme;
+    applyAccent();
   }).catch(() => {});
   refresh();
-  // Цвет подхватывает изменения акцента и темы из настроек.
+
   const sysMedia = doc.defaultView?.matchMedia?.('(prefers-color-scheme: dark)');
-  const onMediaChange = () => {
-    chrome.storage.local.get(['theme'], st => {
-      if (st && st.theme === 'system') refresh();
-    });
-  };
+  const onMediaChange = () => applyAccent();
   sysMedia?.addEventListener?.('change', onMediaChange);
 
   const onChanged = (changes, area) => {
@@ -367,7 +494,11 @@ function createButtonsHost(doc, siteKey) {
       sysMedia?.removeEventListener?.('change', onMediaChange);
       return;
     }
-    if (area === 'local' && ['accentColor', 'theme'].some(key => key in changes)) refresh();
+    if (area === 'local' && ['accentColor', 'theme'].some(key => key in changes)) {
+      if (changes.accentColor) currentSettings.accentColor = changes.accentColor.newValue;
+      if (changes.theme) currentSettings.theme = changes.theme.newValue;
+      applyAccent();
+    }
   };
   chrome.storage.onChanged.addListener(onChanged);
   return host;
@@ -748,14 +879,20 @@ function startSiteUi() {
   const schedule = createScheduler(check);
   // documentElement, а не body: окно и плашка живут в <html>, и их выбрасывание тоже надо заметить
   const observer = new MutationObserver(schedule);
-  observer.observe(document.documentElement, { childList: true, subtree: true });
+  observer.observe(document.documentElement, {
+    childList: true,
+    subtree: true,
+    attributes: true
+  });
   window.addEventListener('resize', schedule);
+  try { document.addEventListener('click', schedule, { capture: true, passive: true }); } catch (e) {}
 
   stopSiteUi = () => {
     stopSiteUi = () => {};
     observer.disconnect();
     schedule.cancel();
     window.removeEventListener('resize', schedule);
+    try { document.removeEventListener('click', schedule, true); } catch (e) {}
     stopEngineLink();
     try { chrome.storage.onChanged.removeListener(onPlaqueCornerChanged); } catch (e) { /* контекст недействителен */ }
     try { chrome.runtime.onMessage.removeListener(onRuntimeMessage); } catch (e) { /* контекст недействителен */ }

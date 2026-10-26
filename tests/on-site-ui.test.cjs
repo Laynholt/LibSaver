@@ -1612,7 +1612,7 @@ test('popover frame messages: close and resize (numbers only); the popover has n
   assert.deepEqual(log, ['close', ['resize', 180]]);
 });
 
-test('the download button omits the format and follows the saved accent', async () => {
+test('the download button omits the format and uses the site accent, ignoring forced extension accent', async () => {
   const stored = { selectedFormat_manga: 'pdf', accentColor: 'green', theme: 'dark' };
   const ctx = siteUiContext({ stored });
   const doc = fakeTitleDoc('mangalib');
@@ -1624,7 +1624,8 @@ test('the download button omits the format and follows the saved accent', async 
   const settle = () => new Promise(resolve => setImmediate(resolve));
   await settle();
   assert.ok(!created.some(el => el.className === 'format'));
-  assert.equal(host.style['--ls-accent'], '#4caf50');
+  // Site accent for mangalib is #ef6c00 in dark theme, not the extension's forced green
+  assert.equal(host.style['--ls-accent'], '#ef6c00');
   assert.equal(ctx.listeners.size, 1);
 
   const change = async (key, value, area = 'local') => {
@@ -1633,11 +1634,12 @@ test('the download button omits the format and follows the saved accent', async 
     await settle();
   };
   await change('selectedFormat_manga', 'zip');
-  assert.equal(host.style['--ls-accent'], '#4caf50');
+  assert.equal(host.style['--ls-accent'], '#ef6c00');
   await change('accentColor', 'pink');
-  assert.equal(host.style['--ls-accent'], '#e91e63');
+  // Stays mangalib orange, ignores extension accent
+  assert.equal(host.style['--ls-accent'], '#ef6c00');
   await change('accentColor', 'green', 'sync'); // not the local area
-  assert.equal(host.style['--ls-accent'], '#e91e63');
+  assert.equal(host.style['--ls-accent'], '#ef6c00');
 });
 
 test('a button row that left the page stops listening to storage', () => {
@@ -1647,6 +1649,46 @@ test('a button row that left the page stops listening to storage', () => {
   doc.grid.children[1].isConnected = false;
   for (const listener of [...ctx.listeners]) listener({ theme: { newValue: 'light' } }, 'local');
   assert.equal(ctx.listeners.size, 0);
+});
+
+test('on-site buttons adapt to the site theme dynamically (data-theme light/dark on html)', async () => {
+  const ctx = siteUiContext({ stored: { theme: 'dark', accentColor: 'auto' } });
+  const doc = fakeTitleDoc('mangalib');
+  doc.documentElement = doc;
+  doc.setAttribute('data-theme', 'light');
+
+  ctx.ensureButtons(doc, 'https://mangalib.me/ru/manga/x');
+  const host = doc.grid.children[1];
+  const settle = () => new Promise(resolve => setImmediate(resolve));
+  await settle();
+
+  // Even though extension stored theme is 'dark', site theme 'light' takes precedence for on-site buttons
+  assert.equal(host.style['--ls-accent'], '#ff9100');
+
+  // Site toggles theme to dark
+  doc.setAttribute('data-theme', 'dark');
+  ctx.paintButtons();
+  assert.equal(host.style['--ls-accent'], '#ef6c00');
+
+  // Site toggles back to light
+  doc.setAttribute('data-theme', 'light');
+  ctx.paintButtons();
+  assert.equal(host.style['--ls-accent'], '#ff9100');
+});
+
+test('on-site buttons bind directly to --btn-primary-filled when site exposes it', async () => {
+  const ctx = siteUiContext({ stored: { theme: 'dark', accentColor: 'auto' } });
+  const doc = fakeTitleDoc('mangalib');
+  doc.documentElement = doc;
+  doc.computed = { '--btn-primary-filled': '#ff9100' };
+
+  ctx.ensureButtons(doc, 'https://mangalib.me/ru/manga/x');
+  const host = doc.grid.children[1];
+  const settle = () => new Promise(resolve => setImmediate(resolve));
+  await settle();
+
+  // Binds directly to the CSS custom property of the site
+  assert.equal(host.style['--ls-accent'], 'var(--btn-primary-filled)');
 });
 
 test('quick.js takes the tab and URL from whoami and refuses forged or foreign embedders', () => {
