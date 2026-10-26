@@ -346,7 +346,7 @@ function createButtonsHost(doc, siteKey) {
   paint();
 
   const refresh = () => chrome.storage.local.get(['accentColor', 'theme']).then(stored => {
-    const isDark = stored.theme === 'light' ? false : stored.theme === 'system' ? doc.defaultView.matchMedia('(prefers-color-scheme: dark)').matches : true;
+    const isDark = stored.theme === 'light' ? false : (stored.theme === 'dark' ? true : (doc.defaultView?.matchMedia?.('(prefers-color-scheme: dark)')?.matches ?? true));
     const accent = accentFor(siteKey, stored.accentColor, isDark);
     host.style.setProperty('--ls-accent', accent.color);
     host.style.setProperty('--ls-accent-hover', accent.hover);

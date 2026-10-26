@@ -516,11 +516,11 @@ document.addEventListener('DOMContentLoaded', async () => {
   if (themeSelect && themeDropdown) {
     // Устанавливаем текущую тему
     const themeLabels = {
+      'system': 'Системная',
       'dark': 'Тёмная',
-      'light': 'Светлая',
-      'system': 'Системная'
+      'light': 'Светлая'
     };
-    themeSelect.textContent = themeLabels[theme] || 'Тёмная';
+    themeSelect.textContent = themeLabels[theme] || 'Системная';
     
     // Обновляем selected класс
     themeOptions.forEach(option => {

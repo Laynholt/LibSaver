@@ -76,7 +76,7 @@ function applyTheme(theme) {
 // Функция загрузки и применения темы
 async function loadAndApplyTheme() {
   const result = await chrome.storage.local.get(['theme']);
-  const theme = result.theme || 'dark';
+  const theme = result.theme || 'system';
   applyTheme(theme);
   return theme;
 }
@@ -302,7 +302,7 @@ if (isExtensionPage && typeof chrome !== 'undefined' && chrome.storage && chrome
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area === 'local') {
       if (changes.theme) {
-        applyTheme(changes.theme.newValue || 'dark');
+        applyTheme(changes.theme.newValue || 'system');
       }
       if (changes.accentColor && chrome.storage.local) {
         if (changes.accentColor.newValue === 'auto') {
