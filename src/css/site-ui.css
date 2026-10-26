@@ -1,3 +1,11 @@
+.no-transition,
+.no-transition *,
+.no-transition *::before,
+.no-transition *::after {
+  transition: none !important;
+  animation: none !important;
+}
+
 /* Стили закрытых Shadow DOM из content/site-ui.js: кнопки под «Начать читать» и окно поверх сайта */
 
 /* Кнопки: ширина, высота и радиус приходят от «Начать читать» (--ls-*), цвета - от акцента (--ls-accent*) */
