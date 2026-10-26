@@ -104,6 +104,17 @@ async function saveTheme(theme) {
   await chrome.storage.local.set({ theme });
   // Сохраняем в localStorage для синхронного доступа при загрузке
   localStorage.setItem('theme', theme);
+
+  // Применяем тему локально
+  applyTheme(theme);
+
+  // Если окно во фрейме панели, синхронизируем родителя
+  try {
+    if (window.parent && window.parent !== window && typeof window.parent.applyTheme === 'function') {
+      window.parent.applyTheme(theme);
+    }
+  } catch (e) {}
+
   // Отправляем сообщение всем открытым окнам для обновления темы
   chrome.runtime.sendMessage({ action: 'updateTheme', theme });
 
@@ -542,7 +553,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         themeDropdown.style.display = 'none';
         
         // Применяем и сохраняем тему
-        applyTheme(newTheme);
         saveTheme(newTheme);
       });
     });
@@ -1286,12 +1296,7 @@ document.getElementById('btn-reset').addEventListener('click', async () => {
   notifyChanged(); // значения сброшены кодом, событий input нет
 });
 
-// Переопределяем слушатель сообщений для обновления темы
-chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  if (message.action === 'updateTheme' && message.theme) {
-    applyTheme(message.theme);
-  }
-});
+
 
 // Проверка обновлений по последнему релизу на GitHub (utils/update-check.js)
 async function checkForUpdates() {

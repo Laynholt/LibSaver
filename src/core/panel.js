@@ -179,6 +179,13 @@ function startPanel() {
       frame.setAttribute('allow', 'clipboard-write'); // разрешение доходит до раздела, только если его передал каждый iframe по пути
       // Страницы расширения - того же origin, до их документа можно дотянуться
       frame.addEventListener('load', () => {
+        try {
+          if (document.documentElement.hasAttribute('data-theme')) {
+            frame.contentDocument.documentElement.setAttribute('data-theme', 'light');
+          } else {
+            frame.contentDocument.documentElement.removeAttribute('data-theme');
+          }
+        } catch (e) {}
         try { frame.contentDocument.addEventListener('keydown', onEscape); } catch (e) { /* чужой документ */ }
       });
       frame.src = panelFrameSrc(section, slug);

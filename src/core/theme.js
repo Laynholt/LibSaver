@@ -1,35 +1,76 @@
 // Общий модуль для управления темами и акцентными цветами
 
+// Вспомогательная функция определения системной тёмной темы
+function isSystemDark() {
+  try {
+    if (typeof window !== 'undefined' && typeof window.matchMedia === 'function') {
+      return window.matchMedia('(prefers-color-scheme: dark)').matches;
+    }
+  } catch (e) {}
+  return true;
+}
+
 // Функция применения темы
 function applyTheme(theme) {
-  // Отключаем анимации при смене темы
-  document.body.classList.add('no-transition');
+  if (typeof document === 'undefined' || !document.documentElement) return;
 
-  if (theme === 'light') {
-    document.documentElement.setAttribute('data-theme', 'light');
-  } else if (theme === 'system') {
-    const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-    if (prefersDark) {
-      document.documentElement.removeAttribute('data-theme');
-    } else {
-      document.documentElement.setAttribute('data-theme', 'light');
+  // Отключаем анимации при смене темы
+  if (document.body) {
+    document.body.classList.add('no-transition');
+  }
+
+  let effectiveTheme = theme;
+  if (effectiveTheme === 'system') {
+    // Внутри вложенного фрейма сверяемся с родителем (если доступен), иначе с системой
+    try {
+      if (typeof window !== 'undefined' && window.parent && window.parent !== window && window.parent.document && window.parent.document.documentElement) {
+        effectiveTheme = window.parent.document.documentElement.hasAttribute('data-theme') ? 'light' : 'dark';
+      } else {
+        effectiveTheme = isSystemDark() ? 'dark' : 'light';
+      }
+    } catch (e) {
+      effectiveTheme = isSystemDark() ? 'dark' : 'light';
     }
+  }
+
+  if (effectiveTheme === 'light') {
+    document.documentElement.setAttribute('data-theme', 'light');
   } else {
     document.documentElement.removeAttribute('data-theme');
   }
 
+  // Если в документе есть дочерние фреймы (например, в panel.html), передаём тему им
+  try {
+    const childFrames = document.querySelectorAll('iframe');
+    childFrames.forEach(frame => {
+      try {
+        if (frame.contentDocument && frame.contentDocument.documentElement) {
+          if (effectiveTheme === 'light') {
+            frame.contentDocument.documentElement.setAttribute('data-theme', 'light');
+          } else {
+            frame.contentDocument.documentElement.removeAttribute('data-theme');
+          }
+        }
+      } catch (e) {}
+    });
+  } catch (e) {}
+
   // Chromium не всегда перекрашивает текст <select> при смене CSS-переменных: пересоздаём их отрисовку
-  document.querySelectorAll('select').forEach(select => {
-    const display = select.style.display;
-    select.style.display = 'none';
-    void select.offsetWidth;
-    select.style.display = display;
-  });
+  try {
+    document.querySelectorAll('select').forEach(select => {
+      const display = select.style.display;
+      select.style.display = 'none';
+      void select.offsetWidth;
+      select.style.display = display;
+    });
+  } catch (e) {}
 
   // Включаем анимации после смены темы
-  setTimeout(() => {
-    document.body.classList.remove('no-transition');
-  }, 10);
+  if (document.body) {
+    setTimeout(() => {
+      document.body.classList.remove('no-transition');
+    }, 10);
+  }
 }
 
 // Функция загрузки и применения темы
@@ -227,8 +268,63 @@ function setupThemeMessageListener() {
   });
 }
 
+// Живой слушатель системной темы при выборе 'system'
+if (typeof window !== 'undefined' && typeof window.matchMedia === 'function') {
+  try {
+    const sysMedia = window.matchMedia('(prefers-color-scheme: dark)');
+    const handleSystemThemeChange = () => {
+      if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+        chrome.storage.local.get(['theme'], (result) => {
+          if (result && result.theme === 'system') {
+            applyTheme('system');
+            chrome.storage.local.get(['sourceUrl', 'accentColor'], (res) => {
+              if (res.accentColor && res.accentColor !== 'auto') {
+                applyUserAccent(res.accentColor);
+              } else if (res.sourceUrl) {
+                applySiteAccent(res.sourceUrl);
+              }
+            });
+          }
+        });
+      }
+    };
+    if (sysMedia.addEventListener) {
+      sysMedia.addEventListener('change', handleSystemThemeChange);
+    } else if (sysMedia.addListener) {
+      sysMedia.addListener(handleSystemThemeChange);
+    }
+  } catch (e) {}
+}
+
+// Слушатель изменения темы через storage (только на страницах расширения, не в content scripts сайтов)
+const isExtensionPage = typeof location !== 'undefined' && (location.protocol === 'chrome-extension:' || location.protocol === 'moz-extension:');
+if (isExtensionPage && typeof chrome !== 'undefined' && chrome.storage && chrome.storage.onChanged) {
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area === 'local') {
+      if (changes.theme) {
+        applyTheme(changes.theme.newValue || 'dark');
+      }
+      if (changes.accentColor && chrome.storage.local) {
+        if (changes.accentColor.newValue === 'auto') {
+          chrome.storage.local.get(['sourceUrl'], (result) => {
+            if (result.sourceUrl) {
+              applySiteAccent(result.sourceUrl);
+            }
+          });
+        } else {
+          applyUserAccent(changes.accentColor.newValue);
+        }
+      }
+    }
+  });
+}
+
 // Экспортируем функции для использования в других файлах
-window.applyUserAccent = applyUserAccent;
-window.applySiteAccent = applySiteAccent;
-window.loadAndApplyTheme = loadAndApplyTheme;
+if (typeof window !== 'undefined') {
+  window.applyTheme = applyTheme;
+  window.applyUserAccent = applyUserAccent;
+  window.applySiteAccent = applySiteAccent;
+  window.loadAndApplyTheme = loadAndApplyTheme;
+  window.setupThemeMessageListener = setupThemeMessageListener;
+}
 

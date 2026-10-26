@@ -353,9 +353,18 @@ function createButtonsHost(doc, siteKey) {
   }).catch(() => {});
   refresh();
   // Цвет подхватывает изменения акцента и темы из настроек.
+  const sysMedia = doc.defaultView?.matchMedia?.('(prefers-color-scheme: dark)');
+  const onMediaChange = () => {
+    chrome.storage.local.get(['theme'], st => {
+      if (st && st.theme === 'system') refresh();
+    });
+  };
+  sysMedia?.addEventListener?.('change', onMediaChange);
+
   const onChanged = (changes, area) => {
     if (host.isConnected === false) { // SPA убрала кнопки
       chrome.storage.onChanged.removeListener(onChanged);
+      sysMedia?.removeEventListener?.('change', onMediaChange);
       return;
     }
     if (area === 'local' && ['accentColor', 'theme'].some(key => key in changes)) refresh();
