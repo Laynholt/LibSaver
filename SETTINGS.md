@@ -1,12 +1,8 @@
 <div align="center">
 
-<img src="branding/icon.png" width="88" height="88" alt="LibSaver">
-
 # Настройки LibSaver
 
 Где что находится, что делает каждая галочка и что делать, если что-то пошло не так
-
-![Версия](https://img.shields.io/badge/описание_для_версии-2.2.0-1565c0?style=flat-square)
 
 </div>
 
