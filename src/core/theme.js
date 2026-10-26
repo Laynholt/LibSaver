@@ -65,11 +65,20 @@ function applyTheme(theme) {
     });
   } catch (e) {}
 
-  // Включаем анимации после смены темы
+  // Включаем анимации после смены темы (с принудительным reflow для мгновенного применения без переливов)
   if (document.body) {
-    setTimeout(() => {
-      document.body.classList.remove('no-transition');
-    }, 10);
+    void document.body.offsetHeight;
+    if (typeof requestAnimationFrame === 'function') {
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          document.body?.classList?.remove('no-transition');
+        });
+      });
+    } else {
+      setTimeout(() => {
+        document.body?.classList?.remove('no-transition');
+      }, 50);
+    }
   }
 }
 
@@ -118,10 +127,19 @@ function applyUserAccent(accent) {
       root.style.setProperty('--checkbox-color', color.light);
     }
 
-    // Включаем анимации после смены цвета
-    setTimeout(() => {
-      document.body.classList.remove('no-transition');
-    }, 10);
+    // Включаем анимации после смены цвета (с принудительным reflow для мгновенного применения без переливов)
+    void document.body.offsetHeight;
+    if (typeof requestAnimationFrame === 'function') {
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          document.body?.classList?.remove('no-transition');
+        });
+      });
+    } else {
+      setTimeout(() => {
+        document.body?.classList?.remove('no-transition');
+      }, 50);
+    }
   }
 }
 
