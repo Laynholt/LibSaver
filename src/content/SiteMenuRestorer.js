@@ -25,7 +25,7 @@
             { name: 'HentaiLIB', url: 'https://hentailib.me', color: '4', svgFile: 'HentaiLIB.svg' },
             { name: 'SlashLIB', url: 'https://v2.shlib.life', color: '2', svgFile: 'SlashLIB.svg' },
             { name: 'RanobeLIB', url: 'https://ranobelib.me', color: '3', svgFile: 'RanobeLIB.svg' },
-            { name: 'AnimeLIB', url: 'https://animelib.org', color: '5', svgFile: 'AnimeLIB.svg' }
+            { name: 'AnimeLIB', url: 'https://v5.animelib.org', color: '5', svgFile: 'AnimeLIB.svg' }
         ];
 
         // Загружаем кастомные ссылки, порядок и отключенные сайты из storage

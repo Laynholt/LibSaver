@@ -189,6 +189,6 @@ document.getElementById('btn-ranobelib').addEventListener('click', async () => {
 });
 
 document.getElementById('btn-animelib').addEventListener('click', async () => {
-  await chrome.tabs.create({ url: 'https://animelib.org' });
+  await chrome.tabs.create({ url: 'https://v5.animelib.org' });
 });
 

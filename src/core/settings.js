@@ -25,7 +25,7 @@ const defaultSiteLinks = {
   hentailib: 'https://hentailib.me',
   shlib: 'https://v2.shlib.life',
   ranobelib: 'https://ranobelib.me',
-  animelib: 'https://animelib.org'
+  animelib: 'https://v5.animelib.org'
 };
 
 // Вкладка настроек (без ?group=): слева разделы, справа панели одного раздела. Раздел - в #адресе: ссылка и «назад» его помнят
@@ -1186,7 +1186,7 @@ document.getElementById('btn-reset').addEventListener('click', async () => {
       hentailib: 'https://hentailib.me',
       shlib: 'https://v2.shlib.life',
       ranobelib: 'https://ranobelib.me',
-      animelib: 'https://animelib.org'
+      animelib: 'https://v5.animelib.org'
     },
     debugLogging: false,
     updateNotifications: true,
