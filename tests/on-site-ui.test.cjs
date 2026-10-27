@@ -3679,14 +3679,14 @@ test('the site panel shows the waiting update in its header and the settings che
   });
 });
 
-test('«Сообщить о проблеме» opens the issue form of the 2.x repository with version, title page and browser filled in', async () => {
+test('«Сообщить о проблеме» opens the author issue form with version, title page and browser filled in', async () => {
   const ctx = vm.createContext({
-    URLSearchParams, ISSUES_REPO: 'Laynholt/LibSaver', navigator: { userAgent: 'UA 1' },
+    URLSearchParams, navigator: { userAgent: 'UA 1' },
     chrome: { storage: { local: { get: async () => ({ sourceUrl: 'https://mangalib.me/ru/manga/1--a' }) } }, runtime: { getManifest: () => ({ version: '2.0.0' }) } }
   });
-  vm.runInContext(functionSource('src/core/settings.js', 'buildIssueUrl'), ctx);
+  vm.runInContext(source('src/utils/update-check.js') + functionSource('src/core/settings.js', 'buildIssueUrl'), ctx);
   const url = new URL(await ctx.buildIssueUrl());
-  assert.equal(url.origin + url.pathname, 'https://github.com/Laynholt/LibSaver/issues/new');
+  assert.equal(url.origin + url.pathname, 'https://github.com/dfy-dpg/LibSaver/issues/new');
   assert.deepEqual(Object.fromEntries(url.searchParams), { template: 'bug_report.yml', version: '2.0.0', page: 'https://mangalib.me/ru/manga/1--a', browser: 'UA 1' });
   const form = source('.github/ISSUE_TEMPLATE/bug_report.yml');
   for (const id of ['version', 'page', 'browser']) assert.match(form, new RegExp(`id: ${id}\r?\n`));

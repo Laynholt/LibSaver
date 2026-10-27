@@ -710,10 +710,80 @@ test('reload-page button waits for the tab to finish loading and reruns the titl
   assert.doesNotMatch(handler, /setTimeout|loadCovers\(/);
 });
 
-test('cover editor has no Tippy previews: covers are already large and each one was fetched twice', () => {
-  assert.doesNotMatch(source('src/html/covers.html'), /tippy|popper|scale-subtle/);
-  assert.doesNotMatch(source('src/editors/covers.js'), /tippy/i);
-  assert.doesNotMatch(source('src/core/theme.js'), /tippy/i);
+test('cover tooltip reuses the loaded image and only opens in list mode', () => {
+  let options, destroyed = 0;
+  const preview = { _tippy: { destroy: () => destroyed++ } };
+  const ctx = vm.createContext({
+    window: { tippy: (target, config) => { assert.equal(target, preview); options = config; } },
+    document: { createElement: () => ({ style: {}, children: [], appendChild(child) { this.children.push(child); } }) }
+  });
+  vm.runInContext('let currentZoomLevel = 3;\n' + functionSource('src/editors/covers.js', 'attachTippyPreview'), ctx);
+  const dataUrl = 'data:image/png;base64,aW1hZ2U=';
+  ctx.attachTippyPreview(preview, dataUrl);
+  assert.equal(destroyed, 1);
+  assert.equal(options.content.children[0].src, dataUrl);
+  assert.equal(options.onShow(), false);
+  vm.runInContext('currentZoomLevel = 1', ctx);
+  assert.notEqual(options.onShow(), false);
+});
+
+test('replacing, removing and redrawing cover cards destroys their tooltips', () => {
+  for (const name of ['updateCoverItem', 'removeCoverItem', 'renderCovers']) {
+    let destroyed = 0;
+    const preview = { _tippy: { destroy: () => destroyed++ } };
+    const item = { querySelector: () => preview, remove() {} };
+    const container = { querySelector: () => item, querySelectorAll: () => name === 'renderCovers' ? [preview] : [], replaceChild() {} };
+    const ctx = vm.createContext({
+      document: { getElementById: () => container }, userCovers: [], disableDragAnimations: false, createCoverItem() {}, updateCoverCount() {}, initSortable() {}
+    });
+    vm.runInContext(functionSource('src/editors/covers.js', name), ctx);
+    ctx[name](0);
+    assert.equal(destroyed, 1, name);
+  }
+});
+
+function themeContext(stored = {}, { protocol = 'chrome-extension:', dark = false } = {}) {
+  const attrs = new Map();
+  const classes = { add() {}, remove() {} };
+  const root = { classList: classes, style: { setProperty() {} }, hasAttribute: key => attrs.has(key), getAttribute: key => attrs.get(key), setAttribute: (key, value) => attrs.set(key, value), removeAttribute: key => attrs.delete(key) };
+  const listeners = [];
+  const media = { matches: dark, addEventListener: (type, fn) => listeners.push(fn) };
+  const window = { matchMedia: () => media };
+  window.parent = window;
+  const ctx = vm.createContext({
+    window, document: { documentElement: root, body: { classList: classes }, querySelectorAll: () => [] }, location: { protocol },
+    localStorage: { getItem: () => null }, requestAnimationFrame: fn => fn(),
+    chrome: { storage: { local: { get(keys, callback) { callback?.(stored); return Promise.resolve(stored); } }, onChanged: { addListener() {} } } }
+  });
+  vm.runInContext(source('src/core/theme.js'), ctx);
+  return { ctx, attrs, media, listeners };
+}
+
+test('system theme follows light and dark OS preferences when opening a window', async () => {
+  for (const dark of [false, true]) {
+    const { ctx, attrs } = themeContext({ theme: 'system' }, { dark });
+    await ctx.loadAndApplyTheme();
+    assert.equal(attrs.get('data-theme'), dark ? undefined : 'light');
+  }
+});
+
+test('OS theme listener never changes a website document', () => {
+  const { attrs, media, listeners } = themeContext({ theme: 'system' }, { protocol: 'https:' });
+  attrs.set('data-theme', 'dark');
+  media.matches = true;
+  listeners.forEach(fn => fn());
+  assert.equal(attrs.get('data-theme'), 'dark');
+  assert.equal(listeners.length, 0);
+});
+
+test('OS theme changes update the default system theme and respect explicit choices', async () => {
+  for (const theme of [undefined, 'system', 'dark', 'light']) {
+    const { ctx, attrs, media, listeners } = themeContext(theme ? { theme } : {}, { dark: true });
+    await ctx.loadAndApplyTheme();
+    media.matches = false;
+    listeners.forEach(fn => fn());
+    assert.equal(attrs.get('data-theme'), theme === 'dark' ? undefined : 'light', String(theme));
+  }
 });
 
 test('drag placeholder outline keeps one colour: :hover and transition of the card do not repaint it', () => {

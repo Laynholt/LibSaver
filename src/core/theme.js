@@ -72,7 +72,7 @@ function setAccentVariables(el, color, isDark) {
 // Вспомогательная функция определения системной тёмной темы
 function isSystemDark() {
   try {
-    if (typeof window !== 'undefined' && window.matchMedia === 'function') {
+    if (typeof window !== 'undefined' && typeof window.matchMedia === 'function') {
       return window.matchMedia('(prefers-color-scheme: dark)').matches;
     }
   } catch (e) {}
@@ -294,13 +294,14 @@ function setupThemeMessageListener() {
 }
 
 // Живой слушатель системной темы при выборе 'system'
-if (typeof window !== 'undefined' && typeof window.matchMedia === 'function') {
+const isExtensionPage = typeof location !== 'undefined' && (location.protocol === 'chrome-extension:' || location.protocol === 'moz-extension:');
+if (isExtensionPage && typeof window !== 'undefined' && typeof window.matchMedia === 'function') {
   try {
     const sysMedia = window.matchMedia('(prefers-color-scheme: dark)');
     const handleSystemThemeChange = () => {
       if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
         chrome.storage.local.get(['theme'], (result) => {
-          if (result && result.theme === 'system') {
+          if (result && (result.theme || 'system') === 'system') {
             applyTheme('system');
             chrome.storage.local.get(['sourceUrl', 'accentColor'], (res) => {
               if (res.accentColor && res.accentColor !== 'auto') {
@@ -322,7 +323,6 @@ if (typeof window !== 'undefined' && typeof window.matchMedia === 'function') {
 }
 
 // Слушатель изменения темы через storage (только на страницах расширения, не в content scripts сайтов)
-const isExtensionPage = typeof location !== 'undefined' && (location.protocol === 'chrome-extension:' || location.protocol === 'moz-extension:');
 if (isExtensionPage && typeof chrome !== 'undefined' && chrome.storage && chrome.storage.onChanged) {
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area === 'local') {
