@@ -1,7 +1,7 @@
 // update-check.js - обновления по релизам GitHub: тег последнего релиза (v2.0.0) против версии манифеста
-// Релизы выходят в репозитории владельца (dfy-dpg); ошибки 2.x собирает форма «Сообщить о проблеме» в репозитории Laynholt
+// Релизы и сообщения об ошибках — в репозитории автора (dfy-dpg)
 const RELEASES_REPO = 'dfy-dpg/LibSaver';
-const ISSUES_REPO = 'Laynholt/LibSaver';
+const ISSUES_REPO = 'dfy-dpg/LibSaver';
 const RELEASES_PAGE = `https://github.com/${RELEASES_REPO}/releases/latest`;
 const RELEASE_ASSET_PREFIX = `https://github.com/${RELEASES_REPO}/releases/download/`;
 
