@@ -80,8 +80,47 @@ async function saveFile(url, name, folder) {
   if (!response?.ok) throw new Error(response?.error || 'Не удалось сохранить файл');
 }
 
+// Главы снимка по порядку тайтла, без повторов по переводам: по ним загрузка режется на части
+function snapshotChapters(snapshot) {
+  const ids = snapshot.downloadData?.selectedChapterIds;
+  const chosen = Array.isArray(ids) ? new Set(ids) : null;
+  const byId = new Map();
+  for (const chapter of snapshot.downloadData?.chapters || []) {
+    if ((!chosen || chosen.has(chapter.id)) && !byId.has(chapter.id)) byId.set(chapter.id, chapter);
+  }
+  return [...byId.values()];
+}
+
+// Части по size глав; size 0 или глав не больше size - одна часть (null: снимок как есть)
+function splitParts(chapters, size) {
+  if (!(size > 0) || chapters.length <= size) return [null];
+  const parts = [];
+  for (let start = 0; start < chapters.length; start += size) parts.push(chapters.slice(start, start + size));
+  return parts;
+}
+
+// «Тайтл.epub» -> «Тайтл - 02 (101-200).epub»: номер части с нулями впереди, чтобы читалки и проводник сортировали по порядку
+function partFilename(filename, index, count, chapters) {
+  const [, base, extension = ''] = String(filename).match(/^([\s\S]*?)(\.[a-z0-9]{1,5})?$/i);
+  const first = chapters[0]?.number;
+  const last = chapters[chapters.length - 1]?.number;
+  const span = first === last ? `${first}` : `${first}-${last}`;
+  return `${base} - ${String(index + 1).padStart(String(count).length, '0')} (${span})${extension}`;
+}
+
+// Учёт скачанных глав пишет фон (у offscreen-документа нет chrome.storage); в Firefox фон - эта же страница, своё сообщение она не получит
+async function markDownloaded(slug, chapters) {
+  if (!slug || !chapters?.length) return;
+  try {
+    if (typeof recordDownloaded === 'function') await recordDownloaded(slug, chapters);
+    else await chrome.runtime.sendMessage({ action: 'markDownloaded', slug, chapters });
+  } catch (e) {
+    console.error('[LibSaver engine] Учёт скачанных глав', e); // файл уже сохранён: без учёта «Выбрать новые» просто предложит эти главы снова
+  }
+}
+
 async function runTitle(item, snapshot) {
-  current = { id: item.id, canceled: false, stopWait: null };
+  current = { id: item.id, canceled: false, stopWait: null, progressBase: 0, progressTotal: 0 };
   stats = null;
   logTail = [];
   logOwner = item.id;
@@ -97,13 +136,32 @@ async function runTitle(item, snapshot) {
         save: saveFile
       });
     }
-    const { blob, filename } = await startDownload(snapshot);
-    if (current.canceled) throw canceledError();
+    const chapters = snapshotChapters(snapshot);
+    const parts = splitParts(chapters, Number(snapshot.stored?.splitChapters) || 0);
+    const names = [];
     releaseFile();
-    const url = URL.createObjectURL(typedBlob(blob, filename));
-    lastFile = { id: item.id, url, filename };
-    await saveFile(url, filename);
-    return { filename };
+    current.progressTotal = parts.length > 1 ? chapters.length : 0;
+    for (const [index, partChapters] of parts.entries()) {
+      let partSnapshot = snapshot;
+      if (partChapters) {
+        partSnapshot = structuredClone(snapshot); // startDownload меняет главы снимка
+        partSnapshot.downloadData.selectedChapterIds = partChapters.map(chapter => chapter.id);
+        current.progressBase = index ? chapters.indexOf(partChapters[0]) : 0;
+        onDownloadEvent({ type: 'log', line: `Часть ${index + 1} из ${parts.length}` });
+      }
+      const { blob, filename, completeChapters } = await startDownload(partSnapshot);
+      if (current.canceled) throw canceledError();
+      const name = partChapters ? partFilename(filename, index, parts.length, partChapters) : filename;
+      const url = URL.createObjectURL(typedBlob(blob, name));
+      // Прошлая часть сохранена, пока собиралась эта. shortcut: если части собираются за секунды, Chrome может не успеть прочитать отпущенный blob - тогда держать все ссылки до конца тайтла
+      if (lastFile) URL.revokeObjectURL(lastFile.url);
+      // «Сохранить ещё раз» - только у загрузки одним файлом: у частей сохранилась бы одна последняя
+      lastFile = { id: parts.length > 1 ? null : item.id, url, filename: name };
+      await saveFile(url, name);
+      names.push(name);
+      await markDownloaded(snapshot.slug, completeChapters);
+    }
+    return { filename: names.length > 1 ? `частей: ${names.length} · ${names[0]} …` : names[0] };
   } finally {
     current = null;
   }
@@ -121,7 +179,9 @@ function onDownloadEvent(event) {
     for (const port of ports) post(port, { type: 'log', id: current.id, ...line });
     scheduleState();
   } else if (event.type === 'progress') {
-    updateCurrent(null, { progress: { current: event.current, total: event.total, part: event.part || 0 } });
+    // Загрузка частями: счёт глав - по всему тайтлу, а не по текущей части
+    const total = current.progressTotal || event.total;
+    updateCurrent(null, { progress: { current: (current.progressBase || 0) + event.current, total, part: event.part || 0 } });
   } else if (event.type === 'stats') {
     stats = event.stats;
     scheduleState();

@@ -15,7 +15,8 @@
     "downloads",
     "unlimitedStorage",
     "offscreen",
-    "alarms"
+    "alarms",
+    "webNavigation"
   ],
 
   "declarative_net_request": {

@@ -119,6 +119,41 @@ function chapterLabel(ch) {
   return ch.name ? `${label}. ${ch.name}` : label;
 }
 
+// Индексы глав под запрос поиска: «12» - глава 12, «10-20» - главы с 10 по 20 по номеру, иначе часть названия (без регистра).
+// onlyIds (Set) - искать только среди этих глав, пустой запрос тогда отдаёт их все
+function findChapters(chapters, query, onlyIds = null) {
+  const text = String(query ?? '').trim().toLowerCase();
+  const numeric = text.replace(/,/g, '.');
+  const range = numeric.match(/^(\d+(?:\.\d+)?)\s*[-–—]\s*(\d+(?:\.\d+)?)$/);
+  let test = () => true;
+  if (range) {
+    const [low, high] = [Number(range[1]), Number(range[2])].sort((a, b) => a - b);
+    test = ch => Number(ch.number) >= low && Number(ch.number) <= high;
+  } else if (/^\d+(?:\.\d+)?$/.test(numeric)) {
+    test = ch => Number(ch.number) === Number(numeric);
+  } else if (text) {
+    test = ch => `${ch.name || ''}\n${ch.displayTitle || ''}`.toLowerCase().includes(text);
+  }
+  return chapters.flatMap((ch, index) => (!onlyIds || onlyIds.has(ch.id)) && test(ch) ? [index] : []);
+}
+
+// Ключ главы для учёта скачанных: том и номер, перевод не важен
+const chapterKey = ch => `${ch.volume ?? ''}:${ch.number ?? ''}`;
+
+// Ключ storage с chapterKey скачанных глав тайтла. Не в titleData: учёт переживает очистку старых тайтлов
+const downloadedStoreKey = slug => `downloadedChapters:${slug}`;
+
+// Учёт после загрузки: прежние ключи плюс главы нового файла, без повторов
+function mergeDownloaded(previous, chapters) {
+  return [...new Set([...(previous || []), ...chapters.map(chapterKey)])];
+}
+
+// Главы, которых нет среди скачанных (downloadedKeys - массив chapterKey)
+function newChapterIds(chapters, downloadedKeys) {
+  const done = new Set(downloadedKeys);
+  return chapters.filter(ch => !done.has(chapterKey(ch))).map(ch => ch.id);
+}
+
 // id глав между двумя индексами включительно; порядок индексов не важен
 function rangeChapterIds(chapters, fromIdx, toIdx) {
   return chapters.slice(Math.min(fromIdx, toIdx), Math.max(fromIdx, toIdx) + 1).map(ch => ch.id);

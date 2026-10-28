@@ -39,8 +39,9 @@ function renderCommandButton(command, id) {
   return `<button class="dl-btn" data-cmd="${command}" data-id="${escapeHtml(id)}" title="${label}" aria-label="${label}"><i class="fa-solid ${icon}"></i><span>${label}</span></button>`;
 }
 
+let siteMirrors = {}; // рабочие зеркала сайтов (фон проверяет их сам): ссылка на зеркало идёт первой
 function renderSiteLinks(siteKey) {
-  return siteLinks(siteKey)
+  return [...new Set([siteMirrors[siteKey], ...siteLinks(siteKey)].filter(Boolean))]
     .map(url => `<a href="${escapeHtml(url)}" data-url="${escapeHtml(url)}" target="_blank" rel="noopener">${escapeHtml(url.replace('https://', ''))}</a>`)
     .join(' · ');
 }
@@ -48,6 +49,21 @@ function renderSiteLinks(siteKey) {
 // Скорость и оставшееся время идущей загрузки: каждое - когда движок его посчитал (speed есть, etaSeconds не null)
 function liveStats(stats) {
   return [stats?.speed, stats?.etaSeconds != null && stats.estimated && `осталось ≈${stats.estimated}`].filter(Boolean).join(' · ');
+}
+
+// Ошибка загрузки -> что случилось и что сделать, простыми словами. Неизвестная ошибка - совет открыть лог
+const ERROR_HELP = [
+  [/HTTP 429|Rate limited/i, 'Сайт ограничил частые запросы. Подождите несколько минут, снимите «Ускорить» и запустите загрузку снова.'],
+  [/HTTP 40[13]/, 'Сайт не пустил к главам. Войдите в аккаунт на сайте и запустите загрузку снова.'],
+  [/HTTP 404/, 'Глава или файл удалены с сайта. Обновите страницу тайтла и выберите главы заново.'],
+  [/HTTP 5\d\d|Failed to fetch|NetworkError|нет ответа/i, 'Сайт не отвечает. Проверьте интернет или откройте зеркало сайта и запустите загрузку снова.'],
+  [/сохранить файл/i, 'Браузер не сохранил файл. Проверьте папку загрузок и свободное место на диске.'],
+  [/Выберите хотя бы одну|Не выбрано ни одной/, 'Отметьте главы в разделе «Главы» и нажмите «Скачать».'],
+  [/Данные для загрузки не найдены/, 'Откройте страницу тайтла заново и нажмите «Скачать».']
+];
+function errorHelp(error) {
+  const found = ERROR_HELP.find(([pattern]) => pattern.test(String(error || '')));
+  return found ? found[1] : 'Нажмите «Логи» - там видно, на чём остановилась загрузка. Затем запустите её снова со страницы тайтла.';
 }
 
 // stats - статистика идущей загрузки (она одна)
@@ -68,7 +84,7 @@ function renderStatus(item, stats) {
       const text = current < total ? `Готово с пропусками: ${current} / ${total} ${unitsOf(item)}` : 'Готово';
       return item.filename ? `${text} · ${escapeHtml(item.filename)}` : text;
     }
-    case 'error': return `Ошибка: ${escapeHtml(item.error)}`;
+    case 'error': return `Ошибка: ${escapeHtml(item.error)}<div class="dl-error-help">${escapeHtml(errorHelp(item.error))}</div>`;
     case 'canceled': return 'Отменено';
     default: return '';
   }
@@ -216,7 +232,9 @@ function renderState(state) {
   finishedIds = finished.map(item => item.id);
   byId('dl-count-queue').textContent = active.length || '';
   byId('dl-count-history').textContent = finished.length || '';
-  byId('dl-empty').textContent = history ? 'История пуста' : 'Очередь пуста';
+  byId('dl-empty').innerHTML = history
+    ? '<b>История пуста</b><br>Здесь появятся готовые, отменённые и неудачные загрузки - с логом и кнопкой «Сохранить ещё раз».'
+    : '<b>Очередь пуста</b><br>Откройте тайтл на сайте, отметьте главы и нажмите «Скачать» - загрузка появится здесь.';
   byId('dl-empty').hidden = shown.length > 0;
   byId('dl-clear-finished').hidden = !history || !finishedIds.length;
   setListHtml(shown.map(item => renderQueueItem(item, stats)).join(''));
@@ -371,13 +389,15 @@ async function initDownloadsView() {
   // «Ускорить» - флаг speedMode в storage, по умолчанию включён; его могут сменить и в другом окне
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area === 'local' && changes.speedMode) speed.checked = changes.speedMode.newValue !== false;
+    if (area === 'local' && changes.siteMirrors) siteMirrors = changes.siteMirrors.newValue || {};
   });
   speed.addEventListener('change', () => {
     enginePort?.postMessage({ cmd: 'speedMode', on: speed.checked });
     chrome.storage.local.set({ speedMode: speed.checked });
   });
-  const stored = await chrome.storage.local.get(['speedMode', 'sourceUrl']);
+  const stored = await chrome.storage.local.get(['speedMode', 'sourceUrl', 'siteMirrors']);
   speed.checked = stored.speedMode !== false;
+  siteMirrors = stored.siteMirrors || {};
   sourceUrl = stored.sourceUrl || '';
 
   await connectEngine();

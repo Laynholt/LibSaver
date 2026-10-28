@@ -53,6 +53,73 @@
       margin: 16px auto;
       padding: 0 16px;
     }
+    /* Кнопки в карточках поиска и диапазона - как вторичные кнопки тулбара */
+    .card-btn {
+      height: 32px;
+      padding: 0 14px;
+      font-size: var(--font-size-sm);
+      font-weight: 600;
+      border-radius: var(--border-radius);
+      border: 1px solid var(--border-color);
+      background-color: var(--background-elevated-2);
+      color: var(--text-primary);
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      white-space: nowrap;
+      transition: border-color 0.15s ease, transform 0.15s ease;
+    }
+    .card-btn:hover {
+      background-color: var(--background-elevated-2);
+      border-color: var(--border-hover);
+    }
+    .card-btn:active {
+      transform: translateY(1px);
+    }
+    .card-btn i {
+      font-size: 12px;
+      opacity: 0.9;
+    }
+    .search-row {
+      display: flex;
+      align-items: center;
+      gap: var(--spacing-sm);
+      flex-wrap: wrap;
+    }
+    .search-row input[type="search"] {
+      flex: 1;
+      min-width: 180px;
+    }
+    .search-row .checkbox-group {
+      font-size: 13px;
+      color: var(--text-secondary);
+      white-space: nowrap;
+    }
+    .search-actions {
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: var(--spacing-sm);
+    }
+    .search-actions .counter {
+      margin-right: auto;
+    }
+    .search-actions[hidden], .select-new[hidden] {
+      display: none;
+    }
+    .select-new {
+      margin-top: var(--spacing-xs);
+      width: 100%;
+      justify-content: center;
+    }
+    .chapters-empty {
+      text-align: center;
+      color: var(--text-secondary);
+      padding: 24px 16px;
+      font-size: 13px;
+    }
     .toolbar-right .field {
       margin: 0;
       padding: 0;
@@ -257,6 +324,18 @@
       <h4>Диапазон <span id="range-count">0 из 0</span></h4>
       <label class="range-row"><span>от</span><select id="range-from"></select></label>
       <label class="range-row"><span>до</span><select id="range-to"></select></label>
+      <button type="button" class="card-btn select-new" id="select-new" hidden><i class="fa-solid fa-wand-magic-sparkles"></i> <span></span></button>
+    </div>
+    <div class="chapters-card" id="search-card">
+      <div class="search-row">
+        <input type="search" id="chapter-search" placeholder="Номер, диапазон 10-20 или часть названия" aria-label="Поиск глав">
+        <span id="only-selected-slot"></span>
+      </div>
+      <div class="search-actions" id="search-actions" hidden>
+        <span class="counter" id="search-count"></span>
+        <button type="button" class="card-btn" id="search-select"><i class="fa-solid fa-check"></i> Отметить найденные</button>
+        <button type="button" class="card-btn" id="search-unselect"><i class="fa-solid fa-xmark"></i> Снять</button>
+      </div>
     </div>
     <div class="chapters-card" id="translator-card" style="display: none;">
       <h4>Перевод <span>приоритет</span></h4>

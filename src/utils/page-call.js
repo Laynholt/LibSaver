@@ -134,6 +134,12 @@ function siteLinks(siteKey) {
   return (SITE_TAB_PATTERNS[siteKey] || []).filter(pattern => !pattern.includes('*.')).map(pattern => pattern.slice(0, -2));
 }
 
+// Куда смотреть, если основной домен не открывается: сами домены, затем их зеркала v1..v9 (v5.animelib.org)
+function mirrorCandidates(siteKey) {
+  const bases = siteLinks(siteKey);
+  return [...bases, ...bases.flatMap(base => Array.from({ length: 9 }, (_, i) => base.replace('https://', `https://v${i + 1}.`)))];
+}
+
 // Вызов страницы без chrome.tabs/scripting (offscreen в Chrome) идёт через service worker (см. background.js)
 const hasTabApi = () => !!(chrome.tabs && chrome.scripting);
 
