@@ -38,6 +38,22 @@ test('findChapters: exact number, range in any order, name or display title, onl
   assert.deepEqual(json(findChapters(chapters, 'экстра', new Set(['a']))), []);
 });
 
+test('findChapters: search by translator or team name in branchTeamName or branches', () => {
+  const { findChapters } = range();
+  const translatorChapters = [
+    { id: '1', number: '1', branchTeamName: 'avgystinal' },
+    { id: '2', number: '2', branchTeamName: 'TLSamurai' },
+    { id: '3', number: '3', branches: [{ teams: [{ id: 1, name: 'Spokon Jutsu Team' }] }] },
+    { id: '4', number: '4', branchTeamName: 'Spokon Jutsu Team' },
+    { id: '5', number: '5', branches: [{ user: { username: 'avgystinal' } }] }
+  ];
+
+  assert.deepEqual(json(findChapters(translatorChapters, 'Spokon Jutsu Team')), [2, 3]);
+  assert.deepEqual(json(findChapters(translatorChapters, 'spokon')), [2, 3]);
+  assert.deepEqual(json(findChapters(translatorChapters, 'avgystinal')), [0, 4]);
+  assert.deepEqual(json(findChapters(translatorChapters, 'samurai')), [1]);
+});
+
 test('downloaded chapters are keyed by volume and number, so another translation still counts as downloaded', () => {
   const { mergeDownloaded, newChapterIds, downloadedStoreKey } = range();
   assert.equal(downloadedStoreKey('1--x'), 'downloadedChapters:1--x');

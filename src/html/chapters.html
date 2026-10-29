@@ -326,9 +326,13 @@
       <label class="range-row"><span>до</span><select id="range-to"></select></label>
       <button type="button" class="card-btn select-new" id="select-new" hidden><i class="fa-solid fa-wand-magic-sparkles"></i> <span></span></button>
     </div>
+    <div class="chapters-card" id="translator-card" style="display: none;">
+      <h4>Перевод <span>приоритет</span></h4>
+      <div class="translator-priority-list" id="translator-list"></div>
+    </div>
     <div class="chapters-card" id="search-card">
       <div class="search-row">
-        <input type="search" id="chapter-search" placeholder="Номер, диапазон 10-20 или часть названия" aria-label="Поиск глав">
+        <input type="search" id="chapter-search" placeholder="Номер, диапазон (10-20), перевод или название" aria-label="Поиск глав">
         <span id="only-selected-slot"></span>
       </div>
       <div class="search-actions" id="search-actions" hidden>
@@ -336,10 +340,6 @@
         <button type="button" class="card-btn" id="search-select"><i class="fa-solid fa-check"></i> Отметить найденные</button>
         <button type="button" class="card-btn" id="search-unselect"><i class="fa-solid fa-xmark"></i> Снять</button>
       </div>
-    </div>
-    <div class="chapters-card" id="translator-card" style="display: none;">
-      <h4>Перевод <span>приоритет</span></h4>
-      <div class="translator-priority-list" id="translator-list"></div>
     </div>
     <div class="chapters-list" id="chapters-list">
       <!-- Список глав для редактирования -->

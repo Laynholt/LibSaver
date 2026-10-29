@@ -119,7 +119,7 @@ function chapterLabel(ch) {
   return ch.name ? `${label}. ${ch.name}` : label;
 }
 
-// Индексы глав под запрос поиска: «12» - глава 12, «10-20» - главы с 10 по 20 по номеру, иначе часть названия (без регистра).
+// Индексы глав под запрос поиска: «12» - глава 12, «10-20» - главы с 10 по 20 по номеру, иначе часть названия или перевода (без регистра).
 // onlyIds (Set) - искать только среди этих глав, пустой запрос тогда отдаёт их все
 function findChapters(chapters, query, onlyIds = null) {
   const text = String(query ?? '').trim().toLowerCase();
@@ -132,7 +132,34 @@ function findChapters(chapters, query, onlyIds = null) {
   } else if (/^\d+(?:\.\d+)?$/.test(numeric)) {
     test = ch => Number(ch.number) === Number(numeric);
   } else if (text) {
-    test = ch => `${ch.name || ''}\n${ch.displayTitle || ''}`.toLowerCase().includes(text);
+    test = ch => {
+      let haystack = `${ch.name || ''}\n${ch.displayTitle || ''}\n${ch.branchTeamName || ''}\n${ch.translator || ''}`;
+      if (typeof ch.translators === 'string') {
+        haystack += '\n' + ch.translators;
+      } else if (Array.isArray(ch.translators)) {
+        for (const t of ch.translators) {
+          haystack += '\n' + (typeof t === 'string' ? t : (t?.name || t?.username || ''));
+        }
+      }
+      if (ch.team?.name) haystack += '\n' + ch.team.name;
+      if (Array.isArray(ch.teams)) {
+        for (const t of ch.teams) if (t?.name) haystack += '\n' + t.name;
+      }
+      if (Array.isArray(ch.branches)) {
+        for (const b of ch.branches) {
+          if (!b) continue;
+          if (typeof getTranslatorName === 'function') {
+            haystack += '\n' + getTranslatorName(b);
+          }
+          if (Array.isArray(b.teams)) {
+            for (const t of b.teams) if (t?.name) haystack += '\n' + t.name;
+          }
+          if (b.team?.name) haystack += '\n' + b.team.name;
+          if (b.user?.username) haystack += '\n' + b.user.username;
+        }
+      }
+      return haystack.toLowerCase().includes(text);
+    };
   }
   return chapters.flatMap((ch, index) => (!onlyIds || onlyIds.has(ch.id)) && test(ch) ? [index] : []);
 }
