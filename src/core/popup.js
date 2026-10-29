@@ -172,23 +172,21 @@ document.getElementById('btn-reload-page').addEventListener('click', async () =>
 });
 
 // Кнопки открытия LIB сайтов
-document.getElementById('btn-mangalib').addEventListener('click', async () => {
-  await chrome.tabs.create({ url: 'https://mangalib.me' });
-});
+async function openSiteFromPopup(siteKey, fallbackUrl) {
+  const { useCustomSiteLinks = true, customSiteLinks = {}, siteMirrors = {}, enableMirrorSearch = true } = await chrome.storage.local.get(['useCustomSiteLinks', 'customSiteLinks', 'siteMirrors', 'enableMirrorSearch']);
+  let target = fallbackUrl;
+  if (useCustomSiteLinks && customSiteLinks[siteKey]) {
+    target = customSiteLinks[siteKey];
+  } else if (enableMirrorSearch && siteMirrors[siteKey]) {
+    target = siteMirrors[siteKey];
+  }
+  if (!/^https?:\/\//i.test(target)) target = 'https://' + target;
+  await chrome.tabs.create({ url: target });
+}
 
-document.getElementById('btn-hentailib').addEventListener('click', async () => {
-  await chrome.tabs.create({ url: 'https://hentailib.me' });
-});
-
-document.getElementById('btn-shlib').addEventListener('click', async () => {
-  await chrome.tabs.create({ url: 'https://v2.shlib.life' });
-});
-
-document.getElementById('btn-ranobelib').addEventListener('click', async () => {
-  await chrome.tabs.create({ url: 'https://ranobelib.me' });
-});
-
-document.getElementById('btn-animelib').addEventListener('click', async () => {
-  await chrome.tabs.create({ url: 'https://v5.animelib.org' });
-});
+document.getElementById('btn-mangalib').addEventListener('click', () => openSiteFromPopup('mangalib', 'https://mangalib.me'));
+document.getElementById('btn-hentailib').addEventListener('click', () => openSiteFromPopup('hentailib', 'https://hentailib.me'));
+document.getElementById('btn-shlib').addEventListener('click', () => openSiteFromPopup('shlib', 'https://v2.shlib.life'));
+document.getElementById('btn-ranobelib').addEventListener('click', () => openSiteFromPopup('ranobelib', 'https://ranobelib.me'));
+document.getElementById('btn-animelib').addEventListener('click', () => openSiteFromPopup('animelib', 'https://v5.animelib.org'));
 

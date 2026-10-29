@@ -89,6 +89,8 @@ function mirrorContext(hosts, stored = {}) {
     fetch: async url => {
       fetched.push(url);
       if (!(url in hosts)) throw new TypeError('Failed to fetch');
+      const val = hosts[url];
+      if (val && typeof val === 'object') return { url: val.url || url, ok: val.ok !== false, status: val.status || 200 };
       return { url: hosts[url] || url };
     },
     chrome: { storage: { local: { get: async () => ({ ...data }), set: async values => Object.assign(data, values) } } }
@@ -107,4 +109,177 @@ test('mirrors: kept off while the main domain answers, found among v1..v9 when i
   const offline = mirrorContext({ 'https://animelib.org': 'https://parking.example/' }, { siteMirrors: { animelib: 'https://v5.animelib.org' } });
   assert.equal(await offline.ctx.findMirror('animelib'), undefined);
   assert.deepEqual(json((await offline.ctx.refreshMirrors()).animelib), 'https://v5.animelib.org');
+});
+
+test('mirrors: HTTP 403/500 errors count as dead main domain and trigger mirror fallback', async () => {
+  const http403 = mirrorContext({
+    'https://animelib.org': { url: 'https://animelib.org', ok: false, status: 403 },
+    'https://v5.animelib.org': null
+  });
+  assert.equal(await http403.ctx.findMirror('animelib'), 'https://v5.animelib.org');
+});
+test('SiteMenuRestorer: updates AnimeLIB link to v5 and removes disabled sites', () => {
+  function makeElement(tag, attrs = {}) {
+    const children = [];
+    const classes = new Set(attrs.className ? attrs.className.split(' ') : []);
+    const attributes = { ...attrs };
+    const dataset = {};
+    const el = {
+      tagName: tag.toUpperCase(),
+      dataset,
+      children,
+      parent: null,
+      get classList() {
+        return {
+          contains: c => classes.has(c),
+          add: c => classes.add(c),
+          forEach: fn => classes.forEach(fn),
+          [Symbol.iterator]: () => classes[Symbol.iterator]()
+        };
+      },
+      getAttribute: a => attributes[a] || null,
+      setAttribute: (a, v) => { attributes[a] = String(v); if (a === 'href') el.href = v; },
+      hasAttribute: a => a in attributes,
+      href: attrs.href || '',
+      textContent: attrs.textContent || '',
+      closest: sel => {
+        const parts = sel.split(',').map(s => s.trim().replace(/^\./, ''));
+        let cur = el;
+        while (cur) {
+          if (parts.some(p => cur.classList?.contains(p))) return cur;
+          cur = cur.parent;
+        }
+        return null;
+      },
+      appendChild: child => {
+        if (child.nodeType === 11) {
+          while (child.children.length > 0) {
+            const c = child.children.shift();
+            c.parent = el;
+            children.push(c);
+          }
+          return child;
+        }
+        child.parent = el;
+        children.push(child);
+        return child;
+      },
+      addEventListener: () => {},
+      removeEventListener: () => {},
+      querySelectorAll: sel => {
+        const res = [];
+        function walk(node) {
+          for (const ch of node.children) {
+            if (sel.includes('.menu-item') && ch.classList?.contains('menu-item')) res.push(ch);
+            walk(ch);
+          }
+        }
+        walk(el);
+        return res;
+      },
+      querySelector: sel => el.querySelectorAll(sel)[0] || null,
+      cloneNode: deep => makeElement(tag, { ...attributes, className: Array.from(classes).join(' '), textContent: el.textContent, href: el.href }),
+      get innerHTML() { return ''; },
+      set innerHTML(val) { if (val === '') children.length = 0; }
+    };
+    return el;
+  }
+
+  function runRestorer(storageValues) {
+    const tippyBox = makeElement('div', { className: 'tippy-box' });
+    const menuList = makeElement('div', { className: 'menu-list' });
+    tippyBox.appendChild(menuList);
+    const items = [
+      makeElement('a', { className: 'menu-item axh_f7', href: 'https://hentailib.me', textContent: 'HentaiLIB' }),
+      makeElement('a', { className: 'menu-item axh_f7', href: 'https://v2.shlib.life', textContent: 'SlashLIB' }),
+      makeElement('a', { className: 'menu-item axh_f7', href: 'https://ranobelib.me', textContent: 'RanobeLIB' }),
+      makeElement('a', { className: 'menu-item axh_f7', href: 'https://animelib.org', textContent: 'AnimeLIB' })
+    ];
+    items.forEach(it => menuList.appendChild(it));
+
+    const listeners = { storage: [] };
+    const ctx = {
+      console,
+      URL,
+      Array,
+      Map,
+      Set,
+      JSON,
+      setTimeout: fn => fn(),
+      clearTimeout: () => {},
+      window: { location: { hostname: 'mangalib.me' }, addEventListener: () => {} },
+      document: {
+        body: makeElement('body'),
+        querySelectorAll: sel => sel.includes('.menu-list') ? [menuList] : [],
+        createElement: (tag, attrs) => makeElement(tag, attrs),
+        createDocumentFragment: () => {
+          const frag = makeElement('fragment');
+          frag.nodeType = 11;
+          return frag;
+        },
+        addEventListener: () => {}
+      },
+      chrome: {
+        storage: {
+          local: { get: (keys, cb) => cb(storageValues) },
+          onChanged: { addListener: fn => listeners.storage.push(fn) }
+        },
+        runtime: { getURL: f => f }
+      },
+      MutationObserver: class {
+        observe() {}
+        disconnect() {}
+      }
+    };
+    ctx.window.document = ctx.document;
+    vm.runInNewContext(source('src/content/SiteMenuRestorer.js'), ctx);
+    return { menuList, listeners, ctx };
+  }
+
+  // 1. With custom link, AnimeLIB URL is updated to v5
+  const { menuList: m1 } = runRestorer({
+    enableSiteMenu: true,
+    useCustomSiteLinks: true,
+    customSiteLinks: { animelib: 'https://v5.animelib.org' },
+    disabledSites: {}
+  });
+  const hrefs1 = m1.children.map(c => c.href);
+  assert.ok(hrefs1.includes('https://v5.animelib.org'));
+  assert.ok(!hrefs1.includes('https://animelib.org'));
+
+  // 2. When disabled, AnimeLIB is removed from menu
+  const { menuList: m2 } = runRestorer({
+    enableSiteMenu: true,
+    useCustomSiteLinks: true,
+    customSiteLinks: { animelib: 'https://v5.animelib.org' },
+    disabledSites: { animelib: true }
+  });
+  const hrefs2 = m2.children.map(c => c.href);
+  assert.ok(!hrefs2.some(h => h.includes('animelib')));
+  assert.equal(m2.children.length, 3);
+
+  // 3. Custom order: RanobeLIB placed first
+  const { menuList: m3 } = runRestorer({
+    enableSiteMenu: true,
+    useCustomSiteLinks: true,
+    customSiteLinks: { animelib: 'https://v5.animelib.org' },
+    siteMenuOrder: ['site-ranobelib', 'site-mangalib', 'site-hentailib', 'site-shlib', 'site-animelib'],
+    disabledSites: {}
+  });
+  assert.ok(m3.children[0].href.includes('ranobelib'));
+
+  // 4. All sites disabled -> menu is empty
+  const { menuList: m4 } = runRestorer({
+    enableSiteMenu: true,
+    disabledSites: { mangalib: true, hentailib: true, shlib: true, ranobelib: true, animelib: true }
+  });
+  assert.equal(m4.children.length, 0);
+
+  // 5. Only one site enabled -> only that site is in menu
+  const { menuList: m5 } = runRestorer({
+    enableSiteMenu: true,
+    disabledSites: { mangalib: true, hentailib: true, shlib: true, animelib: true }
+  });
+  assert.equal(m5.children.length, 1);
+  assert.ok(m5.children[0].href.includes('ranobelib'));
 });

@@ -268,6 +268,8 @@ function applySettingsToUI(settings) {
   document.getElementById('image-format').value = settings.imageFormat || 'original';
   document.getElementById('disable-toc').checked = settings.disableToc || false;
   document.getElementById('enable-site-menu').checked = settings.enableSiteMenu !== false;
+  document.getElementById('use-custom-site-links').checked = settings.useCustomSiteLinks !== false;
+  document.getElementById('enable-mirror-search').checked = settings.enableMirrorSearch !== false;
 
   // Site menu custom links - используем кастомные или дефолтные, показываем как есть
   const customSiteLinks = settings.customSiteLinks || {};
@@ -378,9 +380,10 @@ function updateResizeMethodVisibility() {
 // Показать/скрыть ссылки сайтов в зависимости от чекбокса
 function updateSiteMenuLinksVisibility() {
   const enableSiteMenu = document.getElementById('enable-site-menu').checked;
+  const useCustomSiteLinks = document.getElementById('use-custom-site-links').checked;
   const siteMenuLinks = document.querySelector('.site-menu-links');
 
-  if (enableSiteMenu) {
+  if (enableSiteMenu || useCustomSiteLinks) {
     siteMenuLinks.classList.remove('hidden');
   } else {
     siteMenuLinks.classList.add('hidden');
@@ -611,7 +614,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     'imageFormat',
     'disableToc',
     'enableSiteMenu',
+    'useCustomSiteLinks',
     'customSiteLinks',
+    'enableMirrorSearch',
     'debugLogging',
     'updateNotifications',
     'generateComicInfo',
@@ -702,6 +707,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // Показать/скрыть ссылки сайтов при изменении чекбокса
   document.getElementById('enable-site-menu').addEventListener('change', updateSiteMenuLinksVisibility);
+  document.getElementById('use-custom-site-links').addEventListener('change', updateSiteMenuLinksVisibility);
 
   // Показать предупреждение о перезагрузке при изменении настройки меню
   const originalEnableSiteMenu = document.getElementById('enable-site-menu').checked;
@@ -832,7 +838,7 @@ function updateTocOptionTexts() {
 
 // Ключи storage по группам панелей. Раздел окна пишет только свои ключи: остальные разделы живут в соседних фреймах и могли изменить свои позже
 const SETTING_KEYS_BY_GROUP = {
-  general: ['enableSiteMenu', 'customSiteLinks', 'debugLogging', 'updateNotifications', 'initialChapters', 'loadMoreChapters'],
+  general: ['enableSiteMenu', 'useCustomSiteLinks', 'customSiteLinks', 'debugLogging', 'initialChapters', 'loadMoreChapters', 'enableMirrorSearch', 'updateNotifications'],
   images: ['coverQuality', 'imageQuality', 'imageServer', 'resizeMethod', 'adaptiveRatio', 'jpegQuality', 'imageFormat', 'sameWidth'],
   toc: ['disableToc', 'tocFormat', 'customTocFormat', 'hideChapterName', 'hideVolumeNumber'],
   cbz: ['generateComicInfo'],
@@ -885,6 +891,7 @@ async function saveSettings() {
     imageFormat: document.getElementById('image-format').value,
     disableToc: document.getElementById('disable-toc').checked,
     enableSiteMenu: document.getElementById('enable-site-menu').checked,
+    useCustomSiteLinks: document.getElementById('use-custom-site-links').checked,
 
     // Site menu custom links - сохраняем как есть (чтобы пользователь видел ошибку), но если пустое - дефолт
     customSiteLinks: {
@@ -895,6 +902,7 @@ async function saveSettings() {
       animelib: document.getElementById('site-animelib').value.trim() || defaultSiteLinks.animelib
     },
     debugLogging: document.getElementById('debug-logging').checked,
+    enableMirrorSearch: document.getElementById('enable-mirror-search').checked,
     updateNotifications: document.getElementById('update-notifications').checked,
     generateComicInfo: document.getElementById('generate-comicinfo').checked,
     sameWidth: document.getElementById('same-width').checked,
@@ -959,6 +967,8 @@ async function resetChapterTitles() {
 const DEFAULT_SETTINGS_BY_GROUP = {
   general: {
     'enable-site-menu': true,
+    'use-custom-site-links': true,
+    'enable-mirror-search': true,
     'debug-logging': false,
     'update-notifications': true,
     'initial-chapters': 100,
@@ -1198,6 +1208,8 @@ document.getElementById('btn-reset').addEventListener('click', async () => {
     enableChaptersEditor: true,
     disableToc: false,
     enableSiteMenu: true,
+    useCustomSiteLinks: true,
+    enableMirrorSearch: true,
     customSiteLinks: {
       mangalib: 'https://mangalib.me',
       hentailib: 'https://hentailib.me',

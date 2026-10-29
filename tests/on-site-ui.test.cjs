@@ -3269,7 +3269,7 @@ test('a section of the window saves only the keys of its own groups, so a stale 
 
   const general = { imageQuality: 'HD' };
   await saveSettingsIn(['general', 'storage'], general);
-  assert.deepEqual(Object.keys(general).sort(), ['cleanupOldTitles', 'cleanupOnTitleChange', 'customSiteLinks', 'debugLogging', 'enableSiteMenu', 'imageQuality', 'initialChapters', 'loadMoreChapters', 'updateNotifications']);
+  assert.deepEqual(Object.keys(general).sort(), ['cleanupOldTitles', 'cleanupOnTitleChange', 'customSiteLinks', 'debugLogging', 'enableMirrorSearch', 'enableSiteMenu', 'imageQuality', 'initialChapters', 'loadMoreChapters', 'updateNotifications', 'useCustomSiteLinks']);
   assert.equal(general.imageQuality, 'HD');
 
   const whole = {};

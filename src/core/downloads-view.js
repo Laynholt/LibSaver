@@ -40,8 +40,14 @@ function renderCommandButton(command, id) {
 }
 
 let siteMirrors = {}; // рабочие зеркала сайтов (фон проверяет их сам): ссылка на зеркало идёт первой
+let customSiteLinks = {};
+let useCustomSiteLinks = true;
+let enableMirrorSearch = true;
+
 function renderSiteLinks(siteKey) {
-  return [...new Set([siteMirrors[siteKey], ...siteLinks(siteKey)].filter(Boolean))]
+  const custom = useCustomSiteLinks && customSiteLinks[siteKey];
+  const mirror = enableMirrorSearch && siteMirrors[siteKey];
+  return [...new Set([custom, mirror, ...siteLinks(siteKey)].filter(Boolean))]
     .map(url => `<a href="${escapeHtml(url)}" data-url="${escapeHtml(url)}" target="_blank" rel="noopener">${escapeHtml(url.replace('https://', ''))}</a>`)
     .join(' · ');
 }
@@ -390,14 +396,20 @@ async function initDownloadsView() {
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area === 'local' && changes.speedMode) speed.checked = changes.speedMode.newValue !== false;
     if (area === 'local' && changes.siteMirrors) siteMirrors = changes.siteMirrors.newValue || {};
+    if (area === 'local' && changes.customSiteLinks) customSiteLinks = changes.customSiteLinks.newValue || {};
+    if (area === 'local' && changes.useCustomSiteLinks) useCustomSiteLinks = changes.useCustomSiteLinks.newValue !== false;
+    if (area === 'local' && changes.enableMirrorSearch) enableMirrorSearch = changes.enableMirrorSearch.newValue !== false;
   });
   speed.addEventListener('change', () => {
     enginePort?.postMessage({ cmd: 'speedMode', on: speed.checked });
     chrome.storage.local.set({ speedMode: speed.checked });
   });
-  const stored = await chrome.storage.local.get(['speedMode', 'sourceUrl', 'siteMirrors']);
+  const stored = await chrome.storage.local.get(['speedMode', 'sourceUrl', 'siteMirrors', 'customSiteLinks', 'useCustomSiteLinks', 'enableMirrorSearch']);
   speed.checked = stored.speedMode !== false;
   siteMirrors = stored.siteMirrors || {};
+  customSiteLinks = stored.customSiteLinks || {};
+  useCustomSiteLinks = stored.useCustomSiteLinks !== false;
+  enableMirrorSearch = stored.enableMirrorSearch !== false;
   sourceUrl = stored.sourceUrl || '';
 
   await connectEngine();

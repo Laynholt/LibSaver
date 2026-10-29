@@ -36,6 +36,9 @@ chrome.storage.onChanged.addListener((changes, area) => {
   const notify = changes.updateNotifications;
   if (notify && notify.oldValue === false && notify.newValue !== false) checkUpdatesInBackground(); // включили - не ждём 6 часов
   if (changes.updateNotifications || changes.lastUpdateCheck) refreshUpdateBadge();
+  const mirrors = changes.enableMirrorSearch;
+  if (mirrors && mirrors.newValue === false) chrome.storage.local.remove('siteMirrors');
+  if (mirrors && mirrors.oldValue === false && mirrors.newValue !== false) refreshMirrors();
 });
 
 refreshUpdateBadge(); // значок не переживает перезапуск браузера, а после обновления расширения должен пропасть
@@ -50,12 +53,13 @@ chrome.alarms.get(MIRROR_ALARM).then(alarm => {
   if (!alarm) chrome.alarms.create(MIRROR_ALARM, { delayInMinutes: 1, periodInMinutes: 6 * 60 });
 });
 
-// Адрес отвечает (любой HTTP-ответ, и после переадресаций это тот же сайт) -> origin, где оказались; сеть, DNS, таймаут -> null
+// Адрес отвечает (успешный ответ без 4xx/5xx, и после переадресаций это тот же сайт) -> origin, где оказались; ошибки, сеть, DNS, таймаут -> null
 async function probeOrigin(url, siteKey) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 8000);
   try {
     const response = await fetch(url, { method: 'HEAD', cache: 'no-store', credentials: 'omit', signal: controller.signal });
+    if (response.ok === false || (response.status && response.status >= 400)) return null;
     return siteKeyByHost(response.url) === siteKey ? new URL(response.url).origin : null;
   } catch (e) {
     return null;
@@ -66,15 +70,42 @@ async function probeOrigin(url, siteKey) {
 
 // null - основной домен отвечает; origin зеркала; undefined - не отвечает ничего (нет сети), прежний выбор не трогаем
 async function findMirror(siteKey) {
+  const raceFirstAlive = urls => {
+    if (!urls.length) return Promise.resolve(undefined);
+    return new Promise(resolve => {
+      let pending = urls.length;
+      let resolved = false;
+      for (const url of urls) {
+        probeOrigin(url, siteKey).then(origin => {
+          if (resolved) return;
+          if (origin) {
+            resolved = true;
+            resolve(origin);
+          } else if (--pending === 0) {
+            resolve(undefined);
+          }
+        }).catch(() => {
+          if (!resolved && --pending === 0) resolve(undefined);
+        });
+      }
+    });
+  };
+
   const bases = siteLinks(siteKey);
-  const firstAlive = async urls => (await Promise.all(urls.map(url => probeOrigin(url, siteKey)))).find(Boolean);
-  if (await firstAlive(bases)) return null;
-  return firstAlive(mirrorCandidates(siteKey).filter(url => !bases.includes(url)));
+  const baseAlive = await raceFirstAlive(bases);
+  if (baseAlive) return null;
+  const candidates = mirrorCandidates(siteKey).filter(url => !bases.includes(url));
+  return raceFirstAlive(candidates);
 }
 
 let mirrorCheck = null; // одна проверка за раз: будильник и ошибка вкладки могут совпасть
 function refreshMirrors() {
   mirrorCheck ??= (async () => {
+    const { enableMirrorSearch = true } = await chrome.storage.local.get('enableMirrorSearch');
+    if (!enableMirrorSearch) {
+      await chrome.storage.local.remove('siteMirrors');
+      return {};
+    }
     const { siteMirrors = {} } = await chrome.storage.local.get('siteMirrors');
     const next = { ...siteMirrors };
     await Promise.all(Object.keys(SITE_TAB_PATTERNS).map(async siteKey => {
@@ -92,6 +123,8 @@ function refreshMirrors() {
 const mirrorRedirects = new Map(); // tabId -> время перехода: вкладку не гоняем по кругу
 async function redirectToMirror(details) {
   if (details.frameId !== 0 || /ABORTED|2152398850/.test(details.error)) return; // остановка загрузки, скачивание файла
+  const { enableMirrorSearch = true } = await chrome.storage.local.get('enableMirrorSearch');
+  if (!enableMirrorSearch) return;
   const siteKey = siteKeyByHost(details.url);
   if (!siteKey || Date.now() - (mirrorRedirects.get(details.tabId) || 0) < 60000) return;
   mirrorRedirects.set(details.tabId, Date.now());
