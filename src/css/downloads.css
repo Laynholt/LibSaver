@@ -152,6 +152,11 @@ body {
   font-size: 11px;
 }
 
+.dl-error-help {
+  margin-top: 2px;
+  color: var(--text-secondary);
+}
+
 .dl-error .dl-status {
   color: var(--danger-color);
 }

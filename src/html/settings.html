@@ -334,6 +334,41 @@
     </div>
 
     <div class="settings-column">
+      <div class="panel" data-group="profiles">
+        <div class="section-title">
+          <span>Профили скачивания</span>
+        </div>
+        <p class="panel-hint">Профиль запоминает формат файла и настройки сборки: картинки, оглавление, CBZ/PDF/TXT, видео и деление на части. Общие настройки он не трогает.</p>
+        <div class="field">
+          <label for="profile-select">Профиль</label>
+          <div class="inline-row">
+            <select id="profile-select" aria-label="Профиль"></select>
+            <button class="btn-secondary" id="btn-profile-apply" type="button">Применить</button>
+            <button class="btn-secondary" id="btn-profile-delete" type="button" title="Удалить профиль" aria-label="Удалить профиль"><i class="fa-solid fa-trash"></i></button>
+          </div>
+        </div>
+        <div class="field">
+          <label for="profile-name">Сохранить текущие настройки как профиль</label>
+          <div class="inline-row">
+            <input type="text" id="profile-name" placeholder="Например: Манга для читалки" maxlength="60">
+            <button class="btn-secondary" id="btn-profile-save" type="button">Сохранить</button>
+          </div>
+        </div>
+        <p class="panel-status" id="profile-status" role="status"></p>
+      </div>
+
+      <div class="panel" data-group="files">
+        <div class="section-title">
+          <span>Файлы</span>
+          <button class="btn-reset-group" data-group="files"><i class="fa-solid fa-rotate-left"></i></button>
+        </div>
+        <div class="field">
+          <label for="split-chapters">Глав в одном файле</label>
+          <input type="number" id="split-chapters" min="0" max="10000" step="10" value="0" inputmode="numeric">
+          <p class="panel-hint">0 - всё одним файлом. Например, 100 - тайтл из 350 глав сохранится четырьмя файлами: «Тайтл - 1 (1-100)», «Тайтл - 2 (101-200)»… Удобно для телефонов и читалок, которые не открывают большие файлы.</p>
+        </div>
+      </div>
+
       <div class="panel" data-group="cbz" data-site-type="manga">
         <div class="section-title">
           <span>CBZ/ZIP</span>
@@ -549,6 +584,17 @@
             <span class="storage-size-display" id="storage-size-display">Загрузка...</span>
             <button class="btn-secondary" id="btn-cleanup" title="Удалить данные всех тайтлов, кроме открытого">Очистить старые данные</button>
           </div>
+        </div>
+
+        <div class="field">
+          <label>Резервная копия настроек</label>
+          <div class="inline-row">
+            <button class="btn-secondary" id="btn-settings-export" type="button"><i class="fa-solid fa-file-export"></i> Экспорт в файл</button>
+            <button class="btn-secondary" id="btn-settings-import" type="button"><i class="fa-solid fa-file-import"></i> Импорт из файла</button>
+            <input type="file" id="settings-import-file" accept=".json,application/json" hidden>
+          </div>
+          <p class="panel-hint">Все настройки и профили в одном JSON-файле - для другого браузера или после переустановки. Тайтлы, обложки и история загрузок в него не входят.</p>
+          <p class="panel-status" id="backup-status" role="status"></p>
         </div>
       </div>
     </div>

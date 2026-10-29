@@ -11,6 +11,7 @@ let speedSamples = [];
 // Состояние обработки ошибок
 let currentErrorChapter = null; // Текущая глава с ошибкой
 let skippedChapters = []; // Список пропущенных глав
+let partialChapters = []; // Главы с пропущенными картинками: в файле они неполные
 let isWaitingForUser = false; // Ожидание решения пользователя
 let shouldRetryChapter = false; // Флаг для повтора текущей главы
 let cancelRequested = false; // Отмена: следующий запрос или решение пользователя бросает ошибку
@@ -330,6 +331,7 @@ function resetDownloadState() {
     shouldRetryChapter = false;
     shouldRetryImage = false;
     skippedChapters = [];
+    partialChapters = [];
     userDecisionResolve = null;
     cancelRequested = false;
 
@@ -537,7 +539,10 @@ async function startDownload(snapshot) {
             }
         }
 
-        return { blob, filename, downloaded: downloadedCount, total: chaptersToDownload.length, skippedChapters: [...skippedChapters], skippedImages };
+        // Главы, вошедшие в файл целиком: по ним раздел «Главы» предлагает «Выбрать новые»
+        const incomplete = new Set([...skippedChapters, ...partialChapters].map(chapter => chapter?.id));
+        const completeChapters = chaptersToDownload.filter(chapter => !incomplete.has(chapter.id)).map(({ volume, number }) => ({ volume, number }));
+        return { blob, filename, downloaded: downloadedCount, total: chaptersToDownload.length, skippedChapters: [...skippedChapters], skippedImages, completeChapters };
     } catch (err) {
         addLog(`Критическая ошибка: ${err.message}`, true);
         console.error(err);
@@ -592,6 +597,7 @@ const downloadControl = {
             } else if (currentErrorImage) {
                 // Ошибка картинки
                 shouldRetryImage = false;
+                partialChapters.push(currentErrorImage.chapter);
                 if (window.incrementSkippedImagesCount) {
                     window.incrementSkippedImagesCount();
                 }

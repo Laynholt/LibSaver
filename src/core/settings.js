@@ -1,6 +1,6 @@
 // Раздел окна LibSaver (?group=images|toc|formats|cbz|pdf|txt|video|general|about): показываем только панели с data-group из списка (через запятую),
 // без тулбара и раскладки колонок. Без ?group= - вся страница с тулбаром (старое окно настроек)
-const GROUP_ALIASES = { general: ['general', 'storage'], formats: ['cbz', 'pdf', 'txt'] };
+const GROUP_ALIASES = { general: ['general', 'storage'], formats: ['profiles', 'files', 'cbz', 'pdf', 'txt'], video: ['profiles', 'video'] };
 
 function settingsGroupsFromUrl(search = location.search) {
   const value = new URLSearchParams(search).get('group');
@@ -33,7 +33,7 @@ const TAB_SECTIONS = [
   { id: 'general', title: 'Общие', icon: 'fa-sliders', groups: ['general', 'storage'] },
   { id: 'images', title: 'Картинки', icon: 'fa-image', groups: ['images'] },
   { id: 'toc', title: 'Оглавление', icon: 'fa-list-ol', groups: ['toc'] },
-  { id: 'formats', title: 'Форматы', icon: 'fa-file-export', groups: ['cbz', 'pdf', 'txt'] },
+  { id: 'formats', title: 'Форматы', icon: 'fa-file-export', groups: ['profiles', 'files', 'cbz', 'pdf', 'txt'] },
   { id: 'video', title: 'Видео', icon: 'fa-film', groups: ['video'] },
   { id: 'about', title: 'О LibSaver', icon: 'fa-circle-info', groups: ['about'] }
 ];
@@ -322,6 +322,8 @@ function applySettingsToUI(settings) {
   document.getElementById('custom-toc-format').value = settings.customTocFormat || '~ [Том {vol}] ~ [Глава {num}] ~ [{name}] ~';
   document.getElementById('hide-chapter-name').checked = settings.hideChapterName || false;
   document.getElementById('hide-volume-number').checked = settings.hideVolumeNumber || false;
+
+  document.getElementById('split-chapters').value = Number(settings.splitChapters) > 0 ? settings.splitChapters : 0;
 
   // TXT settings
   document.getElementById('txt-image-marker').value = settings.txtImageMarker || 'numbered';
@@ -632,7 +634,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     'pdfLineSpacing',
     'pdfParagraphSpacing',
     'pdfImageFormat',
-    'pdfJpegQuality'
+    'pdfJpegQuality',
+    'splitChapters'
   ]);
   
   // Применяем сохраненные настройки
@@ -836,7 +839,8 @@ const SETTING_KEYS_BY_GROUP = {
   pdf: ['pdfFont', 'pdfFontSize', 'pdfPageSize', 'pdfLineSpacing', 'pdfParagraphSpacing', 'pdfImageFormat', 'pdfJpegQuality'],
   txt: ['txtImageMarker', 'textOnly'],
   video: ['animeQuality', 'animeSaveInfo', 'animeSaveText', 'animeSavePoster'],
-  storage: ['cleanupOnTitleChange', 'cleanupOldTitles']
+  storage: ['cleanupOnTitleChange', 'cleanupOldTitles'],
+  files: ['splitChapters']
 };
 
 // Формат заголовков глав. Значение пишется автосохранением на каждую паузу ввода, а переформатирование глав (сброс displayTitle у всех тайтлов,
@@ -867,7 +871,10 @@ function watchTocCommit() {
 }
 
 // Сохранение настроек (автосохранение, enableAutosave)
+let replacingSettings = false; // настройки меняет профиль или импорт: автосохранение старых значений из полей их бы перебило
+
 async function saveSettings() {
+  if (replacingSettings) return; // поля показывают значения до профиля или импорта
   const all = {
     coverQuality: document.getElementById('cover-quality').value,
     imageQuality: document.getElementById('image-quality').value,
@@ -911,7 +918,8 @@ async function saveSettings() {
     initialChapters: parseInt(document.getElementById('initial-chapters').value),
     loadMoreChapters: parseInt(document.getElementById('load-more-chapters').value),
     cleanupOnTitleChange: document.getElementById('cleanup-on-title-change').checked,
-    cleanupOldTitles: document.getElementById('cleanup-old-titles').checked
+    cleanupOldTitles: document.getElementById('cleanup-old-titles').checked,
+    splitChapters: Math.max(0, parseInt(document.getElementById('split-chapters').value, 10) || 0)
   };
   const groups = settingsGroups ?? Object.keys(SETTING_KEYS_BY_GROUP);
   const settings = Object.fromEntries(groups.flatMap(group => SETTING_KEYS_BY_GROUP[group] ?? []).map(key => [key, all[key]]));
@@ -924,7 +932,13 @@ async function saveSettings() {
     const signature = tocSignature(settings);
     if (signature === appliedToc) return;
     appliedToc = signature;
-    // Удаляем сохранённые displayTitle из titleData
+    await resetChapterTitles();
+  }
+}
+
+// Формат заголовков сменился: сохранённые displayTitle всех тайтлов сбрасываются, открытые окна глав переформатируют свои
+async function resetChapterTitles() {
+  {
     await withTitleStoreLock(async () => {
       const titleData = await getAllTitleData();
       for (const slug in titleData) {
@@ -992,6 +1006,9 @@ const DEFAULT_SETTINGS_BY_GROUP = {
   storage: {
     'cleanup-on-title-change': true,
     'cleanup-old-titles': true
+  },
+  files: {
+    'split-chapters': 0
   }
 };
 
@@ -1134,7 +1151,7 @@ function resetGroupSettings(group) {
           if (defaultIcon) defaultIcon.style.display = '';
           if (checkedIcon) checkedIcon.style.color = '';
         }
-      } else if (element.type === 'range' || element.tagName === 'SELECT') {
+      } else if (element.type === 'range' || element.type === 'number' || element.tagName === 'SELECT') {
         element.value = value;
         // Обновляем отображение значений для range
         if (key === 'adaptive-ratio') {
@@ -1197,7 +1214,8 @@ document.getElementById('btn-reset').addEventListener('click', async () => {
     pdfImageFormat: 'original-png',
     pdfJpegQuality: 1.0,
     initialChapters: 100,
-    loadMoreChapters: 100
+    loadMoreChapters: 100,
+    splitChapters: 0
   };
 
   // Сбрасываем тексты option'ов к оригинальным
@@ -1448,4 +1466,166 @@ window.addEventListener('beforeunload', () => {
   if (tippyInstance) {
     tippyInstance.destroy();
   }
+});
+
+// Профиль скачивания: формат файла и всё, что задаёт сборку (не общие настройки)
+const FORMAT_KEYS = ['selectedFormat_manga', 'selectedFormat_ranobe', 'selectedFormat_anime'];
+const PROFILE_KEYS = [...['images', 'toc', 'cbz', 'pdf', 'txt', 'video', 'files'].flatMap(group => SETTING_KEYS_BY_GROUP[group]), ...FORMAT_KEYS];
+// Резервная копия: все настройки и профили. Тайтлы (titleData:*), учёт скачанных глав, история и служебное состояние в неё не входят
+const BACKUP_KEYS = [...Object.values(SETTING_KEYS_BY_GROUP).flat(), ...FORMAT_KEYS, 'theme', 'accentColor', 'siteMenuOrder', 'disabledSites',
+  'metadataFields', 'fieldLabels', 'metadataFieldOrder', 'speedMode', 'coversZoomLevel', 'plaqueCorner', 'downloadProfiles'];
+const BACKUP_APP = 'LibSaver';
+
+// Файл резервной копии -> настройки только из known (чужие ключи отбрасываются). Неверный файл - исключение с текстом для пользователя
+function parseSettingsBackup(text, known) {
+  let data;
+  try {
+    data = JSON.parse(text);
+  } catch (e) {
+    throw new Error('Это не JSON-файл');
+  }
+  if (data?.app !== BACKUP_APP || !data.settings || typeof data.settings !== 'object' || Array.isArray(data.settings)) {
+    throw new Error('Это не резервная копия настроек LibSaver');
+  }
+  const settings = Object.fromEntries(Object.entries(data.settings).filter(([key, value]) => known.includes(key) && value !== null));
+  if (Object.keys(settings).length === 0) throw new Error('В файле нет настроек LibSaver');
+  return settings;
+}
+
+// Профили: [{ name, values }]; повреждённые записи пропускаются
+async function readProfiles() {
+  const { downloadProfiles } = await chrome.storage.local.get('downloadProfiles');
+  return Array.isArray(downloadProfiles) ? downloadProfiles.filter(profile => typeof profile?.name === 'string' && profile.values && typeof profile.values === 'object') : [];
+}
+
+// Записать values вместо текущих настроек keys: ключи, которых в values нет, удаляются (вернутся к умолчанию).
+// Затем перезагружаются все открытые разделы настроек - их поля показывают старые значения
+async function replaceSettings(values, keys) {
+  replacingSettings = true;
+  const before = tocSignature(await chrome.storage.local.get(Object.keys(TOC_CONTROLS)));
+  await chrome.storage.local.set(Object.fromEntries(keys.filter(key => key in values).map(key => [key, values[key]])));
+  await chrome.storage.local.remove(keys.filter(key => !(key in values)));
+  if (before !== tocSignature(await chrome.storage.local.get(Object.keys(TOC_CONTROLS)))) await resetChapterTitles();
+  if (keys.includes('theme')) {
+    const theme = values.theme || 'system';
+    const accent = values.accentColor || 'auto';
+    try {
+      localStorage.setItem('theme', theme);
+      localStorage.setItem('accentColor', accent);
+    } catch (e) { /* без localStorage тема подхватится из storage */ }
+    chrome.runtime.sendMessage({ action: 'updateTheme', theme }).catch(() => {});
+    chrome.runtime.sendMessage({ action: 'updateAccent', accent }).catch(() => {});
+  }
+  chrome.runtime.sendMessage({ action: 'settingsReplaced' }).catch(() => {});
+  location.reload();
+}
+
+// Другой раздел настроек применил профиль или импорт: перечитываем значения
+chrome.runtime.onMessage.addListener(message => {
+  if (message?.action !== 'settingsReplaced') return;
+  replacingSettings = true;
+  location.reload();
+});
+
+// Поля профилей и импорта - не настройки: автосохранение (слушает input/change на document) их не видит
+function isolateFromAutosave(...elements) {
+  for (const element of elements) {
+    for (const type of ['input', 'change']) element?.addEventListener(type, event => event.stopPropagation());
+  }
+}
+
+function setPanelStatus(id, text, isError = false) {
+  const status = document.getElementById(id);
+  if (!status) return;
+  status.textContent = text;
+  status.classList.toggle('error', isError);
+}
+
+async function initProfiles() {
+  const select = document.getElementById('profile-select');
+  if (!select) return;
+  const nameInput = document.getElementById('profile-name');
+  const applyButton = document.getElementById('btn-profile-apply');
+  const deleteButton = document.getElementById('btn-profile-delete');
+  isolateFromAutosave(select, nameInput);
+
+  const render = async selected => {
+    const profiles = await readProfiles();
+    select.replaceChildren(...(profiles.length ? profiles.map(profile => new Option(profile.name, profile.name, false, profile.name === selected)) : [new Option('Профилей пока нет', '')]));
+    select.disabled = applyButton.disabled = deleteButton.disabled = profiles.length === 0;
+  };
+
+  document.getElementById('btn-profile-save').addEventListener('click', async () => {
+    const name = nameInput.value.trim();
+    if (!name) {
+      setPanelStatus('profile-status', 'Введите название профиля', true);
+      nameInput.focus();
+      return;
+    }
+    await saveSettings(); // правка этого раздела могла ещё не дойти до storage
+    const values = await chrome.storage.local.get(PROFILE_KEYS);
+    const profiles = (await readProfiles()).filter(profile => profile.name !== name);
+    await chrome.storage.local.set({ downloadProfiles: [...profiles, { name, values }] });
+    nameInput.value = '';
+    await render(name);
+    setPanelStatus('profile-status', `Профиль «${name}» сохранён`);
+  });
+
+  applyButton.addEventListener('click', async () => {
+    const profile = (await readProfiles()).find(candidate => candidate.name === select.value);
+    if (!profile) return;
+    setPanelStatus('profile-status', `Применяю «${profile.name}»…`);
+    await replaceSettings(profile.values, PROFILE_KEYS);
+  });
+
+  deleteButton.addEventListener('click', async () => {
+    const name = select.value;
+    if (!name || !confirm(`Удалить профиль «${name}»?`)) return;
+    await chrome.storage.local.set({ downloadProfiles: (await readProfiles()).filter(profile => profile.name !== name) });
+    await render();
+    setPanelStatus('profile-status', `Профиль «${name}» удалён`);
+  });
+
+  await render();
+}
+
+function initSettingsBackup() {
+  const exportButton = document.getElementById('btn-settings-export');
+  if (!exportButton) return;
+  const fileInput = document.getElementById('settings-import-file');
+  isolateFromAutosave(fileInput);
+
+  exportButton.addEventListener('click', async () => {
+    await saveSettings();
+    const settings = await chrome.storage.local.get(BACKUP_KEYS);
+    const data = { app: BACKUP_APP, version: chrome.runtime.getManifest().version, exportedAt: new Date().toISOString(), settings };
+    const url = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }));
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `LibSaver-settings-${new Date().toISOString().slice(0, 10)}.json`;
+    document.body.append(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
+    setPanelStatus('backup-status', 'Файл настроек сохранён в загрузки');
+  });
+
+  document.getElementById('btn-settings-import').addEventListener('click', () => fileInput.click());
+  fileInput.addEventListener('change', async () => {
+    const file = fileInput.files?.[0];
+    fileInput.value = '';
+    if (!file) return;
+    try {
+      const settings = parseSettingsBackup(await file.text(), BACKUP_KEYS);
+      if (!confirm('Заменить текущие настройки и профили настройками из файла?')) return;
+      await replaceSettings(settings, BACKUP_KEYS);
+    } catch (error) {
+      setPanelStatus('backup-status', `Не удалось импортировать: ${error.message}`, true);
+    }
+  });
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  initProfiles().catch(error => console.error('[LibSaver] profiles', error));
+  initSettingsBackup();
 });

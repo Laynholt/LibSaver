@@ -351,6 +351,10 @@ function updateCoverItemHandlers(item, index) {
   }
 }
 
+// Пустой список: что сделать дальше
+const EMPTY_COVERS = '<div class="empty-state"><b>Обложек нет</b><br>Нажмите «Новая обложка», чтобы добавить картинку с компьютера, или «Сбросить всё», чтобы вернуть обложки с сайта.</div>';
+const ZOOM_LABELS = { 1: 'Список', 2: '5 в ряд', 3: '4 в ряд', 4: '3 в ряд', 5: '2 в ряд' };
+
 // Применение масштаба обложек (1: Список, 2: 5 в строку, 3: 4 в строку, 4: 3 в строку, 5: 2 в строку)
 function applyZoomLevel(level) {
   currentZoomLevel = level;
@@ -365,6 +369,10 @@ function applyZoomLevel(level) {
   
   if (btnList) btnList.classList.toggle('active', level === 1);
   if (btnGrid) btnGrid.classList.toggle('active', level === 5);
+  const label = document.getElementById('zoom-label');
+  if (label) label.textContent = ZOOM_LABELS[level] || '';
+  const hint = document.getElementById('list-hint');
+  if (hint) hint.hidden = level !== 1;
   
   if (!container) return;
   
@@ -568,7 +576,7 @@ function removeCoverItem(index) {
     
     // Если больше нет обложек, показываем empty-state
     if (userCovers.length === 0) {
-      container.innerHTML = '<div class="empty-state">Нет обложек</div>';
+      container.innerHTML = EMPTY_COVERS;
     }
     
     updateCoverCount();
@@ -588,7 +596,7 @@ function renderCovers() {
   });
 
   if (userCovers.length === 0) {
-    container.innerHTML = '<div class="empty-state">Нет обложек</div>';
+    container.innerHTML = EMPTY_COVERS;
     updateCoverCount();
     return;
   }

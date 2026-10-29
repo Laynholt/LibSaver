@@ -13,6 +13,10 @@ let selectionDirty = false; // выбор правили здесь и ещё н
 let userChapters = [];
 let currentSlug = null;
 let translatorPriority = [];
+// Поиск: индексы uniqueChapters, подходящие под запрос и «Только выбранные»; null - поиска нет, список как обычно
+let chapterFilter = null;
+const FILTER_LIMIT = 300; // найденных глав за раз: тысячи строк разом вешают окно
+let downloadedKeys = []; // chapterKey глав, уже скачанных раньше (downloadedChapters:<slug>, пишет движок загрузки)
 
 // Переменные пагинации
 let pageSize = 100;
@@ -122,7 +126,7 @@ function createVolumeCard(key) {
     setOpen(open);
     if (open) fillVolume(key);
   };
-  setOpen(volumeChapters.size <= 1 || expandedVolumes.has(key));
+  setOpen(!!chapterFilter || volumeChapters.size <= 1 || expandedVolumes.has(key)); // найденные главы видны сразу
   toggle.addEventListener('click', flip);
   title.addEventListener('click', flip);
   header.append(select.label, title, count, toggle);
@@ -199,6 +203,82 @@ function initRangeCard() {
   toSelect.addEventListener('change', () => apply('to'));
   updateRangeCount();
 }
+
+// Выбор поменяли кодом (поиск, «Выбрать новые»): галочки, «от»/«до», автосохранение; при «Только выбранные» - и список
+function selectionChangedByCode() {
+  selectionDirty = true;
+  refreshSelectionUi();
+  syncRangeSelects();
+  notifyChanged();
+  if (document.getElementById('only-selected')?.checked) applyChapterFilter();
+}
+
+function updateSearchActions() {
+  document.getElementById('search-actions').hidden = !chapterFilter;
+  if (!chapterFilter) return;
+  const count = chapterFilter.size;
+  document.getElementById('search-count').textContent = count > FILTER_LIMIT ? `Найдено ${count}, показаны первые ${FILTER_LIMIT}` : `Найдено: ${count}`;
+}
+
+// Правки названий в показанных строках переносятся в allChapters до перерисовки - иначе пропадут вместе со строками
+function applyChapterFilter() {
+  saveCurrentPageChanges();
+  const query = document.getElementById('chapter-search').value;
+  const onlySelected = document.getElementById('only-selected').checked;
+  chapterFilter = query.trim() || onlySelected ? new Set(findChapters(uniqueChapters, query, onlySelected ? chosenIds : null)) : null;
+  renderChaptersList(uniqueChapters, getUniqueChapters(originalChapters));
+  updateSearchActions();
+}
+
+function initSearchCard() {
+  const only = createCheckbox('only-selected-input');
+  only.input.id = 'only-selected';
+  const text = document.createElement('span');
+  text.textContent = 'Только выбранные';
+  only.label.append(text);
+  document.getElementById('only-selected-slot').replaceWith(only.label);
+
+  let timer = null;
+  const search = document.getElementById('chapter-search');
+  // Поиск и фильтр - не правка тайтла: до автосохранения (слушает input/change на document) события не доходят
+  for (const element of [search, only.input]) {
+    for (const type of ['input', 'change']) element.addEventListener(type, event => event.stopPropagation());
+  }
+  search.addEventListener('input', () => {
+    clearTimeout(timer);
+    timer = setTimeout(applyChapterFilter, 200);
+  });
+  only.input.addEventListener('change', applyChapterFilter);
+
+  const mark = add => {
+    if (!chapterFilter) return;
+    chapterFilter.forEach(index => {
+      const id = uniqueChapters[index]?.id;
+      if (add) chosenIds.add(id);
+      else chosenIds.delete(id);
+    });
+    selectionChangedByCode();
+  };
+  document.getElementById('search-select').addEventListener('click', () => mark(true));
+  document.getElementById('search-unselect').addEventListener('click', () => mark(false));
+}
+
+// «Выбрать новые»: главы, которых не было в прошлых успешных загрузках тайтла. Тайтл ещё не качали - кнопки нет
+function updateSelectNewButton() {
+  const button = document.getElementById('select-new');
+  if (!button) return;
+  button.hidden = downloadedKeys.length === 0 || uniqueChapters.length === 0;
+  if (button.hidden) return;
+  const count = newChapterIds(uniqueChapters, downloadedKeys).length;
+  const unit = uniqueChapters[0]?.episode ? 'серий' : 'глав';
+  button.disabled = count === 0;
+  button.querySelector('span').textContent = count ? `Выбрать новые (${count}) - ещё не скачанные` : `Новых ${unit} нет - всё уже скачано`;
+}
+
+document.getElementById('select-new').addEventListener('click', () => {
+  chosenIds = new Set(newChapterIds(uniqueChapters, downloadedKeys));
+  selectionChangedByCode();
+});
 
 // Слушатель сообщений для обновления темы
 setupThemeMessageListener();
@@ -370,6 +450,9 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   renderChaptersList(uniqueDisplayChapters, uniqueOriginalChapters);
   initRangeCard();
+  initSearchCard();
+  downloadedKeys = (await chrome.storage.local.get(downloadedStoreKey(currentSlug)))[downloadedStoreKey(currentSlug)] || [];
+  updateSelectNewButton();
   populateTranslators();
 
   // Применяем сохраненные настройки переводчиков к загруженным главам
@@ -387,6 +470,11 @@ document.addEventListener('DOMContentLoaded', async () => {
 chrome.storage.onChanged.addListener((changes, areaName) => {
   if (areaName === 'local') {
     followStoredSelection(changes);
+    const downloaded = changes[downloadedStoreKey(currentSlug)];
+    if (downloaded) {
+      downloadedKeys = downloaded.newValue || [];
+      updateSelectNewButton();
+    }
     let settingsChanged = false;
     
     if (changes.tocFormat) {
@@ -479,9 +567,21 @@ function renderChaptersList(chapters, originalChapters, startIndex = 0, append =
   // Томов больше одного - дерево томов вместо показа частями
   const treeMode = volumeChapters.size > 1;
   const endIndex = loadAll || treeMode ? chapters.length : Math.min(startIndex + effectivePageSize, chapters.length);
+  const found = chapterFilter && [...chapterFilter].slice(0, FILTER_LIMIT);
   const chaptersToRender = chapters.slice(startIndex, endIndex);
   
-  if (treeMode) {
+  if (found) {
+    // Поиск: только найденные главы, в раскрытых карточках томов; остальные главы тома туда не дописываются
+    renderSource = null;
+    found.forEach(index => renderChapterRow(container, chapters[index], originalChapters[index] || chapters[index], index));
+    volumeCards.forEach(card => { card.dataset.filled = 'true'; });
+    if (found.length === 0) {
+      const empty = document.createElement('div');
+      empty.className = 'chapters-empty';
+      empty.textContent = 'Ничего не найдено. Номер ищется точно (12), диапазон - через дефис (10-20), остальное - по названию.';
+      container.appendChild(empty);
+    }
+  } else if (treeMode) {
     // Дерево: карточки всех томов сразу, свёрнутые; главы тома рисуются, когда его раскрыли (fillVolume)
     renderSource = { chapters, originalChapters, container };
     chapters.forEach(ch => getVolumeBody(container, ch.volume));
@@ -491,7 +591,7 @@ function renderChaptersList(chapters, originalChapters, startIndex = 0, append =
   }
   volumeCards.forEach((card, key) => updateVolumeHeader(key));
   
-  totalChaptersRendered = endIndex;
+  totalChaptersRendered = found ? chapters.length : endIndex; // при поиске «показать ещё» не нужна
   updateEditorChaptersCount(chapters.length);
   initChapterResetButtons();
   

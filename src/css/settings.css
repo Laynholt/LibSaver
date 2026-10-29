@@ -29,6 +29,39 @@ body {
   color: var(--text-secondary);
 }
 
+/* Поле и кнопки в одну строку: профили, резервная копия */
+.inline-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.inline-row select,
+.inline-row input[type="text"] {
+  flex: 1;
+  min-width: 140px;
+  width: auto;
+}
+
+.panel-hint {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--text-secondary);
+}
+
+.panel-status {
+  margin: 0;
+  min-height: 1em;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.panel-status.error {
+  color: #f44336;
+}
+
 /* Значение слева, кнопка справа: размер хранилища, версия */
 .storage-row {
   display: flex;

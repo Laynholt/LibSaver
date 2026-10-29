@@ -638,14 +638,15 @@ test('firefoxManifest: background page instead of the service worker, gecko id, 
 test('Firefox background page loads background.js and every engine.html script once, with no top-level name clash', () => {
   const scripts = file => [...source(file).matchAll(/<script src="\.\.\/([^"]+)"/g)].map(match => match[1]);
   const page = scripts('src/engine/background-firefox.html');
-  // background.js and its update check (utils/update-check.js) on top of the engine scripts
-  assert.deepEqual(page.filter(file => file !== 'background.js' && file !== 'utils/update-check.js'), scripts('src/engine/engine.html'));
+  // background.js, its update check (utils/update-check.js) and the downloaded-chapters store (core/chapter-range.js) on top of the engine scripts
+  const backgroundOnly = ['background.js', 'utils/update-check.js', 'core/chapter-range.js'];
+  assert.deepEqual(page.filter(file => !backgroundOnly.includes(file)), scripts('src/engine/engine.html'));
   assert.equal(page.filter(file => file === 'background.js').length, 1);
   assert.ok(page.indexOf('utils/update-check.js') < page.indexOf('background.js'));
   // a const declared twice in one page is a SyntaxError for the whole script; a second function silently replaces the first
   const names = file => [...source('src/' + file).matchAll(/^(?:async )?(?:const|let|var|function|class) +([\w$]+)/gm)].map(match => match[1]);
-  const engineNames = new Set(page.filter(file => file !== 'background.js' && file !== 'utils/update-check.js' && !file.startsWith('libs/')).flatMap(names));
-  assert.deepEqual(['background.js', 'utils/update-check.js'].flatMap(names).filter(name => engineNames.has(name)), []);
+  const engineNames = new Set(page.filter(file => !backgroundOnly.includes(file) && !file.startsWith('libs/')).flatMap(names));
+  assert.deepEqual(backgroundOnly.flatMap(names).filter(name => engineNames.has(name)), []);
 });
 
 test('in the Firefox background page the engine calls the page, saves and fetches images directly, not via runtime.sendMessage', async () => {
@@ -2900,7 +2901,7 @@ test('the popup off a title page only points to the sites: no settings button', 
 });
 
 test('the settings tab (no ?group=) lists the sections on the left and shows only the panels of the one in the address', () => {
-  const groups = ['general', 'storage', 'images', 'toc', 'cbz', 'pdf', 'txt', 'video', 'about'];
+  const groups = ['general', 'storage', 'images', 'toc', 'profiles', 'files', 'cbz', 'pdf', 'txt', 'video', 'about'];
   const panels = groups.map(group => ({ dataset: { group }, classList: { toggle(name, on) { this.on = on; } } }));
   const links = [];
   const nav = { append: link => links.push(link) };
@@ -2921,7 +2922,7 @@ test('the settings tab (no ?group=) lists the sections on the left and shows onl
   assert.deepEqual(classes, ['tab-mode']);
   assert.deepEqual(links.map(link => link.href), ['#general', '#images', '#toc', '#formats', '#video', '#about']);
   const shown = () => panels.filter(panel => panel.classList.on === false).map(panel => panel.dataset.group);
-  assert.deepEqual(shown(), ['cbz', 'pdf', 'txt']);
+  assert.deepEqual(shown(), ['profiles', 'files', 'cbz', 'pdf', 'txt']);
   assert.equal(links.find(link => link.attrs['aria-current'] === 'page').dataset.section, 'formats');
   ctx.location.hash = '#nonsense'; // an unknown section falls back to the first
   onHash();
@@ -3182,7 +3183,8 @@ test('settings.html?group= lists panels by data-group; «general» is «general,
   assert.deepEqual(jsonCopy(ctx.settingsGroupsFromUrl('?group=general')), ['general', 'storage']);
   assert.deepEqual(jsonCopy(ctx.settingsGroupsFromUrl('?group=images&slug=1--a')), ['images']);
   assert.deepEqual(jsonCopy(ctx.settingsGroupsFromUrl('?group=toc,about')), ['toc', 'about']);
-  assert.deepEqual(jsonCopy(ctx.settingsGroupsFromUrl('?group=formats')), ['cbz', 'pdf', 'txt']);
+  assert.deepEqual(jsonCopy(ctx.settingsGroupsFromUrl('?group=formats')), ['profiles', 'files', 'cbz', 'pdf', 'txt']);
+  assert.deepEqual(jsonCopy(ctx.settingsGroupsFromUrl('?group=video')), ['profiles', 'video']); // профили нужны и аниме
 });
 
 test('group mode hides the panels outside the list and switches the page to one column without the toolbar', () => {
@@ -3201,7 +3203,7 @@ test('every settings group of the window has a panel, every panel is in some sec
   const html = source('src/html/settings.html');
   const chunks = html.split('<div class="panel" data-group="').slice(1);
   const byGroup = Object.fromEntries(chunks.map(chunk => [chunk.slice(0, chunk.indexOf('"')), chunk]));
-  assert.deepEqual(Object.keys(byGroup).sort(), ['about', 'cbz', 'general', 'images', 'pdf', 'storage', 'toc', 'txt', 'video']);
+  assert.deepEqual(Object.keys(byGroup).sort(), ['about', 'cbz', 'files', 'general', 'images', 'pdf', 'profiles', 'storage', 'toc', 'txt', 'video']);
   const ctx = settingsGroupsLogic();
   const panelCtx = panelLogic();
   const reachable = new Set();
@@ -3238,7 +3240,7 @@ test('every setting that is saved belongs to exactly one panel group, and each f
   for (const panel of panels) {
     const group = panel.slice(0, panel.indexOf('"'));
     for (const [, id] of panel.matchAll(/<(?:input|select)\b[^>]*\bid="([\w-]+)"/g)) {
-      if (id.startsWith('site-') || id.endsWith('-value')) continue;
+      if (id.startsWith('site-') || id.endsWith('-value') || id.startsWith('profile-') || id === 'settings-import-file') continue; // профили и импорт - не настройки
       assert.ok(ctx.keys[group].includes(camel(id)) || (id === 'generate-comicinfo' && ctx.keys[group].includes('generateComicInfo')), `${group}: ${id}`);
     }
   }

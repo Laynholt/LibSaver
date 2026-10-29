@@ -21,15 +21,15 @@
 
         // Дефолтные ссылки сайтов (глобальная переменная для доступа из всех функций)
         window.defaultSiteMenuSites = [
-            { name: 'MangaLIB', url: 'https://mangalib.me', color: '1', svgFile: 'MangaLIB.svg' },
-            { name: 'HentaiLIB', url: 'https://hentailib.me', color: '4', svgFile: 'HentaiLIB.svg' },
-            { name: 'SlashLIB', url: 'https://v2.shlib.life', color: '2', svgFile: 'SlashLIB.svg' },
-            { name: 'RanobeLIB', url: 'https://ranobelib.me', color: '3', svgFile: 'RanobeLIB.svg' },
-            { name: 'AnimeLIB', url: 'https://v5.animelib.org', color: '5', svgFile: 'AnimeLIB.svg' }
+            { key: 'mangalib', name: 'MangaLIB', url: 'https://mangalib.me', color: '1', svgFile: 'MangaLIB.svg' },
+            { key: 'hentailib', name: 'HentaiLIB', url: 'https://hentailib.me', color: '4', svgFile: 'HentaiLIB.svg' },
+            { key: 'shlib', name: 'SlashLIB', url: 'https://v2.shlib.life', color: '2', svgFile: 'SlashLIB.svg' },
+            { key: 'ranobelib', name: 'RanobeLIB', url: 'https://ranobelib.me', color: '3', svgFile: 'RanobeLIB.svg' },
+            { key: 'animelib', name: 'AnimeLIB', url: 'https://v5.animelib.org', color: '5', svgFile: 'AnimeLIB.svg' }
         ];
 
         // Загружаем кастомные ссылки, порядок и отключенные сайты из storage
-        chrome.storage.local.get(['customSiteLinks', 'siteMenuOrder', 'disabledSites'], function(result) {
+        chrome.storage.local.get(['customSiteLinks', 'siteMenuOrder', 'disabledSites', 'siteMirrors'], function(result) {
             const customLinks = result.customSiteLinks || {};
             const siteMenuOrder = result.siteMenuOrder || [];
             const disabledSites = result.disabledSites || {};
@@ -98,6 +98,13 @@
 
                 // Если всё невалидно, используем дефолтный
                 return site;
+            });
+
+            // Основной домен у пользователя не отвечает: ссылка по умолчанию ведёт на рабочее зеркало (своя ссылка пользователя остаётся)
+            const siteMirrors = result.siteMirrors || {};
+            sites = sites.map((site, index) => {
+                const isDefault = site.url.replace(/\/+$/, '') === window.defaultSiteMenuSites[index].url;
+                return isDefault && siteMirrors[site.key] ? { ...site, url: siteMirrors[site.key] } : site;
             });
 
             // Переупорядочиваем sites по сохраненному порядку

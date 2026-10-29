@@ -258,7 +258,7 @@ function downloadHarness({ fail = false, partial = false, noDownloadData = false
   if (!noDownloadData) snapshot.downloadData = { slug: 'test', chapters: [{ id: 1 }, { id: 2 }], metadata: {}, selectedFormat: 'epub' };
   let thrown = null;
   const context = vm.createContext({
-    console: { error: noop }, statsUpdateInterval: null, skippedChapters: [],
+    console: { error: noop }, statsUpdateInterval: null, skippedChapters: [], partialChapters: [],
     resetDownloadState: noop, calculateInitialSpeed: () => 60, updateStatisticsDisplay: noop,
     formatChapterTitle: () => 'Test', trackRequest: noop, trackImageRequest: noop, updateProgress: noop, updateImageProgress: noop, progressSamples: [], throwIfCanceled: noop,
     handleChapterError: noop, handleImageError: noop, onTranslatorSelected: noop,
@@ -734,7 +734,7 @@ test('replacing, removing and redrawing cover cards destroys their tooltips', ()
     const item = { querySelector: () => preview, remove() {} };
     const container = { querySelector: () => item, querySelectorAll: () => name === 'renderCovers' ? [preview] : [], replaceChild() {} };
     const ctx = vm.createContext({
-      document: { getElementById: () => container }, userCovers: [], disableDragAnimations: false, createCoverItem() {}, updateCoverCount() {}, initSortable() {}
+      document: { getElementById: () => container }, userCovers: [], EMPTY_COVERS: '', disableDragAnimations: false, createCoverItem() {}, updateCoverCount() {}, initSortable() {}
     });
     vm.runInContext(functionSource('src/editors/covers.js', name), ctx);
     ctx[name](0);
@@ -824,7 +824,7 @@ test('chapters: a single volume is shown in parts of 100 with "show more" / "sho
   assert.match(js, /const treeMode = volumeChapters\.size > 1;\s*const endIndex = loadAll \|\| treeMode \? chapters\.length : Math\.min\(startIndex \+ effectivePageSize, chapters\.length\);/);
   // дерево: карточки всех томов сразу, свёрнуты, главы тома - при раскрытии
   assert.match(js, /chapters\.forEach\(ch => getVolumeBody\(container, ch\.volume\)\);\s*expandedVolumes\.forEach\(fillVolume\);/);
-  assert.match(js, /setOpen\(volumeChapters\.size <= 1 \|\| expandedVolumes\.has\(key\)\);/);
+  assert.match(js, /setOpen\(!!chapterFilter \|\| volumeChapters\.size <= 1 \|\| expandedVolumes\.has\(key\)\);/); // при поиске найденное раскрыто
   assert.match(js, /setOpen\(open\);\s*if \(open\) fillVolume\(key\);/);
   assert.match(js, /if \(button\.dataset\.bound\) return;/);
   assert.doesNotMatch(source('src/html/settings.html'), /enable-pagination/);

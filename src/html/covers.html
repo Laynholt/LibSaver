@@ -609,6 +609,20 @@
       height: 32px;
       box-sizing: border-box;
     }
+    .zoom-label {
+      min-width: 56px;
+      font-size: 12px;
+      color: var(--text-secondary);
+      white-space: nowrap;
+    }
+    .list-hint {
+      margin: 0 0 var(--spacing-sm);
+      font-size: 12px;
+      color: var(--text-secondary);
+    }
+    .list-hint[hidden] {
+      display: none;
+    }
     .zoom-btn {
       background: none !important;
       border: none !important;
@@ -762,6 +776,7 @@
         <button type="button" class="zoom-btn" id="zoom-btn-grid" aria-label="Увеличить масштаб">
           <i class="fa-solid fa-table-cells-large"></i>
         </button>
+        <span class="zoom-label" id="zoom-label" aria-live="polite"></span>
       </div>
       <div class="toolbar-divider"></div>
       <span class="counter">Обложек: <span id="cover-count">0</span></span>
@@ -769,6 +784,7 @@
   </div>
   
   <div class="container">
+    <p class="list-hint" id="list-hint" hidden><i class="fa-regular fa-eye"></i> Наведите на миниатюру, чтобы увидеть обложку крупнее</p>
     <div class="covers-list" id="covers-list">
       <div class="empty-state">Нет обложек</div>
     </div>
