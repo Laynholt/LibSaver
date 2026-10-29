@@ -34,7 +34,6 @@ button {
   padding: 0 10px;
   border: 0;
   border-radius: var(--ls-radius, 6px);
-  background: var(--ls-accent, var(--btn-primary-filled, #ef6c00));
   color: #fff;
   font-family: "Open Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Helvetica, sans-serif;
   font-size: 14px;
@@ -52,16 +51,38 @@ button {
   transition: transform 0.1s ease;
 }
 
-button:hover {
-  background: var(--ls-accent-hover, var(--btn-primary, var(--btn-primary-filled, #d86201)));
+button:not(.plaque) {
+  background: transparent;
+  overflow: hidden;
+}
+
+button:not(.plaque)::before {
+  content: "";
+  display: block;
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  background-color: var(--ls-accent, var(--btn-primary-filled, #ef6c00));
+  border-radius: inherit;
+  opacity: 1;
+  pointer-events: none;
+  transition: opacity 0.3s cubic-bezier(0.4, 0, 0.6, 1);
+}
+
+button:not(.plaque):hover::before {
+  opacity: 0.9;
 }
 
 button:active {
   transform: scale(0.96);
 }
 
+button:not(.plaque):active::before {
+  opacity: 0.8;
+}
+
 button:focus-visible {
-  outline: 2px solid var(--ls-accent-hover, #d86201);
+  outline: 2px solid var(--ls-accent, var(--btn-primary-filled, #ef6c00));
   outline-offset: 2px;
 }
 
@@ -84,6 +105,7 @@ button:focus-visible {
 }
 
 .icon {
+  z-index: 1;
   position: relative;
   flex-shrink: 0;
   font: normal 900 14px/1 'LibSaver FA';
@@ -92,6 +114,7 @@ button:focus-visible {
 }
 
 .download > span:not(.fill):not(.percent) {
+  z-index: 1;
   position: relative;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -100,6 +123,7 @@ button:focus-visible {
 
 /* Ход загрузки этого тайтла: полоска слева, «45%» справа */
 .fill {
+  z-index: 1;
   position: absolute;
   top: 0;
   bottom: 0;
@@ -110,6 +134,7 @@ button:focus-visible {
 }
 
 .percent {
+  z-index: 1;
   position: absolute;
   right: 10px;
   display: none;
