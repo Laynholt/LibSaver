@@ -341,4 +341,64 @@ test('SiteMenuRestorer: updates AnimeLIB link to v5 and removes disabled sites',
   const hrefs6 = m6.children.map(c => c.href);
   assert.ok(hrefs6.includes('https://v2.ranobelib.me'));
   assert.ok(hrefs6.includes('https://my.hentailib.example'));
+
+  // 7. SiteMenuRestorer applies custom link even if useCustomSiteLinks is false (custom links are for the site menu itself)
+  const { menuList: m7 } = runRestorer({
+    enableSiteMenu: true,
+    useCustomSiteLinks: false,
+    customSiteLinks: { hentailib: 'https://my.hentailib.example' },
+    disabledSites: {}
+  });
+  const hrefs7 = m7.children.map(c => c.href);
+  assert.ok(hrefs7.includes('https://my.hentailib.example'));
+});
+
+test('updateSiteMenuLinksVisibility: sub-checkbox and site-menu-links visibility depends only on enableSiteMenu', () => {
+  const ctx = {
+    document: {
+      getElementById(id) {
+        if (id === 'enable-site-menu') return ctx.enableSiteMenu;
+        if (id === 'use-custom-site-links-field') return ctx.useCustomField;
+        return null;
+      },
+      querySelector(sel) {
+        if (sel === '.site-menu-links') return ctx.siteMenuLinks;
+        return null;
+      }
+    }
+  };
+  function makeElement() {
+    const classes = new Set();
+    return {
+      classList: {
+        add(c) { classes.add(c); },
+        remove(c) { classes.delete(c); },
+        toggle(c, force) {
+          if (force === undefined) force = !classes.has(c);
+          if (force) classes.add(c); else classes.delete(c);
+          return force;
+        },
+        has(c) { return classes.has(c); }
+      }
+    };
+  }
+
+  ctx.enableSiteMenu = { checked: true };
+  ctx.useCustomField = makeElement();
+  ctx.siteMenuLinks = makeElement();
+  ctx.useCustomField.classList.add('hidden');
+  ctx.siteMenuLinks.classList.add('hidden');
+
+  vm.runInNewContext(functionSource('src/core/settings.js', 'updateSiteMenuLinksVisibility'), ctx);
+
+  // When enableSiteMenu is true, both sub-checkbox and links are visible
+  ctx.updateSiteMenuLinksVisibility();
+  assert.equal(ctx.useCustomField.classList.has('hidden'), false);
+  assert.equal(ctx.siteMenuLinks.classList.has('hidden'), false);
+
+  // When enableSiteMenu is false, both sub-checkbox and links are hidden
+  ctx.enableSiteMenu.checked = false;
+  ctx.updateSiteMenuLinksVisibility();
+  assert.equal(ctx.useCustomField.classList.has('hidden'), true);
+  assert.equal(ctx.siteMenuLinks.classList.has('hidden'), true);
 });

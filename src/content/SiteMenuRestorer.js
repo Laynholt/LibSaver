@@ -331,14 +331,13 @@
             }
             siteMenuEnabled = true;
 
-            const useCustom = result.useCustomSiteLinks !== false;
             const customLinks = result.customSiteLinks || {};
             const siteMenuOrder = result.siteMenuOrder || [];
             const disabledSites = result.disabledSites || {};
             const siteMirrors = result.enableMirrorSearch !== false ? (result.siteMirrors || {}) : {};
 
             let sites = window.defaultSiteMenuSites.map(site => {
-                const custom = useCustom && customLinks[site.key];
+                const custom = customLinks[site.key];
                 const customUrl = custom && [custom, normalizeUrl(custom)].find(isValidUrl);
                 // Настройки сохраняют и стандартную ссылку: она не своя и не должна перебивать рабочее зеркало
                 if (customUrl && customUrl.replace(/\/+$/, '') !== site.url) return { ...site, url: customUrl };

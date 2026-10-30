@@ -377,16 +377,17 @@ function updateResizeMethodVisibility() {
   }
 }
 
-// Показать/скрыть ссылки сайтов в зависимости от чекбокса
+// Показать/скрыть подчинённые настройки меню сайтов в зависимости от главного чекбокса
 function updateSiteMenuLinksVisibility() {
   const enableSiteMenu = document.getElementById('enable-site-menu').checked;
-  const useCustomSiteLinks = document.getElementById('use-custom-site-links').checked;
+  const useCustomField = document.getElementById('use-custom-site-links-field');
   const siteMenuLinks = document.querySelector('.site-menu-links');
 
-  if (enableSiteMenu || useCustomSiteLinks) {
-    siteMenuLinks.classList.remove('hidden');
-  } else {
-    siteMenuLinks.classList.add('hidden');
+  if (useCustomField) {
+    useCustomField.classList.toggle('hidden', !enableSiteMenu);
+  }
+  if (siteMenuLinks) {
+    siteMenuLinks.classList.toggle('hidden', !enableSiteMenu);
   }
 }
 
@@ -707,7 +708,6 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // Показать/скрыть ссылки сайтов при изменении чекбокса
   document.getElementById('enable-site-menu').addEventListener('change', updateSiteMenuLinksVisibility);
-  document.getElementById('use-custom-site-links').addEventListener('change', updateSiteMenuLinksVisibility);
 
   // Показать предупреждение о перезагрузке при изменении настройки меню
   const originalEnableSiteMenu = document.getElementById('enable-site-menu').checked;
