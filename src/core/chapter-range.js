@@ -119,49 +119,93 @@ function chapterLabel(ch) {
   return ch.name ? `${label}. ${ch.name}` : label;
 }
 
-// Индексы глав под запрос поиска: «12» - глава 12, «10-20» - главы с 10 по 20 по номеру, иначе часть названия или перевода (без регистра).
-// onlyIds (Set) - искать только среди этих глав, пустой запрос тогда отдаёт их все
-function findChapters(chapters, query, onlyIds = null) {
-  const text = String(query ?? '').trim().toLowerCase();
+// Собирает текст для поиска по главе: название, заголовок, переводчики и команды веток
+function getChapterSearchText(ch) {
+  let haystack = `${ch.name || ''}\n${ch.displayTitle || ''}\n${ch.branchTeamName || ''}\n${ch.translator || ''}`;
+  if (typeof ch.translators === 'string') {
+    haystack += '\n' + ch.translators;
+  } else if (Array.isArray(ch.translators)) {
+    for (const t of ch.translators) {
+      haystack += '\n' + (typeof t === 'string' ? t : (t?.name || t?.username || ''));
+    }
+  }
+  if (ch.team?.name) haystack += '\n' + ch.team.name;
+  if (Array.isArray(ch.teams)) {
+    for (const t of ch.teams) if (t?.name) haystack += '\n' + t.name;
+  }
+  if (Array.isArray(ch.branches)) {
+    for (const b of ch.branches) {
+      if (!b) continue;
+      if (typeof getTranslatorName === 'function') {
+        haystack += '\n' + getTranslatorName(b);
+      }
+      if (Array.isArray(b.teams)) {
+        for (const t of b.teams) if (t?.name) haystack += '\n' + t.name;
+      }
+      if (b.team?.name) haystack += '\n' + b.team.name;
+      if (b.user?.username) haystack += '\n' + b.user.username;
+    }
+  }
+  return haystack.toLowerCase();
+}
+
+// Компилирует отдельное условие: точный номер («12»), диапазон («10-20») или текстовое совпадение
+function compileSearchCondition(raw) {
+  const text = String(raw ?? '').trim().toLowerCase();
+  if (!text) return null;
   const numeric = text.replace(/,/g, '.');
   const range = numeric.match(/^(\d+(?:\.\d+)?)\s*[-–—]\s*(\d+(?:\.\d+)?)$/);
-  let test = () => true;
   if (range) {
     const [low, high] = [Number(range[1]), Number(range[2])].sort((a, b) => a - b);
-    test = ch => Number(ch.number) >= low && Number(ch.number) <= high;
-  } else if (/^\d+(?:\.\d+)?$/.test(numeric)) {
-    test = ch => Number(ch.number) === Number(numeric);
-  } else if (text) {
-    test = ch => {
-      let haystack = `${ch.name || ''}\n${ch.displayTitle || ''}\n${ch.branchTeamName || ''}\n${ch.translator || ''}`;
-      if (typeof ch.translators === 'string') {
-        haystack += '\n' + ch.translators;
-      } else if (Array.isArray(ch.translators)) {
-        for (const t of ch.translators) {
-          haystack += '\n' + (typeof t === 'string' ? t : (t?.name || t?.username || ''));
-        }
-      }
-      if (ch.team?.name) haystack += '\n' + ch.team.name;
-      if (Array.isArray(ch.teams)) {
-        for (const t of ch.teams) if (t?.name) haystack += '\n' + t.name;
-      }
-      if (Array.isArray(ch.branches)) {
-        for (const b of ch.branches) {
-          if (!b) continue;
-          if (typeof getTranslatorName === 'function') {
-            haystack += '\n' + getTranslatorName(b);
-          }
-          if (Array.isArray(b.teams)) {
-            for (const t of b.teams) if (t?.name) haystack += '\n' + t.name;
-          }
-          if (b.team?.name) haystack += '\n' + b.team.name;
-          if (b.user?.username) haystack += '\n' + b.user.username;
-        }
-      }
-      return haystack.toLowerCase().includes(text);
+    return ch => {
+      const num = Number(ch.number);
+      return !isNaN(num) && num >= low && num <= high;
     };
   }
-  return chapters.flatMap((ch, index) => (!onlyIds || onlyIds.has(ch.id)) && test(ch) ? [index] : []);
+  if (/^\d+(?:\.\d+)?$/.test(numeric)) {
+    const target = Number(numeric);
+    return ch => Number(ch.number) === target;
+  }
+  return (ch, getHaystack) => getHaystack().includes(text);
+}
+
+// Индексы глав под запрос поиска.
+// Поддерживает составные запросы:
+//  - разделитель «;» (ИЛИ) — объединение условий (например: «avgystinal ; TLSamurai», «1-10 ; 25-30», «5 ; 12 ; 44»)
+//  - разделитель «+» (И) — уточнение условий (например: «Любовь + Spokon», «10-20 + avgystinal»)
+//  - их комбинацию (например: «1-10 + Spokon ; 20-30 + avgystinal»)
+// onlyIds (Set) - искать только среди этих глав, пустой запрос тогда отдаёт их все
+function findChapters(chapters, query, onlyIds = null) {
+  const raw = String(query ?? '').trim();
+  if (!raw) {
+    return chapters.flatMap((ch, index) => (!onlyIds || onlyIds.has(ch.id)) ? [index] : []);
+  }
+
+  // Ветки «ИЛИ» (разделитель «;»), внутри каждой — условия «И» (разделитель «+»)
+  const branches = raw
+    .split(';')
+    .map(branch => {
+      return branch
+        .split('+')
+        .map(compileSearchCondition)
+        .filter(Boolean);
+    })
+    .filter(branch => branch.length > 0);
+
+  if (branches.length === 0) {
+    return chapters.flatMap((ch, index) => (!onlyIds || onlyIds.has(ch.id)) ? [index] : []);
+  }
+
+  return chapters.flatMap((ch, index) => {
+    if (onlyIds && !onlyIds.has(ch.id)) return [];
+    let haystack = null;
+    const getHaystack = () => {
+      if (haystack === null) haystack = getChapterSearchText(ch);
+      return haystack;
+    };
+    const matches = branches.some(branch => branch.every(cond => cond(ch, getHaystack)));
+    return matches ? [index] : [];
+  });
 }
 
 // Ключ главы для учёта скачанных: том и номер, перевод не важен

@@ -53,6 +53,37 @@ test('findChapters: search by translator or team name in branchTeamName or branc
   assert.deepEqual(json(findChapters(translatorChapters, 'avgystinal')), [0, 4]);
   assert.deepEqual(json(findChapters(translatorChapters, 'samurai')), [1]);
 });
+test('findChapters: multi-condition with ; (OR) and + (AND)', () => {
+  const { findChapters } = range();
+  const testChapters = [
+    { id: '1', number: '1', name: 'Любовь и голуби', branchTeamName: 'Spokon' },
+    { id: '2', number: '2', name: 'Обычный день', branchTeamName: 'Spokon' },
+    { id: '3', number: '5', name: 'Любовь зла', branchTeamName: 'avgystinal' },
+    { id: '4', number: '10', name: 'Финал', branchTeamName: 'TLSamurai' },
+    { id: '5', number: '25', name: 'Экстра', branchTeamName: 'KitKut' },
+  ];
+
+  // OR (;) queries
+  assert.deepEqual(json(findChapters(testChapters, 'Spokon ; TLSamurai')), [0, 1, 3]);
+  assert.deepEqual(json(findChapters(testChapters, '1 ; 5 ; 25')), [0, 2, 4]);
+  assert.deepEqual(json(findChapters(testChapters, '1-2 ; 10-30')), [0, 1, 3, 4]);
+
+  // AND (+) queries
+  assert.deepEqual(json(findChapters(testChapters, 'Любовь + Spokon')), [0]);
+  assert.deepEqual(json(findChapters(testChapters, 'Любовь + avgystinal')), [2]);
+  assert.deepEqual(json(findChapters(testChapters, '1-5 + Spokon')), [0, 1]);
+  assert.deepEqual(json(findChapters(testChapters, '1-5 + KitKut')), []);
+
+  // Combined (; and +) queries
+  assert.deepEqual(json(findChapters(testChapters, '1-2 + Spokon ; 10 + TLSamurai')), [0, 1, 3]);
+  assert.deepEqual(json(findChapters(testChapters, 'Любовь + Spokon ; Экстра + KitKut')), [0, 4]);
+
+  // Tolerant to spaces and empty delimiters
+  assert.deepEqual(json(findChapters(testChapters, '  ;  Spokon  ;  ')), [0, 1]);
+  assert.deepEqual(json(findChapters(testChapters, 'Spokon + ')), [0, 1]);
+  assert.deepEqual(json(findChapters(testChapters, '; ; + +')), [0, 1, 2, 3, 4]);
+});
+
 
 test('downloaded chapters are keyed by volume and number, so another translation still counts as downloaded', () => {
   const { mergeDownloaded, newChapterIds, downloadedStoreKey } = range();
