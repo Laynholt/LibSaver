@@ -402,3 +402,19 @@ test('updateSiteMenuLinksVisibility: sub-checkbox and site-menu-links visibility
   assert.equal(ctx.useCustomField.classList.has('hidden'), true);
   assert.equal(ctx.siteMenuLinks.classList.has('hidden'), true);
 });
+
+test('renderSiteLinks: свои ссылки сайтов скрыты в настройках при выключенном меню сайтов - и не действуют', () => {
+  const ctx = {
+    siteLinks: () => ['https://mangalib.me'],
+    escapeHtml: s => s,
+    siteMirrors: {},
+    customSiteLinks: { mangalib: 'my.mangalib.example' },
+    useCustomSiteLinks: true,
+    enableMirrorSearch: true,
+    enableSiteMenu: true
+  };
+  vm.runInNewContext(functionSource('src/core/downloads-view.js', 'renderSiteLinks'), ctx);
+  assert.match(ctx.renderSiteLinks('mangalib'), /^<a href="https:\/\/my\.mangalib\.example"/);
+  ctx.enableSiteMenu = false;
+  assert.doesNotMatch(ctx.renderSiteLinks('mangalib'), /my\.mangalib/);
+});

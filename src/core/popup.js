@@ -173,9 +173,10 @@ document.getElementById('btn-reload-page').addEventListener('click', async () =>
 
 // Кнопки открытия LIB сайтов
 async function openSiteFromPopup(siteKey, fallbackUrl) {
-  const { useCustomSiteLinks = true, customSiteLinks = {}, siteMirrors = {}, enableMirrorSearch = true } = await chrome.storage.local.get(['useCustomSiteLinks', 'customSiteLinks', 'siteMirrors', 'enableMirrorSearch']);
+  const { enableSiteMenu = true, useCustomSiteLinks = true, customSiteLinks = {}, siteMirrors = {}, enableMirrorSearch = true } = await chrome.storage.local.get(['enableSiteMenu', 'useCustomSiteLinks', 'customSiteLinks', 'siteMirrors', 'enableMirrorSearch']);
   let target = fallbackUrl;
-  const custom = useCustomSiteLinks && customSiteLinks[siteKey]?.trim();
+  // Свои ссылки - часть меню сайтов: без него настройки их скрывают
+  const custom = enableSiteMenu && useCustomSiteLinks && customSiteLinks[siteKey]?.trim();
   // Настройки сохраняют и стандартную ссылку: она не своя и не должна перебивать рабочее зеркало
   if (custom && custom.replace(/\/+$/, '') !== fallbackUrl) {
     target = custom;

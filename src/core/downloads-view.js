@@ -42,11 +42,12 @@ function renderCommandButton(command, id) {
 let siteMirrors = {}; // рабочие зеркала сайтов (фон проверяет их сам): ссылка на зеркало идёт первой
 let customSiteLinks = {};
 let useCustomSiteLinks = true;
+let enableSiteMenu = true; // свои ссылки - часть меню сайтов: без него настройки их скрывают
 let enableMirrorSearch = true;
 
 function renderSiteLinks(siteKey) {
   const defaults = siteLinks(siteKey);
-  let custom = useCustomSiteLinks && customSiteLinks[siteKey]?.trim().replace(/\/+$/, '');
+  let custom = enableSiteMenu && useCustomSiteLinks && customSiteLinks[siteKey]?.trim().replace(/\/+$/, '');
   if (custom && !/^https?:\/\//i.test(custom)) custom = 'https://' + custom; // в настройках можно ввести домен без https://
   if (defaults.includes(custom)) custom = null; // стандартная ссылка из настроек не перебивает зеркало
   const mirror = enableMirrorSearch && siteMirrors[siteKey];
@@ -401,17 +402,19 @@ async function initDownloadsView() {
     if (area === 'local' && changes.siteMirrors) siteMirrors = changes.siteMirrors.newValue || {};
     if (area === 'local' && changes.customSiteLinks) customSiteLinks = changes.customSiteLinks.newValue || {};
     if (area === 'local' && changes.useCustomSiteLinks) useCustomSiteLinks = changes.useCustomSiteLinks.newValue !== false;
+    if (area === 'local' && changes.enableSiteMenu) enableSiteMenu = changes.enableSiteMenu.newValue !== false;
     if (area === 'local' && changes.enableMirrorSearch) enableMirrorSearch = changes.enableMirrorSearch.newValue !== false;
   });
   speed.addEventListener('change', () => {
     enginePort?.postMessage({ cmd: 'speedMode', on: speed.checked });
     chrome.storage.local.set({ speedMode: speed.checked });
   });
-  const stored = await chrome.storage.local.get(['speedMode', 'sourceUrl', 'siteMirrors', 'customSiteLinks', 'useCustomSiteLinks', 'enableMirrorSearch']);
+  const stored = await chrome.storage.local.get(['speedMode', 'sourceUrl', 'siteMirrors', 'customSiteLinks', 'useCustomSiteLinks', 'enableSiteMenu', 'enableMirrorSearch']);
   speed.checked = stored.speedMode !== false;
   siteMirrors = stored.siteMirrors || {};
   customSiteLinks = stored.customSiteLinks || {};
   useCustomSiteLinks = stored.useCustomSiteLinks !== false;
+  enableSiteMenu = stored.enableSiteMenu !== false;
   enableMirrorSearch = stored.enableMirrorSearch !== false;
   sourceUrl = stored.sourceUrl || '';
 
