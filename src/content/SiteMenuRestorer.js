@@ -338,19 +338,11 @@
             const siteMirrors = result.enableMirrorSearch !== false ? (result.siteMirrors || {}) : {};
 
             let sites = window.defaultSiteMenuSites.map(site => {
-                let url = site.url;
-                const custom = customLinks[site.key];
-                if (useCustom && custom) {
-                    if (isValidUrl(custom)) {
-                        url = custom;
-                    } else {
-                        const normalized = normalizeUrl(custom);
-                        if (isValidUrl(normalized)) url = normalized;
-                    }
-                } else if (result.enableMirrorSearch !== false && siteMirrors[site.key]) {
-                    url = siteMirrors[site.key];
-                }
-                return { ...site, url };
+                const custom = useCustom && customLinks[site.key];
+                const customUrl = custom && [custom, normalizeUrl(custom)].find(isValidUrl);
+                // Настройки сохраняют и стандартную ссылку: она не своя и не должна перебивать рабочее зеркало
+                if (customUrl && customUrl.replace(/\/+$/, '') !== site.url) return { ...site, url: customUrl };
+                return { ...site, url: siteMirrors[site.key] || site.url };
             });
 
             // Переупорядочиваем sites по сохраненному порядку

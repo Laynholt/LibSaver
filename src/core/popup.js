@@ -175,8 +175,10 @@ document.getElementById('btn-reload-page').addEventListener('click', async () =>
 async function openSiteFromPopup(siteKey, fallbackUrl) {
   const { useCustomSiteLinks = true, customSiteLinks = {}, siteMirrors = {}, enableMirrorSearch = true } = await chrome.storage.local.get(['useCustomSiteLinks', 'customSiteLinks', 'siteMirrors', 'enableMirrorSearch']);
   let target = fallbackUrl;
-  if (useCustomSiteLinks && customSiteLinks[siteKey]) {
-    target = customSiteLinks[siteKey];
+  const custom = useCustomSiteLinks && customSiteLinks[siteKey]?.trim();
+  // Настройки сохраняют и стандартную ссылку: она не своя и не должна перебивать рабочее зеркало
+  if (custom && custom.replace(/\/+$/, '') !== fallbackUrl) {
+    target = custom;
   } else if (enableMirrorSearch && siteMirrors[siteKey]) {
     target = siteMirrors[siteKey];
   }
