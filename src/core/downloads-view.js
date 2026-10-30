@@ -45,9 +45,12 @@ let useCustomSiteLinks = true;
 let enableMirrorSearch = true;
 
 function renderSiteLinks(siteKey) {
-  const custom = useCustomSiteLinks && customSiteLinks[siteKey];
+  const defaults = siteLinks(siteKey);
+  let custom = useCustomSiteLinks && customSiteLinks[siteKey]?.trim().replace(/\/+$/, '');
+  if (custom && !/^https?:\/\//i.test(custom)) custom = 'https://' + custom; // в настройках можно ввести домен без https://
+  if (defaults.includes(custom)) custom = null; // стандартная ссылка из настроек не перебивает зеркало
   const mirror = enableMirrorSearch && siteMirrors[siteKey];
-  return [...new Set([custom, mirror, ...siteLinks(siteKey)].filter(Boolean))]
+  return [...new Set([custom, mirror, ...defaults].filter(Boolean))]
     .map(url => `<a href="${escapeHtml(url)}" data-url="${escapeHtml(url)}" target="_blank" rel="noopener">${escapeHtml(url.replace('https://', ''))}</a>`)
     .join(' · ');
 }

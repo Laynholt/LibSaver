@@ -298,4 +298,16 @@ test('SiteMenuRestorer: updates AnimeLIB link to v5 and removes disabled sites',
   });
   assert.equal(m5.children.length, 1);
   assert.ok(m5.children[0].href.includes('ranobelib'));
+
+  // 6. Настройки сохраняют и стандартные ссылки: такая ссылка не своя и не перебивает рабочее зеркало
+  const { menuList: m6 } = runRestorer({
+    enableSiteMenu: true,
+    useCustomSiteLinks: true,
+    customSiteLinks: { ranobelib: 'https://ranobelib.me/', hentailib: 'https://my.hentailib.example' },
+    siteMirrors: { ranobelib: 'https://v2.ranobelib.me', hentailib: 'https://v3.hentailib.me' },
+    disabledSites: {}
+  });
+  const hrefs6 = m6.children.map(c => c.href);
+  assert.ok(hrefs6.includes('https://v2.ranobelib.me'));
+  assert.ok(hrefs6.includes('https://my.hentailib.example'));
 });
